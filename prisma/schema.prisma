@@ -24,6 +24,11 @@ model Tenant {
   deals      Deal[]
   patterns   Pattern[]
   insights   Insight[]
+
+  // QC relations
+  scripts         Script[]
+  callRecords     CallRecord[]
+  telegramConfig  TelegramConfig?
 }
 
 enum Plan {
@@ -130,6 +135,7 @@ model Manager {
   crmId     String?
   createdAt DateTime      @default(now())
   deals     Deal[]
+  callRecords CallRecord[]
 
   totalDeals      Int?
   successDeals    Int?
@@ -172,6 +178,7 @@ model Deal {
   stageHistory DealStageHistory[]
   analysis     DealAnalysis?
   dealPatterns DealPattern[]
+  callRecords  CallRecord[]
 }
 
 enum DealStatus {
@@ -289,4 +296,94 @@ model Insight {
 enum InsightType {
   SUCCESS_INSIGHT
   FAILURE_INSIGHT
+}
+
+// === QUALITY CONTROL ===
+
+model Script {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  category  String?  // "incoming", "outgoing", "upsell"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  items     ScriptItem[]
+  callScores CallScore[]
+}
+
+model ScriptItem {
+  id         String  @id @default(cuid())
+  scriptId   String
+  script     Script  @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  text       String
+  weight     Float   @default(1.0)
+  isCritical Boolean @default(false)
+  order      Int
+  scoreItems CallScoreItem[]
+}
+
+model CallRecord {
+  id          String        @id @default(cuid())
+  tenantId    String
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  managerId   String?
+  manager     Manager?      @relation(fields: [managerId], references: [id])
+  dealId      String?
+  deal        Deal?         @relation(fields: [dealId], references: [id])
+  crmId       String?
+  clientName  String?
+  clientPhone String?
+  direction   CallDirection
+  category    String?
+  audioUrl    String?
+  transcript  String?
+  duration    Int?
+  createdAt   DateTime      @default(now())
+  score       CallScore?
+  tags        CallTag[]
+}
+
+enum CallDirection {
+  INCOMING
+  OUTGOING
+}
+
+model CallScore {
+  id           String          @id @default(cuid())
+  callRecordId String          @unique
+  callRecord   CallRecord      @relation(fields: [callRecordId], references: [id], onDelete: Cascade)
+  scriptId     String
+  script       Script          @relation(fields: [scriptId], references: [id])
+  totalScore   Float
+  items        CallScoreItem[]
+  createdAt    DateTime        @default(now())
+}
+
+model CallScoreItem {
+  id           String     @id @default(cuid())
+  callScoreId  String
+  callScore    CallScore  @relation(fields: [callScoreId], references: [id], onDelete: Cascade)
+  scriptItemId String
+  scriptItem   ScriptItem @relation(fields: [scriptItemId], references: [id])
+  isDone       Boolean
+  aiComment    String?
+}
+
+model CallTag {
+  id           String     @id @default(cuid())
+  callRecordId String
+  callRecord   CallRecord @relation(fields: [callRecordId], references: [id], onDelete: Cascade)
+  tag          String
+}
+
+model TelegramConfig {
+  id              String  @id @default(cuid())
+  tenantId        String  @unique
+  tenant          Tenant  @relation(fields: [tenantId], references: [id])
+  botToken        String
+  chatId          String
+  isActive        Boolean @default(true)
+  alertOnCritical Boolean @default(true)
+  createdAt       DateTime @default(now())
 }

@@ -7,6 +7,13 @@ async function main() {
   console.log("🌱 Seeding database...")
 
   // Clean existing data
+  await prisma.callTag.deleteMany()
+  await prisma.callScoreItem.deleteMany()
+  await prisma.callScore.deleteMany()
+  await prisma.callRecord.deleteMany()
+  await prisma.scriptItem.deleteMany()
+  await prisma.script.deleteMany()
+  await prisma.telegramConfig.deleteMany()
   await prisma.dealPattern.deleteMany()
   await prisma.dealAnalysis.deleteMany()
   await prisma.dealStageHistory.deleteMany()
@@ -645,6 +652,247 @@ async function main() {
   })
 
   console.log("  Insights: 4 created")
+
+  // === QUALITY CONTROL: SCRIPT ===
+  const script = await prisma.script.create({
+    data: {
+      tenantId: tenant.id,
+      name: "Скрипт входящего звонка B2B",
+      category: "incoming",
+      isActive: true,
+    },
+  })
+
+  const scriptItemsData = [
+    { text: "Представиться по имени и назвать компанию", weight: 1.0, isCritical: true, order: 1 },
+    { text: "Выявить потребность клиента", weight: 1.5, isCritical: false, order: 2 },
+    { text: "Назвать примерный ценовой диапазон", weight: 2.0, isCritical: true, order: 3 },
+    { text: "Предложить отправить образцы", weight: 1.0, isCritical: false, order: 4 },
+    { text: "Обозначить следующий шаг", weight: 1.5, isCritical: true, order: 5 },
+    { text: "Уточнить сроки принятия решения", weight: 1.0, isCritical: false, order: 6 },
+    { text: "Предложить удобный способ связи", weight: 0.5, isCritical: false, order: 7 },
+    { text: "Поблагодарить за обращение", weight: 0.5, isCritical: false, order: 8 },
+  ]
+
+  const scriptItems: Array<{ id: string; weight: number; isCritical: boolean }> = []
+  for (const item of scriptItemsData) {
+    const created = await prisma.scriptItem.create({
+      data: { scriptId: script.id, ...item },
+    })
+    scriptItems.push({ id: created.id, weight: item.weight, isCritical: item.isCritical })
+  }
+  console.log("  Script:", script.name, "with", scriptItems.length, "items")
+
+  // === QUALITY CONTROL: CALL RECORDS ===
+  const callRecordsData = [
+    {
+      managerId: alina.id,
+      clientName: "Виктор Петров",
+      clientPhone: "+7 (495) 123-45-67",
+      direction: "INCOMING" as const,
+      category: "incoming",
+      duration: 340,
+      transcript: `Менеджер: Добрый день, компания Рассвет, Алина, слушаю вас.
+Клиент: Здравствуйте, меня зовут Виктор Петров, компания ТехноГрупп. Нас интересует промышленное оборудование.
+Менеджер: Виктор, очень приятно. Подскажите, какой тип оборудования вас интересует и для каких задач?
+Клиент: Нужны станки для резки металла, планируем запускать новый цех.
+Менеджер: Понял. По вашим задачам оптимальный вариант — линейка XR-500, ценовой диапазон от 280 до 400 тысяч за единицу.
+Клиент: Хорошо, а можно посмотреть образцы?
+Менеджер: Конечно, могу организовать демонстрацию на нашем складе. Давайте договоримся о дате — когда вам удобно на следующей неделе?
+Клиент: Среда подойдёт.
+Менеджер: Отлично, записала. Вам удобнее связаться по телефону или в мессенджере?
+Клиент: В Телеграме лучше.
+Менеджер: Хорошо, напишу вам подтверждение. Спасибо за обращение, Виктор!`,
+      // Score: 85% — missed item 6 (сроки принятия решения)
+      scorePercent: 85,
+      itemsDone: [true, true, true, true, true, false, true, true],
+      aiComments: [
+        "Чётко представилась и назвала компанию",
+        "Задала правильный вопрос о задачах",
+        "Назвала конкретный ценовой диапазон",
+        "Предложила демонстрацию образцов",
+        "Назначила конкретную дату встречи",
+        "Не уточнила сроки принятия решения по закупке",
+        "Спросила об удобном способе связи",
+        "Вежливо поблагодарила за обращение",
+      ],
+      tags: ["хорошая квалификация", "отличная работа с возражениями"],
+    },
+    {
+      managerId: alina.id,
+      clientName: "Ольга Сидорова",
+      clientPhone: "+7 (495) 234-56-78",
+      direction: "OUTGOING" as const,
+      category: "outgoing",
+      duration: 420,
+      transcript: `Менеджер: Добрый день, Ольга! Это Алина из компании Рассвет. Звоню уточнить по вашей заявке на расходные материалы.
+Клиент: Да, здравствуйте. Мы оставляли заявку на прошлой неделе.
+Менеджер: Верно. Подскажите, какой объём вам нужен и как часто планируете заказывать?
+Клиент: Примерно 200 единиц в месяц, на постоянной основе.
+Менеджер: Отлично. При таком объёме стоимость будет в диапазоне 15-20 тысяч за партию, плюс есть скидка при годовом контракте.
+Клиент: Интересно, а образцы можете прислать?
+Менеджер: Да, отправим образцы курьером завтра. Следующий шаг — после тестирования обсудим условия контракта. Когда планируете принять решение?
+Клиент: В течение двух недель.
+Менеджер: Хорошо, я свяжусь с вами через неделю. Удобнее по телефону или на почту написать?
+Клиент: По почте.
+Менеджер: Договорились. Благодарю за уделённое время, Ольга!`,
+      scorePercent: 92,
+      itemsDone: [true, true, true, true, true, true, true, true],
+      aiComments: [
+        "Представилась по имени и назвала компанию",
+        "Детально выяснила потребность: объём и периодичность",
+        "Назвала ценовой диапазон и упомянула скидку",
+        "Согласилась отправить образцы",
+        "Чётко обозначила следующий шаг — обсуждение контракта",
+        "Уточнила сроки принятия решения — 2 недели",
+        "Спросила удобный способ связи",
+        "Поблагодарила за время",
+      ],
+      tags: ["образцовый звонок", "отличная работа с возражениями"],
+    },
+    {
+      managerId: alina.id,
+      clientName: "Дмитрий Козлов",
+      clientPhone: "+7 (495) 345-67-89",
+      direction: "INCOMING" as const,
+      category: "incoming",
+      duration: 280,
+      transcript: `Менеджер: Рассвет, Алина, добрый день!
+Клиент: Здравствуйте, Дмитрий Козлов, МедТех. Нужна консультация по оборудованию.
+Менеджер: Дмитрий, рада слышать. Расскажите, что именно вас интересует?
+Клиент: Автоклавы для стерилизации. Сколько стоят ваши модели?
+Менеджер: У нас есть несколько вариантов от 180 до 350 тысяч. Зависит от объёма камеры и функционала.
+Клиент: Нужен средний вариант.
+Менеджер: Тогда рекомендую модель AC-200 за 245 тысяч. Могу отправить подробное описание. Когда планируете закупку?
+Клиент: В этом квартале точно.
+Менеджер: Понял. Давайте я подготовлю КП и вышлю вам. Спасибо за звонок!`,
+      scorePercent: 78,
+      itemsDone: [true, true, true, false, true, true, false, true],
+      aiComments: [
+        "Представилась, назвала компанию",
+        "Выяснила потребность клиента",
+        "Назвала ценовой диапазон и конкретную модель",
+        "Не предложила образцы или демонстрацию",
+        "Обозначила следующий шаг — подготовка КП",
+        "Уточнила сроки — в этом квартале",
+        "Не предложила удобный способ связи",
+        "Поблагодарила за звонок",
+      ],
+      tags: ["не предложил образцы"],
+    },
+    {
+      managerId: ekaterina.id,
+      clientName: "Андрей Волков",
+      clientPhone: "+7 (495) 456-78-90",
+      direction: "INCOMING" as const,
+      category: "incoming",
+      duration: 180,
+      transcript: `Менеджер: Алло, слушаю.
+Клиент: Здравствуйте, это Андрей Волков из НефтеХим. Мне нужна информация по катализаторам.
+Менеджер: Да, что именно нужно?
+Клиент: Цены и сроки поставки на 500 кг.
+Менеджер: Я сейчас не могу сказать точную цену, нужно уточнить. Перезвоню.
+Клиент: Когда?
+Менеджер: Сегодня-завтра.
+Клиент: Ладно, жду.`,
+      scorePercent: 45,
+      itemsDone: [false, false, false, false, false, false, false, false],
+      aiComments: [
+        "Не представилась по имени и не назвала компанию",
+        "Не выявила потребность — только зафиксировала запрос",
+        "Не назвала даже примерный ценовой диапазон",
+        "Не предложила образцы",
+        "Не обозначила конкретный следующий шаг",
+        "Не уточнила сроки принятия решения",
+        "Не предложила удобный способ связи",
+        "Не поблагодарила за обращение",
+      ],
+      tags: ["не озвучил цену", "нет приветствия", "критический звонок"],
+    },
+    {
+      managerId: ekaterina.id,
+      clientName: "Марина Белова",
+      clientPhone: "+7 (495) 567-89-01",
+      direction: "OUTGOING" as const,
+      category: "outgoing",
+      duration: 240,
+      transcript: `Менеджер: Добрый день, Марина. Звоню из Рассвета по поводу вашего запроса.
+Клиент: Да, здравствуйте. Мы запрашивали КП на оборудование для склада.
+Менеджер: Да, помню. КП пока не готово, но скоро будет.
+Клиент: Сколько ждать? У нас сроки горят.
+Менеджер: Постараюсь на этой неделе отправить.
+Клиент: А хотя бы примерно — сколько это будет стоить?
+Менеджер: Точно пока сказать не могу, зависит от конфигурации.
+Клиент: Ну хотя бы вилку назовите.
+Менеджер: Ориентировочно от 500 тысяч. Пришлю точные цифры в КП.
+Клиент: Хорошо, жду.`,
+      scorePercent: 52,
+      itemsDone: [true, false, true, false, true, false, false, false],
+      aiComments: [
+        "Представилась и назвала компанию",
+        "Не выявила потребность — клиент сам напоминал о запросе",
+        "Назвала цену только после настойчивой просьбы клиента",
+        "Не предложила образцы или демонстрацию",
+        "Обозначила следующий шаг — отправка КП",
+        "Не уточнила сроки принятия решения",
+        "Не предложила удобный способ связи",
+        "Не поблагодарила за уделённое время",
+      ],
+      tags: ["не озвучил цену", "пассивная коммуникация"],
+    },
+  ]
+
+  const createdCallRecords = []
+  for (const cr of callRecordsData) {
+    const record = await prisma.callRecord.create({
+      data: {
+        tenantId: tenant.id,
+        managerId: cr.managerId,
+        clientName: cr.clientName,
+        clientPhone: cr.clientPhone,
+        direction: cr.direction,
+        category: cr.category,
+        duration: cr.duration,
+        transcript: cr.transcript,
+        createdAt: daysAgo(Math.floor(Math.random() * 14) + 1),
+      },
+    })
+    createdCallRecords.push({ record, meta: cr })
+  }
+  console.log("  CallRecords:", createdCallRecords.length, "created")
+
+  // === QUALITY CONTROL: CALL SCORES + ITEMS + TAGS ===
+  for (const { record, meta } of createdCallRecords) {
+    const callScore = await prisma.callScore.create({
+      data: {
+        callRecordId: record.id,
+        scriptId: script.id,
+        totalScore: meta.scorePercent,
+      },
+    })
+
+    for (let i = 0; i < scriptItems.length; i++) {
+      await prisma.callScoreItem.create({
+        data: {
+          callScoreId: callScore.id,
+          scriptItemId: scriptItems[i].id,
+          isDone: meta.itemsDone[i],
+          aiComment: meta.aiComments[i],
+        },
+      })
+    }
+
+    for (const tag of meta.tags) {
+      await prisma.callTag.create({
+        data: {
+          callRecordId: record.id,
+          tag,
+        },
+      })
+    }
+  }
+  console.log("  CallScores + CallScoreItems + CallTags: created for all records")
+
   console.log("\nSeeding complete!")
 }
 

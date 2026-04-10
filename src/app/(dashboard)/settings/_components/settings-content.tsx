@@ -5,7 +5,7 @@ import { SettingsNav } from "./settings-nav"
 import { CrmSettings } from "./crm-settings"
 import { CompanySettings } from "./company-settings"
 import { PlanSettings } from "./plan-settings"
-import { ScriptsPlaceholder } from "./scripts-placeholder"
+import { ScriptsSettings } from "./scripts-settings"
 import { TelegramSettings } from "./telegram-settings"
 
 function UsersPlaceholder() {
@@ -66,7 +66,7 @@ export function SettingsContent() {
       case "users":
         return <UsersPlaceholder />
       case "scripts":
-        return <ScriptsPlaceholder />
+        return <ScriptsSettings />
       case "telegram":
         return <TelegramSettings />
       case "notifications":

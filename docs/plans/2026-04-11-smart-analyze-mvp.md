@@ -1050,7 +1050,227 @@ ssh -i ~/.ssh/timeweb root@80.76.60.130 "cd /root/smart-analyze && git pull && d
 
 ---
 
-## Task Summary
+## Phase 6: Quality Control Module (Tasks 19-24)
+
+> **Spec:** `docs/ui-specification-qc.md`
+
+### Task 19: QC database models + schema update
+
+**Files:**
+- Modify: `prisma/schema.prisma` — add QC models
+- Modify: `prisma/seed.ts` — add QC seed data
+
+**New models:**
+
+```prisma
+model Script {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String   // "Скрипт входящего звонка"
+  category  String?  // "incoming", "outgoing", "upsell"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  items     ScriptItem[]
+  callScores CallScore[]
+}
+
+model ScriptItem {
+  id         String  @id @default(cuid())
+  scriptId   String
+  script     Script  @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  text       String  // "Представиться по имени"
+  weight     Float   @default(1.0) // influence on total score
+  isCritical Boolean @default(false) // triggers TG alert if missed
+  order      Int
+  scoreItems CallScoreItem[]
+}
+
+model CallRecord {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  managerId   String?
+  manager     Manager? @relation(fields: [managerId], references: [id])
+  dealId      String?
+  deal        Deal?    @relation(fields: [dealId], references: [id])
+  
+  crmId       String?
+  clientName  String?
+  clientPhone String?
+  direction   CallDirection // INCOMING, OUTGOING
+  category    String?       // custom category tag
+  audioUrl    String?
+  transcript  String?       // full transcription text
+  duration    Int?          // seconds
+  
+  createdAt   DateTime @default(now())
+  
+  score       CallScore?
+  tags        CallTag[]
+}
+
+enum CallDirection {
+  INCOMING
+  OUTGOING
+}
+
+model CallScore {
+  id           String   @id @default(cuid())
+  callRecordId String   @unique
+  callRecord   CallRecord @relation(fields: [callRecordId], references: [id], onDelete: Cascade)
+  scriptId     String
+  script       Script   @relation(fields: [scriptId], references: [id])
+  totalScore   Float    // 0-100%
+  items        CallScoreItem[]
+  createdAt    DateTime @default(now())
+}
+
+model CallScoreItem {
+  id           String     @id @default(cuid())
+  callScoreId  String
+  callScore    CallScore  @relation(fields: [callScoreId], references: [id], onDelete: Cascade)
+  scriptItemId String
+  scriptItem   ScriptItem @relation(fields: [scriptItemId], references: [id])
+  isDone       Boolean    // checked or not
+  aiComment    String?    // AI explanation
+}
+
+model CallTag {
+  id           String     @id @default(cuid())
+  callRecordId String
+  callRecord   CallRecord @relation(fields: [callRecordId], references: [id], onDelete: Cascade)
+  tag          String     // "не озвучил доставку", custom tags
+}
+
+model TelegramConfig {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  botToken  String
+  chatId    String   // chat/group ID for alerts
+  isActive  Boolean  @default(true)
+  alertOnCritical Boolean @default(true) // alert when critical script item missed
+  createdAt DateTime @default(now())
+}
+```
+
+**Seed:** 1 script with 8 items (3 critical), 5 sample call records with scores, tags.
+
+**Commit**
+
+---
+
+### Task 20: QC Dashboard page
+
+**Files:**
+- Create: `src/app/(dashboard)/quality/page.tsx`
+- Create: `src/app/(dashboard)/quality/_components/qc-overview.tsx`
+- Create: `src/app/(dashboard)/quality/_components/qc-script-compliance.tsx`
+- Create: `src/app/(dashboard)/quality/_components/qc-categories.tsx`
+- Create: `src/app/(dashboard)/quality/_components/qc-tags.tsx`
+- Create: `src/lib/queries/quality.ts`
+
+**Implementation:**
+- Script compliance % (gauge/progress for department, breakdown by manager)
+- Dynamics chart over period (Tremor AreaChart)
+- Categories breakdown (incoming/outgoing/upsell — bar chart)
+- Tags cloud/list (top missed items)
+- Period filter
+- Link to each manager's QC detail
+
+**Commit**
+
+---
+
+### Task 21: QC Manager drill-down + Dialog detail
+
+**Files:**
+- Create: `src/app/(dashboard)/quality/manager/[id]/page.tsx`
+- Create: `src/app/(dashboard)/quality/calls/[id]/page.tsx`
+- Create: `src/app/(dashboard)/quality/_components/call-list.tsx`
+- Create: `src/app/(dashboard)/quality/_components/call-detail.tsx`
+- Create: `src/app/(dashboard)/quality/_components/script-checklist.tsx`
+- Create: `src/app/(dashboard)/quality/_components/audio-player.tsx`
+
+**QC Manager page:**
+- Manager header + stats (total calls, avg score, trend)
+- List of all dialogs: date, duration, score %, status badge
+- Click → call detail
+
+**Call detail page (2-column layout):**
+- Left: full transcript (text) + audio player
+- Right: Script checklist
+  - Each item: ✅ Done / ❌ Not done + AI comment
+  - Total score: XX%
+- Tags on this call
+
+**Commit**
+
+---
+
+### Task 22: Script management (Settings)
+
+**Files:**
+- Create: `src/app/(dashboard)/settings/scripts/page.tsx`
+- Create: `src/app/(dashboard)/settings/scripts/_components/script-editor.tsx`
+- Create: `src/app/api/settings/scripts/route.ts`
+
+**Implementation:**
+- List of scripts (name, category, item count, active/inactive)
+- Create/edit script: name, category, list of checklist items
+- Each item: text, weight (1-3), isCritical toggle
+- Drag-n-drop reorder items
+- CRUD API routes
+
+**Commit**
+
+---
+
+### Task 23: Telegram alerts
+
+**Files:**
+- Create: `src/lib/telegram/bot.ts`
+- Create: `src/app/(dashboard)/settings/telegram/page.tsx`
+- Create: `src/app/api/settings/telegram/route.ts`
+- Create: `src/lib/qc/alert-engine.ts`
+
+**Implementation:**
+- `bot.ts`: send message via Telegram Bot API (simple fetch, no library needed)
+- Alert engine: after call is scored, check for critical items missed → send TG alert
+- Alert message: "⚠ Менеджер [Имя] не сказал '[пункт]' в звонке #[ID] с [клиент]. Балл: XX%"
+- Settings page: bot token, chat ID, test button, enable/disable
+
+**Commit**
+
+---
+
+### Task 24: QC AI scoring pipeline
+
+**Files:**
+- Create: `src/lib/ai/score-call.ts`
+- Create: `src/app/api/quality/score/route.ts`
+
+**Implementation:**
+```typescript
+export async function scoreCall(callRecordId: string) {
+  // 1. Fetch call record with transcript
+  // 2. Fetch active script for tenant
+  // 3. Send to DeepSeek: transcript + script items → JSON response
+  //    {items: [{scriptItemId, isDone: bool, comment: string}], totalScore: float}
+  // 4. Upsert CallScore + CallScoreItems
+  // 5. Check for critical items missed → trigger TG alert
+  // 6. Return score
+}
+```
+
+**DeepSeek prompt:** Given transcript and checklist, evaluate each item (done/not done) with brief explanation. Return structured JSON.
+
+**Commit**
+
+---
+
+## Updated Task Summary
 
 | Phase | Tasks | What |
 |-------|-------|------|
@@ -1059,10 +1279,14 @@ ssh -i ~/.ssh/timeweb root@80.76.60.130 "cd /root/smart-analyze && git pull && d
 | 3. CRM | 10-12 | Bitrix24/amoCRM adapters, sync engine |
 | 4. AI | 13-16 | DeepSeek analysis, patterns, transcription |
 | 5. Deploy | 17-18 | Docker, Timeweb deploy |
+| **6. Quality Control** | **19-24** | **QC schema, dashboard, call scoring, scripts, TG alerts** |
 
-**Total: 19 tasks (18 + Task 7.5 deal detail). Estimated implementation order optimized for earliest demo.**
+**Total: 25 tasks. Execution order:**
 
-**Demo-first sequence:** Tasks 1→2→3→4→5→6→7→7.5→8→9 (seed data, full UI works) → 13→14→15 (AI works) → 10→11→12 (real CRM data) → 16 (audio) → 17→18 (deploy).
+**Phase A (UI with seed data):** 1→2→3→4→5→6→7→7.5→8→9→19→20→21→22
+**Phase B (AI engine):** 13→14→15→16→23→24
+**Phase C (Real data):** 10→11→12
+**Phase D (Deploy):** 17→18
 
 ---
 
@@ -1078,5 +1302,8 @@ These reusable components are referenced by multiple pages:
 | `accordion-insight.tsx` | Dashboard, Manager | Full insight accordion (title + desc + details + deals + managers + quotes) |
 | `status-badge.tsx` | Manager table, Manager detail | Colored status pill (Отлично/На карандаше/Критично) |
 | `medal-icon.tsx` | Manager table | 🥇🥈🥉 for top-3 |
-| `period-filter.tsx` | Dashboard | Day/Week/Month/Quarter pills |
+| `period-filter.tsx` | Dashboard, QC | Day/Week/Month/Quarter/All pills |
 | `ai-badge.tsx` | Header, sections | Pulsing AI dot + label |
+| `script-checklist.tsx` | QC Call detail | ✅/❌ checklist with AI comments |
+| `audio-player.tsx` | QC Call detail, Deal detail | Simple audio player for recordings |
+| `search-input.tsx` | Header | Global search field |

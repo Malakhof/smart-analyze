@@ -10,6 +10,8 @@
 
 **Design reference:** `prototype-final.html` — Premium Apple + AI gradient accents, dark/light toggle.
 
+**UI specification:** `docs/ui-specification.md` — полная спецификация всех экранов, аккордеонов, тултипов, навигационных связей.
+
 ---
 
 ## Phase 1: Project Foundation (Tasks 1-4)
@@ -595,12 +597,19 @@ git commit -m "feat: add theme system (dark/light), header, base dashboard layou
 **Implementation:** Server component fetches all dashboard data via Prisma queries grouped by selected period. Components match prototype-final.html exactly:
 
 1. **Period filter** — pills (Day/Week/Month/Quarter), uses URL search params
-2. **Funnel** — grid of stage cards with conversion %, time, progress bar
+2. **Funnel** — grid of stage cards with conversion %, time, progress bar, **⚠ warning icon on problem stages**
 3. **Success/Fail cards** — two cards with green/red left border, count + sum
-4. **Revenue potential** — big number with AI gradient, received/lost/loss%
-5. **Key metrics** — 4 cards: conversion, avg check, avg time, talk ratio
-6. **Manager rating** — table with avatar, deals, conversion badge, sortable
-7. **AI Insights** — accordion blocks with ✓/! icons, expandable items
+4. **Revenue potential** — big number with AI gradient, received/lost/loss%, **ⓘ tooltips on each metric**
+5. **Key metrics** — 4 cards: conversion, avg check, avg time, talk ratio, **each with ⓘ tooltip "как считается"**
+6. **Conversion dynamics chart** — line chart, period-dependent (Tremor AreaChart)
+7. **Manager rating** — table with avatar, medals (🥇🥈🥉), deals, conversion badge with trend arrow, sortable, **click → /managers/[id]**
+8. **AI Insights** — two blocks (✓ success / ⚠ danger), each with **accordion items** that expand to show:
+   - Title (uppercase bold)
+   - Short description (1-2 sentences)
+   - **"Подробное описание:"** — full AI text (2-3 paragraphs)
+   - **"Список сделок где встречается:"** — clickable chip badges (#90001, #90003...) → link to /deals/[id]
+   - **"Список менеджеров:"** — clickable chip badges (Анна Петрова) → link to /managers/[id]
+   - **"Список цитат:"** — actual quotes with deal number in parentheses
 
 **Queries in `src/lib/queries/dashboard.ts`:**
 - `getDashboardStats(tenantId, period)` — aggregates from Deal, Manager, DealAnalysis
@@ -641,10 +650,66 @@ git commit -m "feat: add main dashboard page with all widgets"
 
 **Implementation:**
 - Back link, avatar, name, status pill
-- 5 stat cards (deals, success, conversion, avg check, talk ratio)
-- Success deals section with AI analysis, quotes (from DealAnalysis)
-- Failure deals section
-- Detected patterns for this manager
+- 5 stat cards (deals, success, conversion, avg check, talk ratio) — **each with ⓘ tooltip**
+- **Conversion dynamics chart** for this manager (Tremor AreaChart)
+- **Response time per lead** metric
+- **Success deals section:**
+  - Deal card: title, amount, duration, stage count, message count
+  - "Что работает лучше всего" — AI recommendations with specific quotes
+  - "Выявленный паттерн успеха" — linked pattern
+  - **Link to deal page** (/deals/[id])
+- **Failure deals section** (for problem managers):
+  - "Основной анти-паттерн менеджера" — AI description
+  - **"Список цитат"** — specific phrases leading to failure
+- Detected patterns for this manager — chip badges linking to /patterns
+
+**Commit**
+
+---
+
+### Task 7.5: Deal detail page (NEW — from screenshot)
+
+**Files:**
+- Create: `src/app/(dashboard)/deals/[id]/page.tsx`
+- Create: `src/app/(dashboard)/deals/[id]/_components/deal-header.tsx`
+- Create: `src/app/(dashboard)/deals/[id]/_components/deal-ai-analysis.tsx`
+- Create: `src/app/(dashboard)/deals/[id]/_components/deal-metrics.tsx`
+- Create: `src/app/(dashboard)/deals/[id]/_components/deal-stats-sidebar.tsx`
+- Create: `src/app/(dashboard)/deals/[id]/_components/stage-tree.tsx`
+- Create: `src/app/(dashboard)/deals/[id]/_components/stage-navigation.tsx`
+- Create: `src/lib/queries/deal-detail.ts`
+
+**Implementation — 2-column layout:**
+
+**Left column:**
+1. **Deal header:** Менеджер: [name] | Сумма: [amount] ₽ | Создана: [date] | Длительность: [days] дн
+2. **AI-анализ сделки** — large block with AI icon, full analysis text (1 paragraph summary of what happened)
+3. **4 metric cards:**
+   - Talk Ratio: XX.XX% (ⓘ)
+   - Время ответа: XX.X минут
+   - Сообщений: N (М:X К:Y) — manager:client breakdown
+   - Звонков: N (М:X К:Y)
+4. **Дерево этапов (Stage Tree)** — vertical timeline:
+   - Colored dots + vertical line connecting stages
+   - Each stage = accordion:
+     - **● ЭТАП N: [Stage Name]**
+     - Dates: DD.MM.YYYY, HH:MM – DD.MM.YYYY, HH:MM
+     - Duration: X.X дн
+     - ▾ expand → **messages/conversation of this stage**
+   - Inside expanded stage: chronological list of messages (sender, timestamp, text)
+
+**Right column (sidebar):**
+1. **Статистика сделки:**
+   - Всего коммуникаций: N
+   - Сообщений: N | Звонков: N
+   - Ср. время ответа: XX.X минут
+   - Самый долгий этап: [Name] (X дн)
+2. **Быстрая навигация** — clickable list of all stages:
+   1. Новый лид
+   2. Взят в работу
+   3. Квалифицирован
+   4. ...
+   - Click → scroll to that stage in the tree
 
 **Commit**
 
@@ -658,7 +723,18 @@ git commit -m "feat: add main dashboard page with all widgets"
 - Create: `src/app/(dashboard)/patterns/_components/pattern-filter.tsx`
 - Create: `src/lib/queries/patterns.ts`
 
-**Implementation:** Filter pills (All/Success/Failure) + grid of pattern cards. Each card: type badge, description, 4 metrics (strength/impact/reliability/coverage), deal/manager count, AI description with gradient label.
+**Implementation:** Filter pills (All/Success/Failure) + grid of pattern cards (2 columns: success left, failure right).
+
+Each pattern card:
+- Type badge (✓ Паттерн успеха / ⚠ Паттерн провала)
+- Description text
+- **4 metrics in row:** Сила (0-100 + label) | Влияние (±XX.X п.п. + label) | Надёжность (% + label) | Охват (% + label)
+- Stats row: Сделок: N | Менеджеров: N
+- **📖 Подробное описание** (expandable):
+  - 2-3 paragraphs AI text (суть, когда возникает, конкретные приёмы/фразы, почему работает/ломает)
+  - **"Список сделок где встречается:"** — clickable chip badges (#90001...) → /deals/[id]
+  - **"Список менеджеров:"** — clickable chip badges → /managers/[id]
+  - **"Список цитат:"** — quotes with deal numbers in parentheses
 
 **Commit**
 
@@ -979,11 +1055,28 @@ ssh -i ~/.ssh/timeweb root@80.76.60.130 "cd /root/smart-analyze && git pull && d
 | Phase | Tasks | What |
 |-------|-------|------|
 | 1. Foundation | 1-4 | Next.js, DB schema, auth, theme |
-| 2. Pages | 5-9 | Dashboard, managers, patterns, settings |
+| 2. Pages | 5-9 (+7.5) | Dashboard, managers, **deal detail**, patterns, settings |
 | 3. CRM | 10-12 | Bitrix24/amoCRM adapters, sync engine |
 | 4. AI | 13-16 | DeepSeek analysis, patterns, transcription |
 | 5. Deploy | 17-18 | Docker, Timeweb deploy |
 
-**Total: 18 tasks. Estimated implementation order optimized for earliest demo.**
+**Total: 19 tasks (18 + Task 7.5 deal detail). Estimated implementation order optimized for earliest demo.**
 
-**Demo-first sequence:** Tasks 1→2→3→4→5→6→7→8→9 (seed data, full UI works) → 13→14→15 (AI works) → 10→11→12 (real CRM data) → 16 (audio) → 17→18 (deploy).
+**Demo-first sequence:** Tasks 1→2→3→4→5→6→7→7.5→8→9 (seed data, full UI works) → 13→14→15 (AI works) → 10→11→12 (real CRM data) → 16 (audio) → 17→18 (deploy).
+
+---
+
+## Shared UI Components (created across tasks)
+
+These reusable components are referenced by multiple pages:
+
+| Component | Used In | Description |
+|-----------|---------|-------------|
+| `tooltip-metric.tsx` | Dashboard, Manager, Deal | ⓘ icon with popover "как считается" |
+| `chip-badge.tsx` | Insights, Patterns, Manager | Clickable badge (#90001, Анна Петрова) with link |
+| `quote-block.tsx` | Insights, Patterns, Manager, Deal | Mono quote with deal number |
+| `accordion-insight.tsx` | Dashboard, Manager | Full insight accordion (title + desc + details + deals + managers + quotes) |
+| `status-badge.tsx` | Manager table, Manager detail | Colored status pill (Отлично/На карандаше/Критично) |
+| `medal-icon.tsx` | Manager table | 🥇🥈🥉 for top-3 |
+| `period-filter.tsx` | Dashboard | Day/Week/Month/Quarter pills |
+| `ai-badge.tsx` | Header, sections | Pulsing AI dot + label |

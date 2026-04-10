@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Analyze — Sleek</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#3B82F6;--blue-dim:rgba(59,130,246,0.06);--blue-ring:rgba(59,130,246,0.15);
+  --bg:#FAFAFA;--surface:#FFFFFF;
+  --ink:#0F172A;--ink-2:#475569;--ink-3:#94A3B8;--ink-4:#CBD5E1;--ink-5:#E2E8F0;--ink-6:#F1F5F9;
+  --green:#059669;--green-bg:#ECFDF5;
+  --amber:#D97706;--amber-bg:#FFFBEB;
+  --red:#DC2626;--red-bg:#FEF2F2;
+  --violet:#7C3AED;
+  --r:12px;--r-sm:8px;--r-xs:6px;
+  --font:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html{font-size:16px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.5}
+
+/* HEADER — borderless, floating */
+.header{position:sticky;top:0;z-index:100;background:rgba(250,250,250,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);padding:0 40px;height:52px;display:flex;align-items:center;gap:40px}
+.logo{font-size:15px;font-weight:700;letter-spacing:-0.04em;color:var(--ink)}
+.logo span{color:var(--ink-3);font-weight:400}
+.nav{display:flex;gap:0}
+.nav-btn{position:relative;padding:14px 16px;border:none;background:none;color:var(--ink-3);font-family:var(--font);font-size:13px;font-weight:500;cursor:pointer;transition:color 0.2s}
+.nav-btn:hover{color:var(--ink-2)}
+.nav-btn.active{color:var(--ink)}
+.nav-btn.active::after{content:'';position:absolute;bottom:0;left:16px;right:16px;height:2px;background:var(--ink);border-radius:1px}
+.spacer{flex:1}
+.org{font-size:13px;color:var(--ink-3);padding:6px 12px;border:1px solid var(--ink-5);border-radius:var(--r-xs);cursor:pointer;background:var(--surface);transition:border-color 0.2s}
+.org:hover{border-color:var(--ink-4)}
+
+.main{max-width:1120px;margin:0 auto;padding:32px 24px 80px}
+.page{display:none}.page.active{display:block;animation:fade 0.2s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* PERIOD */
+.pills{display:inline-flex;gap:4px;margin-bottom:32px}
+.pill{padding:5px 14px;border-radius:99px;border:1px solid transparent;background:none;color:var(--ink-3);font-family:var(--font);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s}
+.pill:hover{color:var(--ink-2)}
+.pill.on{background:var(--ink);color:#fff}
+
+/* TYPOGRAPHY */
+h2.title{font-size:22px;font-weight:700;letter-spacing:-0.04em;margin-bottom:20px}
+h3.sub{font-size:15px;font-weight:600;letter-spacing:-0.02em;margin-bottom:16px;color:var(--ink)}
+.label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-3)}
+
+/* FUNNEL — horizontal line-connected */
+.funnel{display:flex;gap:0;margin-bottom:40px;position:relative}
+.funnel::before{content:'';position:absolute;top:50%;left:0;right:0;height:1px;background:var(--ink-5);z-index:0}
+.f-stage{flex:1;position:relative;z-index:1;text-align:center;padding:20px 12px;background:var(--bg);transition:transform 0.15s}
+.f-stage:hover{transform:translateY(-2px)}
+.f-num{font-size:24px;font-weight:700;letter-spacing:-0.03em;margin-bottom:4px}
+.f-num.g{color:var(--green)}.f-num.a{color:var(--amber)}.f-num.r{color:var(--red)}
+.f-name{font-size:11px;color:var(--ink-3);font-weight:500}
+.f-time{font-size:10px;color:var(--ink-4);margin-top:2px}
+.f-dot{width:8px;height:8px;border-radius:50%;background:var(--ink-5);margin:8px auto 0;position:relative}
+.f-dot.g{background:var(--green)}.f-dot.a{background:var(--amber)}
+
+/* STAT CARDS — borderless, shadow on hover */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:32px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:32px}
+.grid-5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:32px}
+.scard{background:var(--surface);border-radius:var(--r);padding:24px;transition:box-shadow 0.2s,transform 0.15s;cursor:default}
+.scard:hover{box-shadow:0 2px 12px rgba(0,0,0,0.06);transform:translateY(-1px)}
+.scard .label{margin-bottom:8px}
+.scard .num{font-size:32px;font-weight:800;letter-spacing:-0.04em;line-height:1}
+.scard .sub{font-size:13px;color:var(--ink-2);margin-top:8px}
+.scard .change{font-size:12px;font-weight:500;margin-top:6px}
+.scard .change.up{color:var(--green)}.scard .change.dn{color:var(--red)}
+.scard.green-accent{border-left:3px solid var(--green)}
+.scard.red-accent{border-left:3px solid var(--red)}
+
+/* BIG REVENUE */
+.revenue{background:var(--surface);border-radius:var(--r);padding:48px;text-align:center;margin-bottom:32px}
+.revenue .big{font-size:56px;font-weight:800;letter-spacing:-0.05em;margin:8px 0 32px;color:var(--ink);line-height:1}
+.revenue .row{display:flex;justify-content:center;gap:56px;margin-bottom:24px}
+.revenue .row .item .s{font-size:12px;color:var(--ink-3);font-weight:500;margin-bottom:4px}
+.revenue .row .item .v{font-size:18px;font-weight:700;letter-spacing:-0.02em}
+.revenue .row .item .v.g{color:var(--green)}.revenue .row .item .v.r{color:var(--red)}.revenue .row .item .v.a{color:var(--amber)}
+.revenue .cta{display:inline-block;font-size:13px;color:var(--ink-2);background:var(--ink-6);padding:10px 24px;border-radius:var(--r-xs)}
+
+/* TABLE — clean lines */
+.tbl-wrap{background:var(--surface);border-radius:var(--r);overflow:hidden;margin-bottom:24px}
+table{width:100%;border-collapse:collapse}
+th{padding:10px 20px;text-align:left;font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--ink-5)}
+td{padding:14px 20px;font-size:14px}
+tr{cursor:pointer;transition:background 0.1s}
+tr:hover td{background:var(--ink-6)}
+tr:not(:last-child) td{border-bottom:1px solid var(--ink-6)}
+.m-name{display:flex;align-items:center;gap:10px}
+.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff}
+.av-b{background:var(--blue)}.av-v{background:var(--violet)}.av-a{background:var(--amber)}.av-g{background:var(--ink-3)}
+.name{font-weight:500}.role{font-size:11px;color:var(--ink-3)}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.tag-g{background:var(--green-bg);color:var(--green)}
+.tag-a{background:var(--amber-bg);color:var(--amber)}
+.tag-r{background:var(--red-bg);color:var(--red)}
+
+/* INSIGHTS — minimal cards */
+.insights{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:40px}
+.ins{background:var(--surface);border-radius:var(--r);padding:24px;border-left:3px solid transparent;transition:box-shadow 0.2s}
+.ins:hover{box-shadow:0 2px 12px rgba(0,0,0,0.06)}
+.ins.gs{border-left-color:var(--green)}
+.ins.rs{border-left-color:var(--red)}
+.ins .ih{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px}
+.ins .ih.g{color:var(--green)}.ins .ih.r{color:var(--red)}
+.ins .it{font-size:15px;font-weight:600;letter-spacing:-0.02em;margin-bottom:6px}
+.ins .id{font-size:13px;color:var(--ink-2);line-height:1.7}
+
+/* MANAGER DETAIL */
+.back{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-3);cursor:pointer;margin-bottom:24px;font-weight:500;transition:color 0.15s}
+.back:hover{color:var(--ink)}
+.mh{display:flex;align-items:center;gap:16px;margin-bottom:32px}
+.mh-av{width:44px;height:44px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:#fff}
+.mh h2{font-size:22px;font-weight:700;letter-spacing:-0.03em}
+.mh .sub{font-size:13px;color:var(--ink-3)}
+.status{margin-left:auto;padding:5px 14px;border-radius:99px;font-size:12px;font-weight:600}
+.st-g{background:var(--green-bg);color:var(--green)}
+
+/* DEAL CARD */
+.deal{background:var(--surface);border-radius:var(--r);padding:24px;margin-bottom:12px;transition:box-shadow 0.2s}
+.deal:hover{box-shadow:0 2px 12px rgba(0,0,0,0.06)}
+.deal-top{display:flex;justify-content:space-between;margin-bottom:12px}
+.deal-title{font-weight:600;font-size:15px;letter-spacing:-0.02em}
+.deal-amt{font-weight:700;color:var(--green)}
+.deal-meta{display:flex;gap:16px;font-size:12px;color:var(--ink-3);margin-bottom:16px}
+.deal-ai{background:var(--ink-6);border-radius:var(--r-xs);padding:14px 16px;font-size:13px;color:var(--ink-2);line-height:1.7;border-left:3px solid var(--blue)}
+.quote{background:var(--ink-6);border-radius:var(--r-xs);padding:12px 16px;font-size:12px;font-family:var(--mono);color:var(--ink-2);line-height:1.6;margin-top:8px;border-left:3px solid var(--violet)}
+
+/* PATTERNS */
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pat{background:var(--surface);border-radius:var(--r);overflow:hidden;transition:box-shadow 0.2s}
+.pat:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06)}
+.pat.sp{border-top:2px solid var(--green)}.pat.dp{border-top:2px solid var(--red)}
+.pat-head{padding:24px 24px 20px}
+.pat-type{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px}
+.pat-type.g{color:var(--green)}.pat-type.r{color:var(--red)}
+.pat-desc{font-size:14px;color:var(--ink-2);line-height:1.5;margin-bottom:20px}
+.pm-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.pm{text-align:center}
+.pm .l{font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.05em;font-weight:500;margin-bottom:2px}
+.pm .v{font-size:20px;font-weight:700;letter-spacing:-0.02em}
+.pm .s{font-size:10px;color:var(--ink-4)}
+.pat-mid{display:flex;gap:32px;padding:10px 24px;border-top:1px solid var(--ink-6);border-bottom:1px solid var(--ink-6);background:var(--ink-6)}
+.pat-mid .i{font-size:12px;color:var(--ink-3)}
+.pat-mid .i strong{color:var(--ink);font-size:15px;font-weight:700;display:block}
+.pat-body{padding:20px 24px}
+.pat-body h4{font-size:13px;font-weight:600;margin-bottom:10px}
+.pat-body p{font-size:13px;color:var(--ink-2);line-height:1.7}
+
+/* SETTINGS */
+.set-grid{display:grid;grid-template-columns:200px 1fr;gap:16px}
+.set-nav{display:flex;flex-direction:column;gap:2px}
+.sn{padding:8px 12px;border-radius:var(--r-xs);font-size:14px;color:var(--ink-3);cursor:pointer;font-weight:500;transition:all 0.15s}
+.sn:hover{color:var(--ink);background:var(--ink-6)}
+.sn.on{color:var(--blue);background:var(--blue-dim)}
+.set-main{background:var(--surface);border-radius:var(--r);padding:32px}
+.set-main h2{font-size:20px;font-weight:700;letter-spacing:-0.03em;margin-bottom:4px}
+.set-main .desc{font-size:14px;color:var(--ink-3);margin-bottom:24px}
+.fg{margin-bottom:18px}
+.fl{display:block;font-size:13px;font-weight:500;margin-bottom:5px}
+.fi{width:100%;padding:9px 12px;border:1px solid var(--ink-5);border-radius:var(--r-xs);font-family:var(--font);font-size:14px;color:var(--ink);outline:none;transition:border-color 0.15s,box-shadow 0.15s;background:var(--surface)}
+.fi:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-ring)}
+.fi::placeholder{color:var(--ink-4)}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.btn{padding:9px 20px;border-radius:var(--r-xs);border:none;font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer;transition:all 0.15s}
+.btn-dark{background:var(--ink);color:#fff}.btn-dark:hover{opacity:0.85}
+.btn-line{background:none;border:1px solid var(--ink-5);color:var(--ink)}.btn-line:hover{background:var(--ink-6)}
+.crm-ok{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--r-xs);font-size:13px;font-weight:500;background:var(--green-bg);color:var(--green);margin-bottom:18px}
+.crm-off{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--r-xs);font-size:13px;font-weight:500;background:var(--red-bg);color:var(--red);margin-bottom:18px}
+hr.div{border:none;border-top:1px solid var(--ink-6);margin:24px 0}
+
+@media(max-width:1024px){.funnel{flex-wrap:wrap}.f-stage{flex:none;width:calc(33% - 8px)}.grid-4,.grid-5{grid-template-columns:repeat(2,1fr)}.pgrid,.grid-2,.insights{grid-template-columns:1fr}.set-grid{grid-template-columns:1fr}}
+@media(max-width:768px){.header{padding:0 16px;gap:16px}.main{padding:16px}.nav{display:none}.f-stage{width:100%}.revenue .row{flex-direction:column;gap:16px}}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">Smart<span>Analyze</span></div>
+  <nav class="nav">
+    <button class="nav-btn active" onclick="go('dashboard')">Главная</button>
+    <button class="nav-btn" onclick="go('managers')">Менеджеры</button>
+    <button class="nav-btn" onclick="go('patterns')">Паттерны</button>
+    <button class="nav-btn" onclick="go('settings')">Настройки</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="org">ООО «Рассвет»</div>
+</header>
+
+<main class="main">
+
+<!-- DASHBOARD -->
+<div class="page active" id="p-dashboard">
+  <div class="pills">
+    <button class="pill" onclick="sp(this)">День</button>
+    <button class="pill on" onclick="sp(this)">Неделя</button>
+    <button class="pill" onclick="sp(this)">Месяц</button>
+    <button class="pill" onclick="sp(this)">Квартал</button>
+  </div>
+
+  <h3 class="sub">Воронка продаж</h3>
+  <div class="funnel">
+    <div class="f-stage"><div class="f-num g">100%</div><div class="f-name">Новая заявка</div><div class="f-time">0.3 дн</div><div class="f-dot g"></div></div>
+    <div class="f-stage"><div class="f-num g">42.3%</div><div class="f-name">Квалификация</div><div class="f-time">1.4 дн</div><div class="f-dot g"></div></div>
+    <div class="f-stage"><div class="f-num a">55%</div><div class="f-name">Презентация</div><div class="f-time">1.3 дн</div><div class="f-dot a"></div></div>
+    <div class="f-stage"><div class="f-num a">42.3%</div><div class="f-name">КП</div><div class="f-time">1.3 дн</div><div class="f-dot a"></div></div>
+    <div class="f-stage"><div class="f-num a">55%</div><div class="f-name">Согласование</div><div class="f-time">1.4 дн</div><div class="f-dot a"></div></div>
+    <div class="f-stage"><div class="f-num g">100%</div><div class="f-name">Закрытие</div><div class="f-time">1.8 дн</div><div class="f-dot g"></div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="scard green-accent"><div class="label">Успех</div><div class="num">22</div><div class="sub">Общая сумма <strong>7 966 905 ₽</strong></div></div>
+    <div class="scard red-accent"><div class="label">Провал</div><div class="num" style="color:var(--red)">30</div><div class="sub">Сумма потерь <strong>10 863 962 ₽</strong></div></div>
+  </div>
+
+  <div class="revenue">
+    <div class="label">Потенциал роста выручки</div>
+    <div class="big">18 830 868 ₽</div>
+    <div class="row">
+      <div class="item"><div class="s">Получено</div><div class="v g">7 966 905 ₽</div></div>
+      <div class="item"><div class="s">Потеряно</div><div class="v r">10 863 962 ₽</div></div>
+      <div class="item"><div class="s">Потери</div><div class="v a">57.7%</div></div>
+    </div>
+    <div class="cta">Устранив провалы, отдел увеличит выручку на <strong>10 863 962 ₽</strong></div>
+  </div>
+
+  <h3 class="sub">Ключевые метрики</h3>
+  <div class="grid-4">
+    <div class="scard"><div class="label">Конверсия</div><div class="num" style="font-size:28px">42.3%</div><div class="change dn">-3.2%</div></div>
+    <div class="scard"><div class="label">Средний чек</div><div class="num" style="font-size:28px">362 132 ₽</div><div class="change up">+8.1%</div></div>
+    <div class="scard"><div class="label">Ср. время</div><div class="num" style="font-size:28px">14.2 дн</div><div class="change up">-2.1 дн</div></div>
+    <div class="scard"><div class="label">Talk Ratio</div><div class="num" style="font-size:28px">55.0%</div><div class="change up">норма</div></div>
+  </div>
+
+  <h3 class="sub">Рейтинг менеджеров</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Менеджер</th><th>Сделок</th><th>Успешных</th><th>Конверсия</th><th>Ср. Чек</th><th>Ср. Время</th><th>Talk Ratio</th></tr></thead>
+      <tbody>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-b">АК</div><div><div class="name">Алина Каримова</div><div class="role">Менеджер</div></div></div></td><td>1</td><td>1</td><td><span class="tag tag-g">100% ↗</span></td><td>354 781 ₽</td><td>172.8 дн</td><td>55.7%</td></tr>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-v">ДБ</div><div><div class="name">Дарья Белова</div><div class="role">Менеджер</div></div></div></td><td>1</td><td>1</td><td><span class="tag tag-g">100% ↗</span></td><td>0 ₽</td><td>490.9 дн</td><td>40.2%</td></tr>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-a">МН</div><div><div class="name">Мадина Нурланова</div><div class="role">Менеджер</div></div></div></td><td>2</td><td>1</td><td><span class="tag tag-a">50% →</span></td><td>21 103 ₽</td><td>83.5 дн</td><td>78.2%</td></tr>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-g">ЕС</div><div><div class="name">Екатерина Соколова</div><div class="role">Менеджер</div></div></div></td><td>48</td><td>19</td><td><span class="tag tag-r">39.6% ↘</span></td><td>388 427 ₽</td><td>92.7 дн</td><td>46%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="insights">
+    <div class="ins gs"><div class="ih g">Работает лучше всего</div><div class="it">Гибкое конфигурирование без скидок</div><div class="id">Менеджеры не снижают цену, а подстраивают состав, тираж и конфигурацию заказа под рамки клиента.</div></div>
+    <div class="ins rs"><div class="ih r">Приводит к провалу</div><div class="it">Игнорирование вопросов о цене</div><div class="id">Клиент задаёт прямой вопрос про цену, а получает каталог или встречные вопросы вместо конкретных цифр.</div></div>
+  </div>
+</div>
+
+<!-- MANAGERS -->
+<div class="page" id="p-managers">
+  <h2 class="title">Менеджеры</h2>
+  <div class="grid-4" style="margin-bottom:24px">
+    <div class="scard"><div class="label">Всего</div><div class="num" style="font-size:28px">4</div></div>
+    <div class="scard"><div class="label">Отлично</div><div class="num" style="font-size:28px;color:var(--green)">2</div></div>
+    <div class="scard"><div class="label">На карандаше</div><div class="num" style="font-size:28px;color:var(--amber)">1</div></div>
+    <div class="scard"><div class="label">Критично</div><div class="num" style="font-size:28px;color:var(--red)">1</div></div>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Менеджер</th><th>Статус</th><th>Сделок</th><th>Конверсия</th><th>Ср. Чек</th><th>Talk Ratio</th></tr></thead>
+      <tbody>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-b">АК</div><div><div class="name">Алина Каримова</div><div class="role">Менеджер</div></div></div></td><td><span class="tag tag-g">Отлично</span></td><td>1</td><td>100%</td><td>354 781 ₽</td><td>55.7%</td></tr>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-v">ДБ</div><div><div class="name">Дарья Белова</div><div class="role">Менеджер</div></div></div></td><td><span class="tag tag-g">Отлично</span></td><td>1</td><td>100%</td><td>0 ₽</td><td>40.2%</td></tr>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-a">МН</div><div><div class="name">Мадина Нурланова</div><div class="role">Менеджер</div></div></div></td><td><span class="tag tag-a">На карандаше</span></td><td>2</td><td>50%</td><td>21 103 ₽</td><td>78.2%</td></tr>
+        <tr onclick="mgr()"><td><div class="m-name"><div class="av av-g">ЕС</div><div><div class="name">Екатерина Соколова</div><div class="role">Менеджер</div></div></div></td><td><span class="tag tag-r">Критично</span></td><td>48</td><td>39.6%</td><td>388 427 ₽</td><td>46%</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MANAGER DETAIL -->
+<div class="page" id="p-mgr">
+  <div class="back" onclick="go('managers')">← Менеджеры</div>
+  <div class="mh">
+    <div class="mh-av">АК</div>
+    <div><h2>Алина Каримова</h2><div class="sub">Менеджер по продажам</div></div>
+    <div class="status st-g">Отлично</div>
+  </div>
+  <div class="grid-5">
+    <div class="scard" style="text-align:center"><div class="label">Сделок</div><div class="num" style="font-size:24px">1</div></div>
+    <div class="scard" style="text-align:center"><div class="label">Успешных</div><div class="num" style="font-size:24px;color:var(--green)">1</div></div>
+    <div class="scard" style="text-align:center"><div class="label">Конверсия</div><div class="num" style="font-size:24px;color:var(--green)">100%</div></div>
+    <div class="scard" style="text-align:center"><div class="label">Ср. чек</div><div class="num" style="font-size:24px">354 781 ₽</div></div>
+    <div class="scard" style="text-align:center"><div class="label">Talk Ratio</div><div class="num" style="font-size:24px">55.7%</div></div>
+  </div>
+
+  <h3 class="sub" style="color:var(--green)">● Успешные сделки</h3>
+  <div class="deal">
+    <div class="deal-top"><div class="deal-title">Сделка #1247 — ООО «Текстиль-Про»</div><div class="deal-amt">354 781 ₽</div></div>
+    <div class="deal-meta"><span>172.8 дн</span><span>6 этапов</span><span>48 сообщений</span></div>
+    <div class="deal-ai"><strong>Что сработало:</strong> Менеджер не отказывает по цене напрямую, а подстраивает состав заказа под рамки клиента, сохраняя маржу без прямых скидок.</div>
+    <div class="quote">«Давайте посмотрим другой вариант — ткань на 15% дешевле, визуально почти идентичная. Подготовлю образцы.»</div>
+    <div class="quote">«При заказе от 500 шт могу согласовать 50/50 — половину сейчас, половину через 30 дней.»</div>
+  </div>
+
+  <h3 class="sub" style="margin-top:32px;color:var(--violet)">★ Выявленные паттерны</h3>
+  <div class="ins gs"><div class="it">Адаптивное ценообразование</div><div class="id">Алина никогда не даёт прямую скидку. Конфигурирует заказ: ткань, тираж, условия оплаты. Клиент чувствует индивидуальный подход, маржа сохраняется. Паттерн в 100% успешных сделок.</div></div>
+</div>
+
+<!-- PATTERNS -->
+<div class="page" id="p-patterns">
+  <h2 class="title">Библиотека паттернов</h2>
+  <div class="pills" style="margin-bottom:24px">
+    <button class="pill on">Все</button>
+    <button class="pill">Успех</button>
+    <button class="pill">Провал</button>
+  </div>
+  <div class="pgrid">
+    <div class="pat sp">
+      <div class="pat-head"><div class="pat-type g">Паттерн успеха</div><div class="pat-desc">Адаптивное конфигурирование заказа вместо прямых скидок для удержания маржи</div><div class="pm-row"><div class="pm"><div class="l">Сила</div><div class="v" style="color:var(--green)">84</div><div class="s">Сильный</div></div><div class="pm"><div class="l">Влияние</div><div class="v" style="color:var(--green)">+83.3</div><div class="s">п.п.</div></div><div class="pm"><div class="l">Надёжность</div><div class="v">91%</div><div class="s">У всех</div></div><div class="pm"><div class="l">Охват</div><div class="v">72.7%</div><div class="s">Массовый</div></div></div></div>
+      <div class="pat-mid"><div class="i">Сделок<strong>16</strong></div><div class="i">Менеджеров<strong>4</strong></div></div>
+      <div class="pat-body"><h4>Подробное описание</h4><p>Менеджер предлагает альтернативные материалы, меняет тираж, предлагает рассрочку. Клиент получает решение в рамках бюджета, маржа сохраняется.</p></div>
+    </div>
+    <div class="pat dp">
+      <div class="pat-head"><div class="pat-type r">Паттерн провала</div><div class="pat-desc">Игнорирование прямых вопросов клиента о цене, подмена ответа каталогом</div><div class="pm-row"><div class="pm"><div class="l">Сила</div><div class="v" style="color:var(--red)">14</div><div class="s">Шум</div></div><div class="pm"><div class="l">Влияние</div><div class="v" style="color:var(--red)">-73.3</div><div class="s">п.п.</div></div><div class="pm"><div class="l">Надёжность</div><div class="v">75%</div></div><div class="pm"><div class="l">Охват</div><div class="v">0.0%</div></div></div></div>
+      <div class="pat-mid"><div class="i">Сделок<strong>22</strong></div><div class="i">Менеджеров<strong>2</strong></div></div>
+      <div class="pat-body"><h4>Подробное описание</h4><p>Менеджер не даёт прямого ответа. Отправляет каталог, задаёт встречные технические вопросы, использует фразы-заглушки. Клиент уходит.</p></div>
+    </div>
+    <div class="pat sp">
+      <div class="pat-head"><div class="pat-type g">Паттерн успеха</div><div class="pat-desc">Проактивное предложение образцов и тестовых тиражей для снижения барьера</div><div class="pm-row"><div class="pm"><div class="l">Сила</div><div class="v" style="color:var(--green)">71</div><div class="s">Сильный</div></div><div class="pm"><div class="l">Влияние</div><div class="v" style="color:var(--green)">+61.2</div><div class="s">п.п.</div></div><div class="pm"><div class="l">Надёжность</div><div class="v">85%</div><div class="s">Стабильный</div></div><div class="pm"><div class="l">Охват</div><div class="v">45.5%</div><div class="s">Средний</div></div></div></div>
+      <div class="pat-mid"><div class="i">Сделок<strong>10</strong></div><div class="i">Менеджеров<strong>3</strong></div></div>
+      <div class="pat-body"><h4>Подробное описание</h4><p>Бесплатные образцы или мини-тиражи на ранних этапах. Снижает воспринимаемый риск для новых клиентов.</p></div>
+    </div>
+    <div class="pat dp">
+      <div class="pat-head"><div class="pat-type r">Паттерн провала</div><div class="pat-desc">Медленный ответ и пассивный follow-up — клиент уходит к конкуренту</div><div class="pm-row"><div class="pm"><div class="l">Сила</div><div class="v" style="color:var(--red)">28</div><div class="s">Умеренный</div></div><div class="pm"><div class="l">Влияние</div><div class="v" style="color:var(--red)">-52.1</div><div class="s">п.п.</div></div><div class="pm"><div class="l">Надёжность</div><div class="v">68%</div></div><div class="pm"><div class="l">Охват</div><div class="v">33.3%</div><div class="s">Средний</div></div></div></div>
+      <div class="pat-mid"><div class="i">Сделок<strong>15</strong></div><div class="i">Менеджеров<strong>2</strong></div></div>
+      <div class="pat-body"><h4>Подробное описание</h4><p>Задержка ответа >4 часов. Follow-up пассивный: «Ещё актуально?» вместо конкретного предложения.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="page" id="p-settings">
+  <h2 class="title">Настройки</h2>
+  <div class="set-grid">
+    <div class="set-nav">
+      <div class="sn on">CRM-подключение</div>
+      <div class="sn">Компания</div>
+      <div class="sn">Тарифный план</div>
+      <div class="sn">Пользователи</div>
+      <div class="sn">Уведомления</div>
+    </div>
+    <div class="set-main">
+      <h2>Подключение CRM</h2>
+      <div class="desc">Настройте интеграцию для автоматической загрузки сделок.</div>
+      <div class="crm-ok">✓ Битрикс24 подключён — ООО «Рассвет»</div>
+      <div class="fr"><div class="fg"><label class="fl">Webhook URL</label><input class="fi" value="https://portal.bitrix24.ru/rest/1/abc123xyz/"></div><div class="fg"><label class="fl">Воронка</label><select class="fi"><option>Все воронки</option><option>Продажи B2B</option></select></div></div>
+      <div class="fg"><button class="btn btn-dark">Синхронизировать</button><span style="font-size:12px;color:var(--ink-3);margin-left:12px">Последняя: 10 апреля, 18:30</span></div>
+      <hr class="div">
+      <div class="crm-off">✕ amoCRM не подключён</div>
+      <div class="fr"><div class="fg"><label class="fl">Субдомен</label><input class="fi" placeholder="company.amocrm.ru"></div><div class="fg"><label class="fl">API-ключ</label><input class="fi" type="password" placeholder="Вставьте ключ"></div></div>
+      <button class="btn btn-line">Подключить amoCRM</button>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+const map={dashboard:'Главная',managers:'Менеджеры',patterns:'Паттерны',settings:'Настройки',mgr:'Менеджеры'};
+function go(n){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('p-'+n).classList.add('active');document.querySelectorAll('.nav-btn').forEach(b=>{b.classList.remove('active');if(b.textContent.includes(map[n]||'___'))b.classList.add('active')})}
+function mgr(){go('mgr')}
+function sp(b){b.parentElement.querySelectorAll('.pill').forEach(x=>x.classList.remove('on'));b.classList.add('on')}
+</script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+import {
+  CrmAdapter,
+  CrmDeal,
+  CrmFunnel,
+  CrmManager,
+  CrmMessage,
+} from "./types"
+
+/** Rate-limit pause: amoCRM allows 7 req/sec */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+const REQUEST_DELAY_MS = 150 // ~6.6 req/sec, safe margin for 7 req/sec limit
+const REQUEST_TIMEOUT_MS = 30_000
+const MAX_PAGES = 200 // safety cap: 200 pages * 250 = 50,000 items
+const PAGE_LIMIT = 250 // max items per page in amoCRM v4
+
+// amoCRM special status IDs
+const STATUS_WON = 142
+const STATUS_LOST = 143
+
+// -------- amoCRM response types --------
+
+interface AmoEmbedded<T> {
+  _embedded: Record<string, T[]>
+  _page: number
+  _page_count?: number
+}
+
+interface AmoAccount {
+  id: number
+  name: string
+}
+
+interface AmoPipeline {
+  id: number
+  name: string
+  sort: number
+  _embedded: {
+    statuses: AmoStatus[]
+  }
+}
+
+interface AmoStatus {
+  id: number
+  name: string
+  sort: number
+  pipeline_id: number
+  is_editable: boolean
+}
+
+interface AmoLead {
+  id: number
+  name: string
+  price: number | null
+  status_id: number
+  pipeline_id: number
+  responsible_user_id: number | null
+  created_at: number // unix timestamp
+  closed_at: number | null // unix timestamp
+  loss_reason: { id: number; name: string }[] | null
+  _embedded?: {
+    contacts?: AmoContact[]
+  }
+}
+
+interface AmoContact {
+  id: number
+  name: string
+}
+
+interface AmoNote {
+  id: number
+  entity_id: number
+  note_type: string // "common", "call_in", "call_out", "sms", etc.
+  params?: {
+    duration?: number
+    link?: string // audio URL for calls
+    text?: string
+  }
+  text?: string
+  created_at: number // unix timestamp
+  responsible_user_id: number | null
+  created_by: number
+}
+
+interface AmoUser {
+  id: number
+  name: string
+  email: string
+}
+
+export class AmoCrmAdapter implements CrmAdapter {
+  private baseUrl: string
+  private apiKey: string
+  private lastRequestTime = 0
+
+  constructor(subdomain: string, apiKey: string) {
+    this.baseUrl = `https://${subdomain}.amocrm.ru/api/v4`
+    this.apiKey = apiKey
+  }
+
+  // ------- Low-level helpers -------
+
+  private async throttle(): Promise<void> {
+    const elapsed = Date.now() - this.lastRequestTime
+    if (elapsed < REQUEST_DELAY_MS) {
+      await sleep(REQUEST_DELAY_MS - elapsed)
+    }
+    this.lastRequestTime = Date.now()
+  }
+
+  private async request<T>(
+    path: string,
+    params: Record<string, unknown> = {}
+  ): Promise<T> {
+    await this.throttle()
+
+    const url = new URL(`${this.baseUrl}${path}`)
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, String(value))
+      }
+    }
+
+    const controller = new AbortController()
+    const timeout = setTimeout(
+      () => controller.abort(),
+      REQUEST_TIMEOUT_MS
+    )
+
+    try {
+      const res = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      })
+
+      // 204 = no content (empty list)
+      if (res.status === 204) {
+        return { _embedded: {} } as T
+      }
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "")
+        throw new Error(
+          `amoCRM HTTP ${res.status}: ${res.statusText} — ${body}`
+        )
+      }
+
+      return (await res.json()) as T
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  /**
+   * Fetch all pages for a list endpoint.
+   * amoCRM v4 uses ?page=N&limit=250, returns _page and _page_count.
+   */
+  private async fetchAll<T>(
+    path: string,
+    embeddedKey: string,
+    params: Record<string, unknown> = {}
+  ): Promise<T[]> {
+    const items: T[] = []
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const res = await this.request<AmoEmbedded<T>>(path, {
+        ...params,
+        page,
+        limit: PAGE_LIMIT,
+      })
+
+      const embedded = res._embedded?.[embeddedKey]
+      if (Array.isArray(embedded)) {
+        items.push(...embedded)
+      }
+
+      // No more pages if we got fewer items than limit or no _page_count
+      if (
+        !Array.isArray(embedded) ||
+        embedded.length < PAGE_LIMIT ||
+        (res._page_count !== undefined && page >= res._page_count)
+      ) {
+        break
+      }
+    }
+
+    return items
+  }
+
+  // ------- CrmAdapter interface -------
+
+  async testConnection(): Promise<boolean> {
+    try {
+      const res = await this.request<AmoAccount>("/account")
+      return !!res.id
+    } catch {
+      return false
+    }
+  }
+
+  async getFunnels(): Promise<CrmFunnel[]> {
+    const pipelines = await this.fetchAll<AmoPipeline>(
+      "/leads/pipelines",
+      "pipelines"
+    )
+
+    return pipelines.map((p) => ({
+      crmId: String(p.id),
+      name: p.name,
+      stages: (p._embedded?.statuses ?? []).map((s, idx) => ({
+        crmId: String(s.id),
+        name: s.name,
+        order: s.sort ?? idx,
+      })),
+    }))
+  }
+
+  async getDeals(funnelId?: string, since?: Date): Promise<CrmDeal[]> {
+    const params: Record<string, unknown> = {
+      with: "contacts",
+    }
+
+    if (funnelId !== undefined) {
+      params["filter[pipe_id]"] = funnelId
+    }
+
+    if (since) {
+      params["filter[created_at][from]"] = Math.floor(
+        since.getTime() / 1000
+      )
+    }
+
+    const leads = await this.fetchAll<AmoLead>("/leads", "leads", params)
+
+    // Resolve manager names
+    const uniqueUserIds = [
+      ...new Set(
+        leads
+          .map((l) => l.responsible_user_id)
+          .filter((id): id is number => id !== null)
+      ),
+    ]
+    const userMap = await this.resolveUsers(uniqueUserIds)
+
+    // Build stage map from pipelines
+    const funnels = await this.getFunnels()
+    const stageMap = new Map<
+      string,
+      { funnelId: string; funnelName: string; stageName: string }
+    >()
+    for (const f of funnels) {
+      for (const s of f.stages) {
+        stageMap.set(s.crmId, {
+          funnelId: f.crmId,
+          funnelName: f.name,
+          stageName: s.name,
+        })
+      }
+    }
+
+    return leads.map((l) => {
+      const stageInfo = stageMap.get(String(l.status_id))
+      const user = l.responsible_user_id
+        ? userMap.get(l.responsible_user_id)
+        : null
+
+      return {
+        crmId: String(l.id),
+        title: l.name ?? "",
+        amount: l.price ?? null,
+        status: this.mapDealStatus(l.status_id),
+        managerId: l.responsible_user_id
+          ? String(l.responsible_user_id)
+          : null,
+        managerName: user ?? null,
+        funnelId: stageInfo?.funnelId ?? String(l.pipeline_id) ?? null,
+        funnelName: stageInfo?.funnelName ?? null,
+        stageName: stageInfo?.stageName ?? null,
+        createdAt: new Date(l.created_at * 1000),
+        closedAt: l.closed_at ? new Date(l.closed_at * 1000) : null,
+      }
+    })
+  }
+
+  async getMessages(dealCrmId: string): Promise<CrmMessage[]> {
+    const notes = await this.fetchAll<AmoNote>(
+      `/leads/${dealCrmId}/notes`,
+      "notes"
+    )
+
+    const messages: CrmMessage[] = notes.map((n) => {
+      const isCallIn = n.note_type === "call_in"
+      const isCallOut = n.note_type === "call_out"
+      const isCall = isCallIn || isCallOut
+      const audioUrl = n.params?.link
+      const duration = n.params?.duration
+
+      const content =
+        n.params?.text ?? n.text ?? ""
+
+      return {
+        dealCrmId,
+        sender: isCallIn
+          ? ("client" as const)
+          : isCallOut
+            ? ("manager" as const)
+            : ("system" as const),
+        content,
+        timestamp: new Date(n.created_at * 1000),
+        isAudio: isCall && !!audioUrl,
+        ...(isCall && audioUrl ? { audioUrl } : {}),
+        ...(isCall && duration ? { duration } : {}),
+      }
+    })
+
+    // Sort by timestamp ascending
+    messages.sort(
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+    )
+
+    return messages
+  }
+
+  async getManagers(): Promise<CrmManager[]> {
+    const users = await this.fetchAll<AmoUser>("/users", "users")
+
+    return users.map((u) => ({
+      crmId: String(u.id),
+      name: u.name || `User ${u.id}`,
+      email: u.email || undefined,
+    }))
+  }
+
+  // ------- Private helpers -------
+
+  /**
+   * Map amoCRM status_id to simplified status.
+   * 142 = won (successfully closed), 143 = lost, everything else = open.
+   */
+  private mapDealStatus(statusId: number): "open" | "won" | "lost" {
+    if (statusId === STATUS_WON) return "won"
+    if (statusId === STATUS_LOST) return "lost"
+    return "open"
+  }
+
+  /**
+   * Resolve a list of amoCRM user IDs into a map of id -> name.
+   */
+  private async resolveUsers(
+    userIds: number[]
+  ): Promise<Map<number, string>> {
+    const map = new Map<number, string>()
+    if (userIds.length === 0) return map
+
+    // Fetch all users and filter locally (amoCRM v4 doesn't support ID-array filter on /users)
+    const users = await this.fetchAll<AmoUser>("/users", "users")
+    const idSet = new Set(userIds)
+
+    for (const u of users) {
+      if (idSet.has(u.id)) {
+        map.set(u.id, u.name || `User ${u.id}`)
+      }
+    }
+
+    return map
+  }
+}

@@ -1,24 +1,36 @@
-# Smart Analyze
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-AI-powered sales analytics platform. Analyzes CRM deals (text chats + audio calls), finds success/failure patterns, rates managers, and provides actionable recommendations.
+## Getting Started
 
-## Core Features
+First, run the development server:
 
-1. **Dashboard** — sales funnel, conversion rates, revenue potential, key metrics
-2. **Manager Rating** — performance table with drill-down per manager
-3. **Deal Analysis** — AI analysis of each deal with specific quotes and recommendations
-4. **Pattern Library** — success vs failure patterns with metrics (strength, impact, reliability, coverage)
-5. **CRM Integration** — Bitrix24 (primary), extensible to other CRMs
-6. **Audio Transcription** — speech-to-text for call recordings
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## Tech Stack
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-- **Frontend:** Next.js + TypeScript + shadcn/ui + Tremor (charts)
-- **Backend:** Next.js API routes + PostgreSQL
-- **AI:** Claude API (deal analysis, pattern extraction, recommendations)
-- **Transcription:** WhisperX
-- **CRM:** Bitrix24 REST API (@2bad/bitrix)
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-## Status
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-Project kickoff — requirements gathering phase.
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// === AUTH / MULTI-TENANT ===
+
+model Tenant {
+  id         String   @id @default(cuid())
+  name       String
+  plan       Plan     @default(DEMO)
+  dealsUsed  Int      @default(0)
+  dealsLimit Int      @default(50)
+  createdAt  DateTime @default(now())
+
+  users      User[]
+  crmConfigs CrmConfig[]
+  funnels    Funnel[]
+  managers   Manager[]
+  deals      Deal[]
+  patterns   Pattern[]
+  insights   Insight[]
+}
+
+enum Plan {
+  DEMO
+  BASIC
+  STANDARD
+  PRO
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      UserRole @default(VIEWER)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+
+  accounts Account[]
+  sessions Session[]
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// === CRM ===
+
+model CrmConfig {
+  id         String      @id @default(cuid())
+  tenantId   String
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  provider   CrmProvider
+  webhookUrl String?
+  apiKey     String?
+  subdomain  String?
+  isActive   Boolean     @default(false)
+  lastSyncAt DateTime?
+  createdAt  DateTime    @default(now())
+}
+
+enum CrmProvider {
+  BITRIX24
+  AMOCRM
+}
+
+// === SALES DATA ===
+
+model Funnel {
+  id       String        @id @default(cuid())
+  tenantId String
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  name     String
+  crmId    String?
+  stages   FunnelStage[]
+  deals    Deal[]
+}
+
+model FunnelStage {
+  id       String             @id @default(cuid())
+  funnelId String
+  funnel   Funnel             @relation(fields: [funnelId], references: [id])
+  name     String
+  order    Int
+  crmId    String?
+  deals    DealStageHistory[]
+}
+
+model Manager {
+  id        String        @id @default(cuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  name      String
+  email     String?
+  crmId     String?
+  createdAt DateTime      @default(now())
+  deals     Deal[]
+
+  totalDeals      Int?
+  successDeals    Int?
+  conversionRate  Float?
+  avgDealValue    Float?
+  avgDealTime     Float?
+  talkRatio       Float?
+  avgResponseTime Float?
+  status          ManagerStatus?
+}
+
+enum ManagerStatus {
+  EXCELLENT
+  WATCH
+  CRITICAL
+}
+
+model Deal {
+  id           String             @id @default(cuid())
+  tenantId     String
+  tenant       Tenant             @relation(fields: [tenantId], references: [id])
+  managerId    String?
+  manager      Manager?           @relation(fields: [managerId], references: [id])
+  funnelId     String?
+  funnel       Funnel?            @relation(fields: [funnelId], references: [id])
+
+  crmId        String?
+  title        String
+  amount       Float?
+  status       DealStatus
+  duration     Float?
+
+  createdAt    DateTime           @default(now())
+  closedAt     DateTime?
+
+  isAnalyzed   Boolean            @default(false)
+  analysisType DealAnalysisType?
+
+  messages     Message[]
+  stageHistory DealStageHistory[]
+  analysis     DealAnalysis?
+  dealPatterns DealPattern[]
+}
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+}
+
+enum DealAnalysisType {
+  TEXT
+  AUDIO
+  MIXED
+}
+
+model Message {
+  id        String        @id @default(cuid())
+  dealId    String
+  deal      Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sender    MessageSender
+  content   String
+  timestamp DateTime
+  isAudio   Boolean       @default(false)
+  audioUrl  String?
+  duration  Int?
+}
+
+enum MessageSender {
+  MANAGER
+  CLIENT
+  SYSTEM
+}
+
+model DealStageHistory {
+  id        String      @id @default(cuid())
+  dealId    String
+  deal      Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  stageId   String
+  stage     FunnelStage @relation(fields: [stageId], references: [id])
+  enteredAt DateTime
+  leftAt    DateTime?
+  duration  Float?
+}
+
+// === AI ANALYSIS ===
+
+model DealAnalysis {
+  id              String   @id @default(cuid())
+  dealId          String   @unique
+  deal            Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  summary         String
+  successFactors  String?
+  failureFactors  String?
+  keyQuotes       Json     // [{text, context, isPositive, dealCrmId}]
+  recommendations String?
+  talkRatio       Float?
+  avgResponseTime Float?
+
+  createdAt       DateTime @default(now())
+}
+
+model Pattern {
+  id           String        @id @default(cuid())
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+
+  type         PatternType
+  title        String
+  description  String
+
+  strength     Float
+  impact       Float
+  reliability  Float
+  coverage     Float
+
+  dealCount    Int
+  managerCount Int
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  dealPatterns DealPattern[]
+}
+
+enum PatternType {
+  SUCCESS
+  FAILURE
+}
+
+model DealPattern {
+  id        String  @id @default(cuid())
+  dealId    String
+  deal      Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  patternId String
+  pattern   Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+}
+
+model Insight {
+  id        String      @id @default(cuid())
+  tenantId  String
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  type      InsightType
+  title     String
+  content   String
+
+  // Rich content for accordion display
+  detailedDescription String?
+  dealIds             Json? // array of deal IDs where this insight appears
+  managerIds          Json? // array of manager IDs
+  quotes              Json? // [{text, dealCrmId}]
+
+  createdAt DateTime @default(now())
+}
+
+enum InsightType {
+  SUCCESS_INSIGHT
+  FAILURE_INSIGHT
+}

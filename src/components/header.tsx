@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { label: "Главная", href: "/" },
   { label: "Менеджеры", href: "/managers" },
   { label: "Паттерны", href: "/patterns" },
+  { label: "Контроль качества", href: "/quality" },
   { label: "Настройки", href: "/settings" },
 ] as const
 

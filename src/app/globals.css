@@ -8,8 +8,10 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-mono);
   --font-heading: var(--font-sans);
+
+  /* shadcn semantic colors */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,9 +48,78 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* AI gradient colors */
+  --color-ai-1: var(--ai-1);
+  --color-ai-2: var(--ai-2);
+  --color-ai-3: var(--ai-3);
+  --color-ai-glow: var(--ai-glow);
+  --color-ai-border: var(--ai-border);
+
+  /* Status colors */
+  --color-status-green: var(--status-green);
+  --color-status-green-dim: var(--status-green-dim);
+  --color-status-green-border: var(--status-green-border);
+  --color-status-amber: var(--status-amber);
+  --color-status-amber-dim: var(--status-amber-dim);
+  --color-status-red: var(--status-red);
+  --color-status-red-dim: var(--status-red-dim);
+  --color-status-red-border: var(--status-red-border);
+
+  /* Surface tokens */
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+
+  /* Text tokens */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-muted: var(--text-muted);
+
+  /* Border tokens */
+  --color-border-default: var(--border-default);
+  --color-border-hover: var(--border-hover);
+
+  /* Header */
+  --color-header-bg: var(--header-bg);
+
+  /* Font families */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 }
 
+/* ==================== SHARED TOKENS (both themes) ==================== */
 :root {
+  /* AI gradient palette — same in both themes */
+  --ai-1: #7C6AEF;
+  --ai-2: #5B8DEF;
+  --ai-3: #4ECDC4;
+  --ai-grad: linear-gradient(135deg, var(--ai-1), var(--ai-2), var(--ai-3));
+  --ai-glow: rgba(124, 106, 239, 0.08);
+  --ai-border: rgba(124, 106, 239, 0.18);
+
+  /* Status — dark defaults */
+  --status-green: #34D399;
+  --status-green-dim: rgba(52, 211, 153, 0.08);
+  --status-green-border: rgba(52, 211, 153, 0.2);
+  --status-amber: #FBBF24;
+  --status-amber-dim: rgba(251, 191, 36, 0.08);
+  --status-red: #F87171;
+  --status-red-dim: rgba(248, 113, 113, 0.08);
+  --status-red-border: rgba(248, 113, 113, 0.2);
+
+  /* Radii */
+  --radius: 14px;
+  --radius-prototype-sm: 10px;
+  --radius-prototype-xs: 6px;
+
+  /* Transition */
+  --ease: 0.18s ease;
+
+  /* shadcn light defaults */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -72,7 +143,6 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -81,9 +151,51 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Light theme surface/text from prototype */
+  --surface-0: #F8F9FA;
+  --surface-1: #FFFFFF;
+  --surface-2: #F1F3F5;
+  --surface-3: #E9ECEF;
+  --surface-4: #DEE2E6;
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-tertiary: #9CA3AF;
+  --text-muted: #D1D5DB;
+  --border-default: #E5E7EB;
+  --border-hover: #D1D5DB;
+  --header-bg: rgba(248, 249, 250, 0.82);
+
+  /* Light theme overrides for status */
+  --status-green: #059669;
+  --status-green-dim: rgba(5, 150, 105, 0.06);
+  --status-green-border: rgba(5, 150, 105, 0.15);
+  --status-amber: #D97706;
+  --status-amber-dim: rgba(217, 119, 6, 0.06);
+  --status-red: #DC2626;
+  --status-red-dim: rgba(220, 38, 38, 0.06);
+  --status-red-border: rgba(220, 38, 38, 0.15);
+
+  /* Light overrides for ai-glow/border */
+  --ai-glow: rgba(124, 106, 239, 0.06);
+  --ai-border: rgba(124, 106, 239, 0.12);
+
+  /* Card shadows — light */
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* Insight card */
+  --insight-card: #FFFFFF;
+  --insight-border: #E5E7EB;
+
+  /* Green/red card bg */
+  --green-card-bg: rgba(5, 150, 105, 0.03);
+  --red-card-bg: rgba(220, 38, 38, 0.03);
 }
 
+/* ==================== DARK THEME ==================== */
 .dark {
+  /* shadcn dark */
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -115,6 +227,46 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* Dark theme surfaces from prototype */
+  --surface-0: #0C0D10;
+  --surface-1: #111318;
+  --surface-2: #16181D;
+  --surface-3: #1C1E24;
+  --surface-4: #23262E;
+  --text-primary: #E8E9ED;
+  --text-secondary: #9096A2;
+  --text-tertiary: #5C6270;
+  --text-muted: #3A3F4B;
+  --border-default: #1E2028;
+  --border-hover: #2A2D38;
+  --header-bg: rgba(12, 13, 16, 0.82);
+
+  /* Dark status colors */
+  --status-green: #34D399;
+  --status-green-dim: rgba(52, 211, 153, 0.08);
+  --status-green-border: rgba(52, 211, 153, 0.2);
+  --status-amber: #FBBF24;
+  --status-amber-dim: rgba(251, 191, 36, 0.08);
+  --status-red: #F87171;
+  --status-red-dim: rgba(248, 113, 113, 0.08);
+  --status-red-border: rgba(248, 113, 113, 0.2);
+
+  /* Dark ai-glow/border */
+  --ai-glow: rgba(124, 106, 239, 0.08);
+  --ai-border: rgba(124, 106, 239, 0.18);
+
+  /* Card shadows — dark */
+  --card-shadow: none;
+  --card-shadow-hover: 0 2px 12px rgba(0, 0, 0, 0.25);
+
+  /* Insight card */
+  --insight-card: #13151A;
+  --insight-border: #1A1D24;
+
+  /* Green/red card bg */
+  --green-card-bg: rgba(52, 211, 153, 0.04);
+  --red-card-bg: rgba(248, 113, 113, 0.04);
 }
 
 @layer base {
@@ -127,4 +279,18 @@
   html {
     @apply font-sans;
   }
+}
+
+/* AI gradient text utility */
+.ai-grad {
+  background: var(--ai-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Pulse animation for AI dot */
+@keyframes pulse-ai {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }

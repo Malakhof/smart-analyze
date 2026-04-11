@@ -1,12 +1,11 @@
 import { AuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { PrismaAdapter } from "@auth/prisma-adapter"
 import bcrypt from "bcryptjs"
 import { db } from "@/lib/db"
-import type { User } from "@/generated/prisma"
 
 export const authOptions: AuthOptions = {
-  adapter: PrismaAdapter(db) as AuthOptions["adapter"],
+  // NOTE: PrismaAdapter removed — conflicts with CredentialsProvider
+  // Session/user management handled manually via JWT callbacks
   session: {
     strategy: "jwt",
   },

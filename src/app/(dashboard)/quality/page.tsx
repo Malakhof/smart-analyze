@@ -1,10 +1,11 @@
 export const dynamic = "force-dynamic"
 
 import { AiBadge } from "@/components/ai-badge"
-import { getQualityDashboard, getTenantId } from "@/lib/queries/quality"
+import { getQualityDashboard, getQcFilterOptions, getTenantId } from "@/lib/queries/quality"
 import { QcSummary } from "./_components/qc-summary"
 import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
+import { QcFilters } from "./_components/qc-filters"
 
 export default async function QualityPage() {
   const tenantId = await getTenantId()
@@ -17,7 +18,10 @@ export default async function QualityPage() {
     )
   }
 
-  const data = await getQualityDashboard(tenantId)
+  const [data, filterOptions] = await Promise.all([
+    getQualityDashboard(tenantId),
+    getQcFilterOptions(tenantId),
+  ])
 
   return (
     <>
@@ -31,25 +35,39 @@ export default async function QualityPage() {
         />
       </div>
 
-      {/* Summary cards */}
-      <QcSummary
-        totalCalls={data.totalCalls}
-        avgScore={data.avgScore}
-        avgScriptCompliance={data.avgScriptCompliance}
-        criticalMisses={data.criticalMisses}
-      />
+      {/* 2-column: filters sidebar + content */}
+      <div className="flex gap-5">
+        {/* Left sidebar — filters */}
+        <QcFilters
+          categories={filterOptions.categories}
+          tags={filterOptions.tags}
+          managers={filterOptions.managers}
+          scriptItems={filterOptions.scriptItems}
+        />
 
-      {/* Manager scores */}
-      <section className="mt-8">
-        <h3 className="mb-4 text-[16px] font-bold">Оценки менеджеров</h3>
-        <QcManagerTable managers={data.managers} />
-      </section>
+        {/* Right — main content */}
+        <div className="min-w-0 flex-1">
+          {/* Summary cards */}
+          <QcSummary
+            totalCalls={data.totalCalls}
+            avgScore={data.avgScore}
+            avgScriptCompliance={data.avgScriptCompliance}
+            criticalMisses={data.criticalMisses}
+          />
 
-      {/* Recent calls */}
-      <section className="mt-8">
-        <h3 className="mb-4 text-[16px] font-bold">Последние звонки</h3>
-        <QcRecentCalls calls={data.recentCalls} />
-      </section>
+          {/* Manager scores */}
+          <section className="mt-8">
+            <h3 className="mb-4 text-[16px] font-bold">Оценки менеджеров</h3>
+            <QcManagerTable managers={data.managers} />
+          </section>
+
+          {/* Recent calls */}
+          <section className="mt-8">
+            <h3 className="mb-4 text-[16px] font-bold">Последние звонки</h3>
+            <QcRecentCalls calls={data.recentCalls} />
+          </section>
+        </div>
+      </div>
     </>
   )
 }

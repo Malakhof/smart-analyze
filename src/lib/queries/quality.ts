@@ -239,6 +239,49 @@ export interface QcCallDetail {
   }[]
 }
 
+export interface QcFilterOptions {
+  categories: string[]
+  tags: string[]
+  managers: { id: string; name: string }[]
+  scriptItems: { id: string; text: string; order: number }[]
+}
+
+export async function getQcFilterOptions(
+  tenantId: string
+): Promise<QcFilterOptions> {
+  const [categoriesRaw, tagsRaw, managers, scriptItems] = await Promise.all([
+    db.callRecord.findMany({
+      where: { tenantId, category: { not: null } },
+      select: { category: true },
+      distinct: ["category"],
+    }),
+    db.callTag.findMany({
+      where: { callRecord: { tenantId } },
+      select: { tag: true },
+      distinct: ["tag"],
+    }),
+    db.manager.findMany({
+      where: { tenantId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.scriptItem.findMany({
+      where: { script: { tenantId, isActive: true } },
+      select: { id: true, text: true, order: true },
+      orderBy: { order: "asc" },
+    }),
+  ])
+
+  return {
+    categories: categoriesRaw
+      .map((c) => c.category)
+      .filter((c): c is string => c !== null),
+    tags: tagsRaw.map((t) => t.tag),
+    managers,
+    scriptItems,
+  }
+}
+
 export async function getCallDetail(
   callId: string
 ): Promise<QcCallDetail | null> {

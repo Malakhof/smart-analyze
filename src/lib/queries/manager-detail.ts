@@ -46,9 +46,13 @@ export interface ManagerDetail {
   name: string
   totalDeals: number | null
   successDeals: number | null
+  lostDeals_count: number | null
   conversionRate: number | null
   avgDealValue: number | null
   talkRatio: number | null
+  avgResponseTime: number | null
+  totalSalesAmount: number | null
+  avgDealTime: number | null
   status: string | null
   wonDeals: DealWithAnalysis[]
   lostDeals: DealWithAnalysis[]
@@ -70,7 +74,9 @@ export async function getManagerDetail(
       successDeals: true,
       conversionRate: true,
       avgDealValue: true,
+      avgDealTime: true,
       talkRatio: true,
+      avgResponseTime: true,
       status: true,
       deals: {
         where: { status: { in: ["WON", "LOST"] } },
@@ -167,14 +173,25 @@ export async function getManagerDetail(
     i.managerIds.includes(managerId)
   )
 
+  // Compute lost deals count and total sales amount
+  const lostDealsCount = lostDeals.length
+  const totalSalesAmount = wonDeals.reduce(
+    (sum, d) => sum + (d.amount ?? 0),
+    0
+  )
+
   return {
     id: manager.id,
     name: manager.name,
     totalDeals: manager.totalDeals,
     successDeals: manager.successDeals,
+    lostDeals_count: lostDealsCount,
     conversionRate: manager.conversionRate,
     avgDealValue: manager.avgDealValue,
     talkRatio: manager.talkRatio,
+    avgResponseTime: manager.avgResponseTime,
+    totalSalesAmount,
+    avgDealTime: manager.avgDealTime,
     status: manager.status,
     wonDeals,
     lostDeals,

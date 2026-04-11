@@ -7,12 +7,14 @@ import {
   getManagerRanking,
   getInsights,
   getTenantId,
+  getDailyConversion,
 } from "@/lib/queries/dashboard"
 import { PeriodFilter } from "./_components/period-filter"
 import { FunnelChart } from "./_components/funnel-chart"
 import { SuccessFailCards } from "./_components/success-fail-cards"
 import { RevenuePotential } from "./_components/revenue-potential"
 import { KeyMetrics } from "./_components/key-metrics"
+import { ConversionChart } from "./_components/conversion-chart"
 import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
 
@@ -27,12 +29,14 @@ export default async function DashboardPage() {
     )
   }
 
-  const [stats, funnel, managers, insights] = await Promise.all([
-    getDashboardStats(tenantId),
-    getFunnelData(tenantId),
-    getManagerRanking(tenantId),
-    getInsights(tenantId),
-  ])
+  const [stats, funnel, managers, insights, dailyConversion] =
+    await Promise.all([
+      getDashboardStats(tenantId),
+      getFunnelData(tenantId),
+      getManagerRanking(tenantId),
+      getInsights(tenantId),
+      getDailyConversion(tenantId),
+    ])
 
   return (
     <>
@@ -66,6 +70,8 @@ export default async function DashboardPage() {
         avgCheck={stats.avgCheck}
         avgTime={stats.avgTime}
       />
+
+      <ConversionChart data={dailyConversion} />
 
       <ManagerRatingTable managers={managers} />
 

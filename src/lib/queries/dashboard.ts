@@ -189,3 +189,51 @@ export async function getTenantId(): Promise<string | null> {
   })
   return tenant?.id ?? null
 }
+
+export interface DailyConversion {
+  date: string // DD.MM format
+  conversion: number // 0-100
+}
+
+export async function getDailyConversion(
+  tenantId: string
+): Promise<DailyConversion[]> {
+  const deals = await db.deal.findMany({
+    where: {
+      tenantId,
+      status: { in: ["WON", "LOST"] },
+      closedAt: { not: null },
+    },
+    select: {
+      status: true,
+      closedAt: true,
+    },
+    orderBy: { closedAt: "asc" },
+  })
+
+  // Group deals by closedAt date
+  const dayMap = new Map<string, { won: number; total: number }>()
+
+  for (const deal of deals) {
+    if (!deal.closedAt) continue
+    const d = deal.closedAt
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    const entry = dayMap.get(key) ?? { won: 0, total: 0 }
+    entry.total++
+    if (deal.status === "WON") entry.won++
+    dayMap.set(key, entry)
+  }
+
+  // Sort by date and format as DD.MM
+  const sorted = Array.from(dayMap.entries()).sort(([a], [b]) =>
+    a.localeCompare(b)
+  )
+
+  return sorted.map(([dateKey, { won, total }]) => {
+    const [, mm, dd] = dateKey.split("-")
+    return {
+      date: `${dd}.${mm}`,
+      conversion: total > 0 ? Math.round((won / total) * 1000) / 10 : 0,
+    }
+  })
+}

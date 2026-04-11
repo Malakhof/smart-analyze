@@ -34,7 +34,7 @@ function DonutCard({
         </div>
       ) : (
         <>
-          <div className="flex justify-center">
+          <div className="qc-donut-wrapper flex justify-center">
             <DonutChart
               data={data}
               category="value"

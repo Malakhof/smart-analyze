@@ -85,6 +85,24 @@ interface AmoNote {
   created_by: number
 }
 
+interface AmoEvent {
+  id: string
+  type: string // "incoming_call", "outgoing_call", etc.
+  entity_id: number
+  created_at: number
+  value_after?: Array<{
+    note?: {
+      id?: number
+    }
+    link?: string
+    duration?: number
+    call_recording?: string
+    phone?: string
+    call_result?: string
+    call_status?: number
+  }>
+}
+
 interface AmoUser {
   id: number
   name: string
@@ -290,6 +308,7 @@ export class AmoCrmAdapter implements CrmAdapter {
   }
 
   async getMessages(dealCrmId: string): Promise<CrmMessage[]> {
+    // Fetch notes (includes call_in, call_out note types)
     const notes = await this.fetchAll<AmoNote>(
       `/leads/${dealCrmId}/notes`,
       "notes"
@@ -320,12 +339,82 @@ export class AmoCrmAdapter implements CrmAdapter {
       }
     })
 
+    // Also fetch call events — some calls are stored as events, not notes
+    const eventMessages = await this.fetchCallEvents(dealCrmId)
+
+    // Merge, deduplicate by timestamp (events may duplicate notes)
+    const noteTimestamps = new Set(
+      messages
+        .filter((m) => m.isAudio)
+        .map((m) => m.timestamp.getTime())
+    )
+
+    for (const em of eventMessages) {
+      // Skip if we already have a note with the same timestamp (within 2s tolerance)
+      const isDuplicate = [...noteTimestamps].some(
+        (t) => Math.abs(t - em.timestamp.getTime()) < 2000
+      )
+      if (!isDuplicate) {
+        messages.push(em)
+      }
+    }
+
     // Sort by timestamp ascending
     messages.sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
     )
 
     return messages
+  }
+
+  /**
+   * Fetch call recordings from amoCRM events API.
+   * Events with type "incoming_call" or "outgoing_call" may contain
+   * audio URLs and duration not present in notes.
+   */
+  private async fetchCallEvents(
+    dealCrmId: string
+  ): Promise<CrmMessage[]> {
+    try {
+      const events = await this.fetchAll<AmoEvent>(
+        "/events",
+        "events",
+        {
+          "filter[entity]": "lead",
+          "filter[entity_id]": dealCrmId,
+          "filter[type]": "incoming_call,outgoing_call",
+        }
+      )
+
+      const messages: CrmMessage[] = []
+
+      for (const event of events) {
+        const isIncoming = event.type === "incoming_call"
+        const valueAfter = event.value_after?.[0]
+
+        const audioUrl =
+          valueAfter?.call_recording ?? valueAfter?.link ?? undefined
+        const duration = valueAfter?.duration ?? undefined
+        const callResult = valueAfter?.call_result ?? ""
+
+        messages.push({
+          dealCrmId,
+          sender: isIncoming
+            ? ("client" as const)
+            : ("manager" as const),
+          content: callResult || (isIncoming ? "Входящий звонок" : "Исходящий звонок"),
+          timestamp: new Date(event.created_at * 1000),
+          isAudio: !!audioUrl,
+          ...(audioUrl ? { audioUrl } : {}),
+          ...(duration ? { duration } : {}),
+        })
+      }
+
+      return messages
+    } catch {
+      // Events API may not be available on all amoCRM plans — graceful fallback
+      return []
+    }
   }
 
   async getManagers(): Promise<CrmManager[]> {

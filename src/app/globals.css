@@ -281,6 +281,14 @@
   }
 }
 
+/* Tremor DonutChart dark-mode fix: center label + tooltip text */
+.qc-donut-wrapper text {
+  fill: var(--text-primary) !important;
+}
+.qc-donut-wrapper [class*="tremor-DonutChart-label"] {
+  fill: var(--text-primary) !important;
+}
+
 /* AI gradient text utility */
 .ai-grad {
   background: var(--ai-grad);

@@ -100,9 +100,13 @@ export default async function ManagerDetailPage({
       <ManagerStats
         totalDeals={manager.totalDeals}
         successDeals={manager.successDeals}
+        lostDealsCount={manager.lostDeals_count}
         conversionRate={manager.conversionRate}
         avgDealValue={manager.avgDealValue}
         talkRatio={manager.talkRatio}
+        avgResponseTime={manager.avgResponseTime}
+        totalSalesAmount={manager.totalSalesAmount}
+        avgDealTime={manager.avgDealTime}
       />
 
       {/* Success deals */}

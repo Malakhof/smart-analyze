@@ -2,22 +2,26 @@ export const dynamic = "force-dynamic"
 
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { getManagerQuality } from "@/lib/queries/quality"
+import { getManagerQualityFull } from "@/lib/queries/quality"
+import { QcFilters } from "../../_components/qc-filters"
+import { QcDonutCharts } from "../../_components/qc-donut-charts"
+import { QcComplianceChart } from "../../_components/qc-compliance-chart"
+import { QcScoreDistribution } from "../../_components/qc-score-distribution"
 import { QcRecentCalls } from "../../_components/qc-recent-calls"
 
-const AVATAR_CLASSES = [
-  "bg-gradient-to-br from-ai-1 to-ai-2",
-  "bg-gradient-to-br from-[#EC4899] to-ai-1",
-  "bg-gradient-to-br from-status-amber to-[#EF4444]",
-]
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2)
+function changeIndicator(value: number) {
+  if (value === 0) return null
+  const isPositive = value > 0
+  return (
+    <span
+      className={`text-[13px] font-semibold ${
+        isPositive ? "text-status-green" : "text-status-red"
+      }`}
+    >
+      {isPositive ? "+" : ""}
+      {value}
+    </span>
+  )
 }
 
 function scoreColor(score: number): string {
@@ -26,117 +30,101 @@ function scoreColor(score: number): string {
   return "text-status-red"
 }
 
-function scoreBg(score: number): string {
-  if (score >= 80) return "bg-status-green-dim"
-  if (score >= 50) return "bg-status-amber-dim"
-  return "bg-status-red-dim"
-}
-
 export default async function QcManagerPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const manager = await getManagerQuality(id)
+  const data = await getManagerQualityFull(id)
 
-  if (!manager) notFound()
-
-  const avatarIdx =
-    manager.name.split("").reduce((s, c) => s + c.charCodeAt(0), 0) %
-    AVATAR_CLASSES.length
-
-  const stats = [
-    { label: "Всего звонков", value: String(manager.totalCalls) },
-    {
-      label: "Средний балл",
-      value: `${Math.round(manager.avgScore)}%`,
-      color: scoreColor(manager.avgScore),
-    },
-    {
-      label: "Лучший",
-      value: `${Math.round(manager.bestScore)}%`,
-      color: "text-status-green",
-    },
-    {
-      label: "Худший",
-      value: `${Math.round(manager.worstScore)}%`,
-      color: "text-status-red",
-    },
-  ]
-
-  // Map calls to the format QcRecentCalls expects
-  const callRows = manager.calls.map((c) => ({
-    id: c.id,
-    crmId: null as string | null,
-    managerName: manager.name,
-    clientName: c.clientName,
-    direction: c.direction,
-    duration: c.duration,
-    totalScore: c.totalScore,
-    category: null as string | null,
-    tags: c.tags,
-    recommendation: null as string | null,
-    audioUrl: null as string | null,
-    createdAt: c.createdAt,
-  }))
+  if (!data) notFound()
 
   return (
     <>
-      {/* Back link */}
+      {/* Back link with manager name */}
       <Link
         href="/quality"
         className="mb-5 inline-flex items-center gap-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
       >
-        &larr; Контроль качества
+        &larr; {data.name}
       </Link>
 
-      {/* Manager header */}
-      <div className="mb-6 flex items-center gap-4">
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white ${AVATAR_CLASSES[avatarIdx]}`}
-        >
-          {getInitials(manager.name)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[22px] font-bold tracking-[-0.04em]">
-            {manager.name}
-          </h2>
-          <div className="text-[13px] text-text-tertiary">
-            Контроль качества
+      {/* 3 summary cards */}
+      <div className="mb-5 grid grid-cols-3 gap-2.5">
+        {/* Card 1: Total calls */}
+        <div className="rounded-[10px] border border-border-default bg-surface-1 p-5 shadow-[var(--card-shadow)] transition-all duration-200 hover:border-border-hover hover:shadow-[var(--card-shadow-hover)]">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
+            Совершено звонков
+          </div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-[26px] font-extrabold leading-none tracking-[-0.04em]">
+              {data.totalCalls}
+            </div>
+            {changeIndicator(data.totalCallsChange)}
           </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full px-3.5 py-1 text-[13px] font-bold ${scoreBg(manager.avgScore)} ${scoreColor(manager.avgScore)}`}
-        >
-          {Math.round(manager.avgScore)}%
-        </span>
-      </div>
 
-      {/* Stats cards */}
-      <div className="mb-6 grid grid-cols-4 gap-2.5">
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            className="rounded-[10px] border border-border-default bg-surface-1 p-5 shadow-[var(--card-shadow)] transition-all duration-200 hover:border-border-hover hover:shadow-[var(--card-shadow-hover)]"
-          >
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
-              {s.label}
-            </div>
+        {/* Card 2: Avg score */}
+        <div className="rounded-[10px] border border-border-default bg-surface-1 p-5 shadow-[var(--card-shadow)] transition-all duration-200 hover:border-border-hover hover:shadow-[var(--card-shadow-hover)]">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
+            Средняя оценка менеджера
+          </div>
+          <div className="flex items-baseline gap-2">
             <div
-              className={`text-[26px] font-extrabold leading-none tracking-[-0.04em] ${s.color ?? ""}`}
+              className={`text-[26px] font-extrabold leading-none tracking-[-0.04em] ${scoreColor(data.avgScore)}`}
             >
-              {s.value}
+              {data.avgScore}
+            </div>
+            {changeIndicator(data.avgScoreChange)}
+          </div>
+        </div>
+
+        {/* Card 3: Conversion placeholder */}
+        <div className="rounded-[10px] border border-border-default bg-surface-1 p-5 shadow-[var(--card-shadow)] transition-all duration-200 hover:border-border-hover hover:shadow-[var(--card-shadow-hover)]">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
+            Конверсия в деньги
+          </div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-[26px] font-extrabold leading-none tracking-[-0.04em] text-text-tertiary">
+              0.0%
             </div>
           </div>
-        ))}
+        </div>
       </div>
 
-      {/* Calls table */}
-      <section>
-        <h3 className="mb-4 text-[16px] font-bold">Все звонки</h3>
-        <QcRecentCalls calls={callRows} />
-      </section>
+      {/* 2-column: filters sidebar + content */}
+      <div className="flex gap-5">
+        {/* Left sidebar — filters (without managers dropdown) */}
+        <QcFilters
+          categories={data.filterOptions.categories}
+          tags={data.filterOptions.tags}
+          managers={[]}
+          scriptItems={data.filterOptions.scriptItems}
+          hideManagers
+        />
+
+        {/* Right — main content */}
+        <div className="min-w-0 flex-1">
+          {/* Donut charts */}
+          <QcDonutCharts
+            categoryBreakdown={data.categoryBreakdown}
+            tagBreakdown={data.tagBreakdown}
+          />
+
+          {/* Charts: Compliance + Score Distribution */}
+          <div className="mb-5 grid grid-cols-2 gap-2.5">
+            <QcComplianceChart data={data.complianceByStep} />
+            <QcScoreDistribution data={data.scoreDistribution} />
+          </div>
+
+          {/* Recent calls */}
+          <section className="mt-8">
+            <h3 className="mb-4 text-[16px] font-bold">Все звонки</h3>
+            <QcRecentCalls calls={data.recentCalls} />
+          </section>
+        </div>
+      </div>
     </>
   )
 }

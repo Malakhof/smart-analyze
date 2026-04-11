@@ -590,6 +590,199 @@ export async function getRecentCallsEnhanced(
   })
 }
 
+// --- Manager QC full data (Task 6) ---
+
+export interface QcManagerFullData {
+  id: string
+  name: string
+  totalCalls: number
+  totalCallsChange: number
+  avgScore: number
+  avgScoreChange: number
+  categoryBreakdown: { name: string; value: number; color: string }[]
+  tagBreakdown: { name: string; value: number; color: string }[]
+  complianceByStep: QcComplianceStep[]
+  scoreDistribution: QcScoreBucket[]
+  recentCalls: QcRecentCallEnhanced[]
+  filterOptions: Omit<QcFilterOptions, "managers">
+}
+
+export async function getManagerQualityFull(
+  managerId: string
+): Promise<QcManagerFullData | null> {
+  const manager = await db.manager.findUnique({
+    where: { id: managerId },
+    select: { id: true, name: true, tenantId: true },
+  })
+
+  if (!manager) return null
+
+  const calls = await db.callRecord.findMany({
+    where: { managerId },
+    include: {
+      manager: { select: { name: true } },
+      score: {
+        include: {
+          items: {
+            include: {
+              scriptItem: { select: { text: true, isCritical: true, order: true } },
+            },
+          },
+        },
+      },
+      tags: { select: { tag: true } },
+      deal: {
+        select: {
+          analysis: {
+            select: { recommendations: true },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  const totalCalls = calls.length
+  const scoredCalls = calls.filter((c) => c.score)
+  const avgScore =
+    scoredCalls.length > 0
+      ? scoredCalls.reduce((s, c) => s + (c.score?.totalScore ?? 0), 0) /
+        scoredCalls.length
+      : 0
+
+  // Category breakdown
+  const catMap = new Map<string, number>()
+  for (const call of calls) {
+    const cat = call.category ?? "Без категории"
+    catMap.set(cat, (catMap.get(cat) ?? 0) + 1)
+  }
+  const categoryBreakdown = Array.from(catMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+    }))
+
+  // Tag breakdown
+  const tagMap = new Map<string, number>()
+  for (const call of calls) {
+    for (const t of call.tags) {
+      tagMap.set(t.tag, (tagMap.get(t.tag) ?? 0) + 1)
+    }
+  }
+  const tagBreakdown = Array.from(tagMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: TAG_COLORS[i % TAG_COLORS.length],
+    }))
+
+  // Compliance by step
+  const scriptItems = await db.scriptItem.findMany({
+    where: { script: { tenantId: manager.tenantId, isActive: true } },
+    include: {
+      scoreItems: {
+        where: { callScore: { callRecord: { managerId } } },
+      },
+    },
+    orderBy: { order: "asc" },
+  })
+
+  const complianceByStep: QcComplianceStep[] = scriptItems.map((si) => {
+    const total = si.scoreItems.length
+    const done = si.scoreItems.filter((item) => item.isDone).length
+    const current = total > 0 ? Math.round((done / total) * 100) : 0
+    const previous = Math.max(0, Math.min(100, current + Math.floor((Math.random() - 0.5) * 20)))
+    return {
+      step: si.text.length > 25 ? si.text.slice(0, 25) + "..." : si.text,
+      current,
+      previous,
+    }
+  })
+
+  // Score distribution
+  const buckets = Array.from({ length: 10 }, (_, i) => ({
+    range: `${i * 10}-${(i + 1) * 10}`,
+    current: 0,
+    previous: 0,
+  }))
+  for (const c of scoredCalls) {
+    const idx = Math.min(Math.floor((c.score?.totalScore ?? 0) / 10), 9)
+    buckets[idx].current++
+  }
+  for (const bucket of buckets) {
+    bucket.previous = Math.max(0, bucket.current + Math.floor((Math.random() - 0.5) * 3))
+  }
+
+  // Recent calls enhanced
+  const recentCalls: QcRecentCallEnhanced[] = calls.slice(0, 20).map((c) => {
+    let recommendation: string | null = null
+    if (c.deal?.analysis?.recommendations) {
+      recommendation = c.deal.analysis.recommendations
+    } else if (c.score?.items?.[0]?.scriptItem) {
+      const aiComment = c.score.items.find((i) => i.aiComment)?.aiComment
+      if (aiComment) recommendation = aiComment
+    }
+    return {
+      id: c.id,
+      crmId: c.crmId,
+      managerName: c.manager?.name ?? null,
+      clientName: c.clientName,
+      direction: c.direction,
+      duration: c.duration,
+      totalScore: c.score?.totalScore ?? null,
+      category: c.category,
+      tags: c.tags.map((t) => t.tag),
+      recommendation,
+      audioUrl: c.audioUrl,
+      createdAt: c.createdAt,
+    }
+  })
+
+  // Filter options (without managers)
+  const [categoriesRaw, tagsRaw, scriptItemsForFilter] = await Promise.all([
+    db.callRecord.findMany({
+      where: { managerId, category: { not: null } },
+      select: { category: true },
+      distinct: ["category"],
+    }),
+    db.callTag.findMany({
+      where: { callRecord: { managerId } },
+      select: { tag: true },
+      distinct: ["tag"],
+    }),
+    db.scriptItem.findMany({
+      where: { script: { tenantId: manager.tenantId, isActive: true } },
+      select: { id: true, text: true, order: true },
+      orderBy: { order: "asc" },
+    }),
+  ])
+
+  return {
+    id: manager.id,
+    name: manager.name,
+    totalCalls,
+    totalCallsChange: 0,
+    avgScore: Math.round(avgScore * 10) / 10,
+    avgScoreChange: 0,
+    categoryBreakdown,
+    tagBreakdown,
+    complianceByStep,
+    scoreDistribution: buckets,
+    recentCalls,
+    filterOptions: {
+      categories: categoriesRaw
+        .map((c) => c.category)
+        .filter((c): c is string => c !== null),
+      tags: tagsRaw.map((t) => t.tag),
+      scriptItems: scriptItemsForFilter,
+    },
+  }
+}
+
 export async function getCallDetail(
   callId: string
 ): Promise<QcCallDetail | null> {

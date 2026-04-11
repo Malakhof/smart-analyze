@@ -11,6 +11,7 @@ interface QcFiltersProps {
   tags: string[]
   managers: { id: string; name: string }[]
   scriptItems: { id: string; text: string; order: number }[]
+  hideManagers?: boolean
 }
 
 // ── Period helpers ──────────────────────────────────────
@@ -212,7 +213,7 @@ function RangeSlider({ min, max, valueMin, valueMax, onChange }: RangeSliderProp
 
 // ── Main component ─────────────────────────────────────
 
-export function QcFilters({ categories, tags, managers, scriptItems }: QcFiltersProps) {
+export function QcFilters({ categories, tags, managers, scriptItems, hideManagers }: QcFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -330,17 +331,19 @@ export function QcFilters({ categories, tags, managers, scriptItems }: QcFilters
       </section>
 
       {/* ── Менеджеры ── */}
-      <section>
-        <label className="mb-2 block text-[13px] font-semibold text-text-primary">
-          Менеджеры
-        </label>
-        <MultiSelect
-          placeholder="Выберите менеджеров"
-          options={managers.map((m) => ({ value: m.id, label: m.name }))}
-          selected={selectedManagers}
-          onChange={(vals) => setArrayParam("manager", vals)}
-        />
-      </section>
+      {!hideManagers && (
+        <section>
+          <label className="mb-2 block text-[13px] font-semibold text-text-primary">
+            Менеджеры
+          </label>
+          <MultiSelect
+            placeholder="Выберите менеджеров"
+            options={managers.map((m) => ({ value: m.id, label: m.name }))}
+            selected={selectedManagers}
+            onChange={(vals) => setArrayParam("manager", vals)}
+          />
+        </section>
+      )}
 
       {/* ── Шаги скрипта ── */}
       <section>

@@ -31,6 +31,14 @@ export interface ManagerPattern {
   description: string
 }
 
+export interface DealListItem {
+  id: string
+  crmId: string | null
+  amount: number | null
+  status: string
+  duration: number | null
+}
+
 export interface ManagerDetail {
   id: string
   name: string
@@ -42,6 +50,7 @@ export interface ManagerDetail {
   status: string | null
   wonDeals: DealWithAnalysis[]
   lostDeals: DealWithAnalysis[]
+  allDeals: DealListItem[]
   patterns: ManagerPattern[]
 }
 
@@ -84,6 +93,27 @@ export async function getManagerDetail(
   })
 
   if (!manager) return null
+
+  // Fetch all deals (including OPEN) for the deals list
+  const allDealsRaw = await db.deal.findMany({
+    where: { managerId },
+    select: {
+      id: true,
+      crmId: true,
+      amount: true,
+      status: true,
+      duration: true,
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  const allDeals: DealListItem[] = allDealsRaw.map((d) => ({
+    id: d.id,
+    crmId: d.crmId,
+    amount: d.amount,
+    status: d.status,
+    duration: d.duration,
+  }))
 
   const wonDeals: DealWithAnalysis[] = []
   const lostDeals: DealWithAnalysis[] = []
@@ -138,6 +168,7 @@ export async function getManagerDetail(
     status: manager.status,
     wonDeals,
     lostDeals,
+    allDeals,
     patterns: Array.from(patternsMap.values()),
   }
 }

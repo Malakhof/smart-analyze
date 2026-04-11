@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import { getManagerDetail } from "@/lib/queries/manager-detail"
 import { ManagerStats } from "./_components/manager-stats"
 import { DealCard } from "./_components/deal-card"
+import { DealsList } from "./_components/deals-list"
 import { ManagerPatterns } from "./_components/manager-patterns"
 
 const AVATAR_CLASSES = [
@@ -136,6 +137,9 @@ export default async function ManagerDetailPage({
           </div>
         </section>
       )}
+
+      {/* Deals list */}
+      <DealsList deals={manager.allDeals} />
 
       {/* Patterns */}
       <ManagerPatterns patterns={manager.patterns} />

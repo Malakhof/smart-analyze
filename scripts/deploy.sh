@@ -11,6 +11,7 @@ ssh -i $SSH_KEY $SERVER "
   cd $PROJECT_DIR && \
   git pull && \
   docker compose -f docker-compose.prod.yml up -d --build && \
+  (docker network connect qup_qupnet smart-analyze-app 2>/dev/null || true) && \
   sleep 5 && \
   docker exec smart-analyze-app npx prisma migrate deploy && \
   echo '✅ Deploy complete!'

@@ -18,13 +18,13 @@ import {
 
 const registerSchema = z
   .object({
-    companyName: z.string().min(1, "Company name is required"),
-    email: z.string().email("Invalid email address"),
-    password: z.string().min(6, "Password must be at least 6 characters"),
+    companyName: z.string().min(1, "Введите название компании"),
+    email: z.string().email("Некорректный email"),
+    password: z.string().min(6, "Пароль должен быть не менее 6 символов"),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
+    message: "Пароли не совпадают",
     path: ["confirmPassword"],
   })
 
@@ -79,13 +79,13 @@ export default function RegisterPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        setServerError(data.error || "Registration failed")
+        setServerError(data.error || "Ошибка регистрации")
         return
       }
 
       router.push("/login")
     } catch {
-      setServerError("Something went wrong")
+      setServerError("Произошла ошибка")
     } finally {
       setLoading(false)
     }
@@ -95,9 +95,9 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-xl">Create account</CardTitle>
+          <CardTitle className="text-xl">Регистрация</CardTitle>
           <CardDescription>
-            Get started with your team analytics
+            Создайте аккаунт для начала работы
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -108,7 +108,7 @@ export default function RegisterPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="companyName">Company name</Label>
+              <Label htmlFor="companyName">Название компании</Label>
               <Input
                 id="companyName"
                 type="text"
@@ -138,7 +138,7 @@ export default function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Пароль</Label>
               <Input
                 id="password"
                 type="password"
@@ -153,7 +153,7 @@ export default function RegisterPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm password</Label>
+              <Label htmlFor="confirmPassword">Подтвердите пароль</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -176,15 +176,15 @@ export default function RegisterPage() {
               className="w-full"
               disabled={loading}
             >
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? "Создание..." : "Создать аккаунт"}
             </Button>
             <p className="text-sm text-muted-foreground">
-              Already have an account?{" "}
+              Уже есть аккаунт?{" "}
               <Link
                 href="/login"
                 className="text-foreground underline underline-offset-4 hover:text-primary"
               >
-                Sign in
+                Войти
               </Link>
             </p>
           </CardFooter>

@@ -18,26 +18,22 @@ export function KeyMetrics({
     {
       label: "Всего сделок",
       value: String(totalDeals),
-      change: null,
       tooltip: "Общее количество сделок за выбранный период",
     },
     {
       label: "Конверсия",
       value: fmtPercent(conversionRate),
-      change: { text: "-3.2%", isPositive: false },
       tooltip:
         "Процент успешных сделок от общего числа закрытых сделок (успех + провал)",
     },
     {
       label: "Средний чек",
       value: fmtMoney(avgCheck),
-      change: { text: "+8.1%", isPositive: true },
       tooltip: "Средняя сумма успешно закрытых сделок за период",
     },
     {
       label: "Ср. время сделки",
       value: fmtDays(avgTime),
-      change: { text: "-2.1 дн", isPositive: true },
       tooltip:
         "Среднее время от создания до закрытия сделки (успех или провал)",
     },
@@ -61,17 +57,6 @@ export function KeyMetrics({
             <div className="text-[26px] font-extrabold leading-none tracking-[-0.04em]">
               {m.value}
             </div>
-            {m.change && (
-              <div
-                className={`mt-1.5 text-[12px] font-medium ${
-                  m.change.isPositive
-                    ? "text-status-green"
-                    : "text-status-red"
-                }`}
-              >
-                {m.change.text}
-              </div>
-            )}
           </div>
         ))}
       </div>

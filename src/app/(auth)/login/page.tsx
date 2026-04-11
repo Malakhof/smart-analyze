@@ -36,13 +36,13 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setError("Invalid email or password")
+        setError("Неверный email или пароль")
       } else {
         router.push("/")
         router.refresh()
       }
     } catch {
-      setError("Something went wrong")
+      setError("Произошла ошибка")
     } finally {
       setLoading(false)
     }
@@ -52,9 +52,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-xl">Sign in</CardTitle>
+          <CardTitle className="text-xl">Вход</CardTitle>
           <CardDescription>
-            Enter your credentials to access your account
+            Введите данные для входа в аккаунт
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -76,7 +76,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Пароль</Label>
               <Input
                 id="password"
                 type="password"
@@ -93,15 +93,15 @@ export default function LoginPage() {
               className="w-full"
               disabled={loading}
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Вход..." : "Войти"}
             </Button>
             <p className="text-sm text-muted-foreground">
-              Don&apos;t have an account?{" "}
+              Нет аккаунта?{" "}
               <Link
                 href="/register"
                 className="text-foreground underline underline-offset-4 hover:text-primary"
               >
-                Create account
+                Создать аккаунт
               </Link>
             </p>
           </CardFooter>

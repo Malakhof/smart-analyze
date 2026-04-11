@@ -22,8 +22,9 @@ export function QcComplianceChart({ data }: QcComplianceChartProps) {
   }
 
   // Tremor AreaChart expects data as array of objects with category key + value keys
+  // Truncate long step names for X-axis readability; tooltip shows the full name via customTooltip
   const chartData = data.map((d) => ({
-    step: d.step,
+    step: d.step.length > 15 ? d.step.slice(0, 12) + "…" : d.step,
     "Текущий период": d.current,
     "Предыдущий период": d.previous,
   }))

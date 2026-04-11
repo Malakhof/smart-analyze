@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import { getDealDetail } from "@/lib/queries/deal-detail"
 import { DealHeader } from "./_components/deal-header"
 import { DealAiAnalysis } from "./_components/deal-ai-analysis"
+import { DealAudio } from "./_components/deal-audio"
 import { DealMetrics } from "./_components/deal-metrics"
 import { StageTree } from "./_components/stage-tree"
 import { DealStatsSidebar } from "./_components/deal-stats-sidebar"
@@ -61,13 +62,23 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
+          {/* Audio calls */}
+          {deal.messages
+            .filter((m) => m.isAudio && m.audioUrl)
+            .map((m) => (
+              <DealAudio
+                key={m.id}
+                audioUrl={m.audioUrl!}
+                transcript={m.content || undefined}
+                duration={m.duration ?? undefined}
+              />
+            ))}
+
           {/* Stage tree */}
-          {deal.stageHistory.length > 0 && (
-            <StageTree
-              stages={deal.stageHistory}
-              messages={deal.messages}
-            />
-          )}
+          <StageTree
+            stages={deal.stageHistory}
+            messages={deal.messages}
+          />
         </div>
 
         {/* RIGHT COLUMN (sidebar) */}

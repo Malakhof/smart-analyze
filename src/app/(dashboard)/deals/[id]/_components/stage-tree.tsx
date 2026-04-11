@@ -58,6 +58,15 @@ function fmtDuration(days: number | null): string {
 export function StageTree({ stages, messages }: StageTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
+  if (!stages || stages.length === 0) {
+    return (
+      <div className="rounded-[10px] border border-border-default bg-surface-1 p-8 text-center">
+        <p className="text-text-tertiary">Нет данных по этапам сделки</p>
+        <p className="text-sm text-text-muted mt-1">Этапы появятся после синхронизации с CRM</p>
+      </div>
+    )
+  }
+
   function toggle(stageId: string) {
     setExpanded((prev) => {
       const next = new Set(prev)

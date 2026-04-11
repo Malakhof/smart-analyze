@@ -6,6 +6,8 @@ export interface DealDetailMessage {
   content: string
   timestamp: Date
   isAudio: boolean
+  audioUrl: string | null
+  duration: number | null
 }
 
 export interface DealDetailStage {
@@ -57,6 +59,8 @@ export async function getDealDetail(
           content: true,
           timestamp: true,
           isAudio: true,
+          audioUrl: true,
+          duration: true,
         },
       },
       stageHistory: {
@@ -85,6 +89,8 @@ export async function getDealDetail(
       content: m.content,
       timestamp: m.timestamp,
       isAudio: m.isAudio,
+      audioUrl: m.audioUrl ?? null,
+      duration: m.duration ?? null,
     })),
     stageHistory: deal.stageHistory.map((sh) => ({
       id: sh.id,

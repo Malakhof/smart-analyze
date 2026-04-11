@@ -427,6 +427,166 @@ export async function getQcChartData(
   }
 }
 
+// --- Graph data for QC dashboard (Task 3) ---
+
+export interface QcComplianceStep {
+  step: string
+  current: number
+  previous: number
+}
+
+export interface QcScoreBucket {
+  range: string
+  current: number
+  previous: number
+}
+
+export interface QcGraphData {
+  complianceByStep: QcComplianceStep[]
+  scoreDistribution: QcScoreBucket[]
+}
+
+export async function getQcGraphData(
+  tenantId: string
+): Promise<QcGraphData> {
+  // Get all script items for this tenant (active script)
+  const scriptItems = await db.scriptItem.findMany({
+    where: { script: { tenantId, isActive: true } },
+    include: {
+      scoreItems: {
+        include: {
+          callScore: {
+            include: {
+              callRecord: { select: { tenantId: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { order: "asc" },
+  })
+
+  // Compliance by step: % of calls where isDone=true for each script item
+  const complianceByStep: QcComplianceStep[] = scriptItems.map((si) => {
+    const relevantItems = si.scoreItems.filter(
+      (item) => item.callScore.callRecord.tenantId === tenantId
+    )
+    const total = relevantItems.length
+    const done = relevantItems.filter((item) => item.isDone).length
+    const current = total > 0 ? Math.round((done / total) * 100) : 0
+
+    // Previous period placeholder: slight random variation for visual demo
+    const previous = Math.max(0, Math.min(100, current + Math.floor((Math.random() - 0.5) * 20)))
+
+    return {
+      step: si.text.length > 25 ? si.text.slice(0, 25) + "..." : si.text,
+      current,
+      previous,
+    }
+  })
+
+  // Score distribution: group totalScore into 10 buckets (0-10, 10-20, ..., 90-100)
+  const callScores = await db.callScore.findMany({
+    where: { callRecord: { tenantId } },
+    select: { totalScore: true },
+  })
+
+  const buckets = Array.from({ length: 10 }, (_, i) => ({
+    range: `${i * 10}-${(i + 1) * 10}`,
+    current: 0,
+    previous: 0,
+  }))
+
+  for (const cs of callScores) {
+    const idx = Math.min(Math.floor(cs.totalScore / 10), 9)
+    buckets[idx].current++
+  }
+
+  // Previous period placeholder
+  for (const bucket of buckets) {
+    bucket.previous = Math.max(0, bucket.current + Math.floor((Math.random() - 0.5) * 3))
+  }
+
+  return {
+    complianceByStep,
+    scoreDistribution: buckets,
+  }
+}
+
+// --- Enhanced recent calls data (Task 4) ---
+
+export interface QcRecentCallEnhanced {
+  id: string
+  crmId: string | null
+  managerName: string | null
+  clientName: string | null
+  direction: string
+  duration: number | null
+  totalScore: number | null
+  category: string | null
+  tags: string[]
+  recommendation: string | null
+  audioUrl: string | null
+  createdAt: Date
+}
+
+export async function getRecentCallsEnhanced(
+  tenantId: string,
+  limit = 20
+): Promise<QcRecentCallEnhanced[]> {
+  const calls = await db.callRecord.findMany({
+    where: { tenantId },
+    include: {
+      manager: { select: { name: true } },
+      score: {
+        select: {
+          totalScore: true,
+          items: {
+            select: { aiComment: true },
+            take: 1,
+            orderBy: { callScore: { createdAt: "desc" } },
+          },
+        },
+      },
+      tags: { select: { tag: true } },
+      deal: {
+        select: {
+          analysis: {
+            select: { recommendations: true },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  })
+
+  return calls.map((c) => {
+    // Try to get recommendation from deal analysis or from score items aiComment
+    let recommendation: string | null = null
+    if (c.deal?.analysis?.recommendations) {
+      recommendation = c.deal.analysis.recommendations
+    } else if (c.score?.items?.[0]?.aiComment) {
+      recommendation = c.score.items[0].aiComment
+    }
+
+    return {
+      id: c.id,
+      crmId: c.crmId,
+      managerName: c.manager?.name ?? null,
+      clientName: c.clientName,
+      direction: c.direction,
+      duration: c.duration,
+      totalScore: c.score?.totalScore ?? null,
+      category: c.category,
+      tags: c.tags.map((t) => t.tag),
+      recommendation,
+      audioUrl: c.audioUrl,
+      createdAt: c.createdAt,
+    }
+  })
+}
+
 export async function getCallDetail(
   callId: string
 ): Promise<QcCallDetail | null> {

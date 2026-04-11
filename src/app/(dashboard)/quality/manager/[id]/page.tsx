@@ -68,11 +68,16 @@ export default async function QcManagerPage({
   // Map calls to the format QcRecentCalls expects
   const callRows = manager.calls.map((c) => ({
     id: c.id,
+    crmId: null as string | null,
     managerName: manager.name,
     clientName: c.clientName,
     direction: c.direction,
     duration: c.duration,
     totalScore: c.totalScore,
+    category: null as string | null,
+    tags: c.tags,
+    recommendation: null as string | null,
+    audioUrl: null as string | null,
     createdAt: c.createdAt,
   }))
 

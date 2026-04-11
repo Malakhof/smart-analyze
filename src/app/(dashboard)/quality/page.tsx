@@ -1,9 +1,18 @@
 export const dynamic = "force-dynamic"
 
 import { AiBadge } from "@/components/ai-badge"
-import { getQualityDashboard, getQcFilterOptions, getQcChartData, getTenantId } from "@/lib/queries/quality"
+import {
+  getQualityDashboard,
+  getQcFilterOptions,
+  getQcChartData,
+  getQcGraphData,
+  getRecentCallsEnhanced,
+  getTenantId,
+} from "@/lib/queries/quality"
 import { QcSummary } from "./_components/qc-summary"
 import { QcDonutCharts } from "./_components/qc-donut-charts"
+import { QcComplianceChart } from "./_components/qc-compliance-chart"
+import { QcScoreDistribution } from "./_components/qc-score-distribution"
 import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
 import { QcFilters } from "./_components/qc-filters"
@@ -19,11 +28,14 @@ export default async function QualityPage() {
     )
   }
 
-  const [data, filterOptions, chartData] = await Promise.all([
-    getQualityDashboard(tenantId),
-    getQcFilterOptions(tenantId),
-    getQcChartData(tenantId),
-  ])
+  const [data, filterOptions, chartData, graphData, recentCallsEnhanced] =
+    await Promise.all([
+      getQualityDashboard(tenantId),
+      getQcFilterOptions(tenantId),
+      getQcChartData(tenantId),
+      getQcGraphData(tenantId),
+      getRecentCallsEnhanced(tenantId),
+    ])
 
   return (
     <>
@@ -65,6 +77,12 @@ export default async function QualityPage() {
             tagBreakdown={chartData.tagBreakdown}
           />
 
+          {/* Charts: Compliance + Score Distribution */}
+          <div className="mb-5 grid grid-cols-2 gap-2.5">
+            <QcComplianceChart data={graphData.complianceByStep} />
+            <QcScoreDistribution data={graphData.scoreDistribution} />
+          </div>
+
           {/* Manager scores */}
           <section className="mt-8">
             <h3 className="mb-4 text-[16px] font-bold">Оценки менеджеров</h3>
@@ -74,7 +92,7 @@ export default async function QualityPage() {
           {/* Recent calls */}
           <section className="mt-8">
             <h3 className="mb-4 text-[16px] font-bold">Последние звонки</h3>
-            <QcRecentCalls calls={data.recentCalls} />
+            <QcRecentCalls calls={recentCallsEnhanced} />
           </section>
         </div>
       </div>

@@ -1,119 +1,267 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-
-function scoreColor(score: number): string {
-  if (score >= 80) return "text-status-green"
-  if (score >= 50) return "text-status-amber"
-  return "text-status-red"
-}
+import type { QcRecentCallEnhanced } from "@/lib/queries/quality"
 
 function fmtDuration(seconds: number | null): string {
   if (!seconds) return "--:--"
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
-  return `${m}:${String(s).padStart(2, "0")}`
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
-function fmtDate(date: Date): string {
-  return new Intl.DateTimeFormat("ru-RU", {
+function fmtDateLine1(date: Date): string {
+  const d = new Date(date)
+  return d.toLocaleDateString("ru-RU", {
     day: "2-digit",
     month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(date))
+    year: "numeric",
+  })
 }
 
-interface RecentCall {
-  id: string
-  managerName: string | null
-  clientName: string | null
-  direction: string
-  duration: number | null
-  totalScore: number | null
-  createdAt: Date
+function fmtDateLine2(date: Date): string {
+  const d = new Date(date)
+  return d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function scoreIndicatorColor(score: number): string {
+  if (score >= 70) return "bg-emerald-500"
+  if (score >= 50) return "bg-amber-400"
+  return "bg-red-500"
+}
+
+const CATEGORY_BADGE_COLORS: Record<string, string> = {
+  "Первичный контакт": "bg-blue-500/15 text-blue-400 border-blue-500/20",
+  "КП отправлено": "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+  "Секретарь": "bg-amber-500/15 text-amber-400 border-amber-500/20",
+  "Новая компания": "bg-violet-500/15 text-violet-400 border-violet-500/20",
+}
+
+function getCategoryBadgeClass(category: string): string {
+  return (
+    CATEGORY_BADGE_COLORS[category] ??
+    "bg-gray-500/15 text-gray-400 border-gray-500/20"
+  )
+}
+
+function isNegativeTag(tag: string): boolean {
+  return tag.toLowerCase().startsWith("не ")
 }
 
 interface QcRecentCallsProps {
-  calls: RecentCall[]
+  calls: QcRecentCallEnhanced[]
 }
 
 export function QcRecentCalls({ calls }: QcRecentCallsProps) {
   const router = useRouter()
 
+  const headers = [
+    "Звонок",
+    "Дата/Время",
+    "Длительность",
+    "Категория",
+    "Теги",
+    "Рекомендации",
+    "Оценка",
+    "",
+  ]
+
   return (
-    <div className="overflow-hidden rounded-[10px] border border-border-default bg-surface-1 shadow-[var(--card-shadow)]">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            {["Дата", "Менеджер", "Клиент", "Длительность", "Балл", "Тип"].map(
-              (h) => (
-                <th
-                  key={h}
-                  className="border-b border-border-default px-[18px] py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary"
-                >
-                  {h}
-                </th>
-              )
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {calls.map((c) => (
-            <tr
-              key={c.id}
-              onClick={() => router.push(`/quality/calls/${c.id}`)}
-              className="cursor-pointer transition-colors duration-100 hover:bg-surface-2 [&:not(:last-child)>td]:border-b [&:not(:last-child)>td]:border-border-default"
-            >
-              <td className="px-[18px] py-3 text-[13px] text-text-secondary">
-                {fmtDate(c.createdAt)}
-              </td>
-              <td className="px-[18px] py-3 text-[13px] font-medium">
-                {c.managerName ?? "—"}
-              </td>
-              <td className="px-[18px] py-3 text-[13px]">
-                {c.clientName ?? "—"}
-              </td>
-              <td className="px-[18px] py-3 text-[13px] text-text-secondary">
-                {fmtDuration(c.duration)}
-              </td>
-              <td className="px-[18px] py-3 text-[13px]">
-                {c.totalScore != null ? (
-                  <span
-                    className={`font-semibold ${scoreColor(c.totalScore)}`}
+    <div>
+      <div className="overflow-hidden rounded-[10px] border border-border-default bg-surface-1 shadow-[var(--card-shadow)]">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                {headers.map((h) => (
+                  <th
+                    key={h}
+                    className="border-b border-border-default px-[14px] py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary"
                   >
-                    {Math.round(c.totalScore)}%
-                  </span>
-                ) : (
-                  <span className="text-text-tertiary">—</span>
-                )}
-              </td>
-              <td className="px-[18px] py-3 text-[13px]">
-                {c.direction === "INCOMING" ? (
-                  <span className="text-text-secondary" title="Входящий">
-                    &#8601; Входящий
-                  </span>
-                ) : (
-                  <span className="text-text-secondary" title="Исходящий">
-                    &#8599; Исходящий
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-          {calls.length === 0 && (
-            <tr>
-              <td
-                colSpan={6}
-                className="px-[18px] py-8 text-center text-[13px] text-text-tertiary"
-              >
-                Нет записей звонков
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {calls.map((c) => {
+                const visibleTags = c.tags.slice(0, 2)
+                const extraTags = c.tags.length - 2
+
+                return (
+                  <tr
+                    key={c.id}
+                    onClick={() => router.push(`/quality/calls/${c.id}`)}
+                    className="cursor-pointer transition-colors duration-100 hover:bg-surface-2 [&:not(:last-child)>td]:border-b [&:not(:last-child)>td]:border-border-default"
+                  >
+                    {/* Звонок (ID) */}
+                    <td className="whitespace-nowrap px-[14px] py-3 text-[13px] font-medium text-text-primary">
+                      {c.crmId ?? c.id.slice(0, 8)}
+                    </td>
+
+                    {/* Дата/Время — two lines */}
+                    <td className="whitespace-nowrap px-[14px] py-3">
+                      <div className="text-[13px] text-text-primary">
+                        {fmtDateLine1(c.createdAt)}
+                      </div>
+                      <div className="text-[12px] text-text-tertiary">
+                        {fmtDateLine2(c.createdAt)}
+                      </div>
+                    </td>
+
+                    {/* Длительность */}
+                    <td className="whitespace-nowrap px-[14px] py-3 text-[13px] text-text-secondary tabular-nums">
+                      {fmtDuration(c.duration)}
+                    </td>
+
+                    {/* Категория */}
+                    <td className="px-[14px] py-3">
+                      {c.category ? (
+                        <span
+                          className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-medium ${getCategoryBadgeClass(c.category)}`}
+                        >
+                          {c.category}
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-text-tertiary">
+                          —
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Теги */}
+                    <td className="max-w-[220px] px-[14px] py-3">
+                      {c.tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {visibleTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className={`inline-block max-w-[180px] truncate rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${
+                                isNegativeTag(tag)
+                                  ? "border-red-500/20 bg-red-500/15 text-red-400"
+                                  : "border-emerald-500/20 bg-emerald-500/15 text-emerald-400"
+                              }`}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {extraTags > 0 && (
+                            <span className="inline-block rounded-md border border-border-default bg-surface-2 px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                              +{extraTags} ещё
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[12px] text-text-tertiary">
+                          —
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Рекомендации */}
+                    <td className="max-w-[200px] px-[14px] py-3">
+                      {c.recommendation ? (
+                        <p className="line-clamp-2 text-[12px] leading-[1.4] text-text-secondary">
+                          {c.recommendation}
+                        </p>
+                      ) : (
+                        <span className="text-[12px] text-text-tertiary">
+                          —
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Оценка — colored dot */}
+                    <td className="px-[14px] py-3">
+                      {c.totalScore != null ? (
+                        <span
+                          className={`inline-block h-3 w-3 rounded-full ${scoreIndicatorColor(c.totalScore)}`}
+                          title={`${Math.round(c.totalScore)}%`}
+                        />
+                      ) : (
+                        <span className="text-[12px] text-text-tertiary">
+                          —
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Action icons */}
+                    <td className="whitespace-nowrap px-[14px] py-3">
+                      <div className="flex items-center gap-2">
+                        {/* Play button */}
+                        {c.audioUrl && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              // TODO: open audio player
+                            }}
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary"
+                            title="Прослушать"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                            >
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </button>
+                        )}
+                        {/* Detail button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/quality/calls/${c.id}`)
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary"
+                          title="Подробнее"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+              {calls.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-[14px] py-8 text-center text-[13px] text-text-tertiary"
+                  >
+                    Нет записей звонков
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Export button placeholder */}
+      <div className="mt-3 flex justify-end">
+        <button
+          disabled
+          className="rounded-lg border border-border-default bg-surface-1 px-4 py-2 text-[13px] font-medium text-text-tertiary opacity-60 cursor-not-allowed"
+        >
+          Экспорт
+        </button>
+      </div>
     </div>
   )
 }

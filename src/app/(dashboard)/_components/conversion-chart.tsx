@@ -31,23 +31,26 @@ export function ConversionChart({ data }: ConversionChartProps) {
       <h3 className="mb-4 text-[14px] font-bold text-text-primary">
         Конверсия по дням
       </h3>
-      <AreaChart
-        data={chartData}
-        index="date"
-        categories={["Конверсия %"]}
-        colors={["violet"]}
-        valueFormatter={(v: number) => Math.round(v) + "%"}
-        yAxisWidth={45}
-        showAnimation={true}
-        showLegend={false}
-        showGridLines={true}
-        showGradient={true}
-        curveType="monotone"
-        className="h-[280px]"
-        minValue={0}
-        maxValue={100}
-        showTooltip={true}
-      />
+      <div className="overflow-visible pl-1">
+        <AreaChart
+          data={chartData}
+          index="date"
+          categories={["Конверсия %"]}
+          colors={["violet"]}
+          valueFormatter={(v: number) => `${Math.round(v)}%`}
+          yAxisWidth={56}
+          showAnimation={true}
+          showLegend={false}
+          showGridLines={true}
+          showGradient={true}
+          curveType="monotone"
+          className="h-[280px]"
+          minValue={0}
+          maxValue={100}
+          showTooltip={true}
+          showYAxis={true}
+        />
+      </div>
     </div>
   )
 }

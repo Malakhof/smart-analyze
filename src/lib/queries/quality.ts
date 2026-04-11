@@ -81,7 +81,12 @@ export async function getQualityDashboard(
   const avgScriptCompliance =
     complianceCalls > 0 ? totalCompliance / complianceCalls : 0
 
-  // Per-manager aggregation
+  // Per-manager aggregation — start from ALL managers in tenant, not just those with calls
+  const allManagers = await db.manager.findMany({
+    where: { tenantId },
+    select: { id: true, name: true },
+  })
+
   const managerMap = new Map<
     string,
     {
@@ -89,9 +94,22 @@ export async function getQualityDashboard(
       name: string
       scores: number[]
       criticalMisses: number
+      callCount: number
     }
   >()
 
+  // Initialize with all managers
+  for (const m of allManagers) {
+    managerMap.set(m.id, {
+      id: m.id,
+      name: m.name,
+      scores: [],
+      criticalMisses: 0,
+      callCount: 0,
+    })
+  }
+
+  // Aggregate call data
   for (const call of calls) {
     if (!call.manager) continue
     const mid = call.manager.id
@@ -101,9 +119,11 @@ export async function getQualityDashboard(
         name: call.manager.name,
         scores: [],
         criticalMisses: 0,
+        callCount: 0,
       })
     }
     const entry = managerMap.get(mid)!
+    entry.callCount++
     if (call.score) {
       entry.scores.push(call.score.totalScore)
       for (const item of call.score.items) {
@@ -117,7 +137,7 @@ export async function getQualityDashboard(
   const managers: QcManagerRow[] = Array.from(managerMap.values()).map((m) => ({
     id: m.id,
     name: m.name,
-    callCount: calls.filter((c) => c.managerId === m.id).length,
+    callCount: m.callCount,
     avgScore:
       m.scores.length > 0
         ? m.scores.reduce((a, b) => a + b, 0) / m.scores.length
@@ -363,11 +383,25 @@ export async function getQcChartData(
       color: TAG_COLORS[i % TAG_COLORS.length],
     }))
 
-  // Per-manager scores
+  // Per-manager scores — include all managers from tenant
+  const allChartManagers = await db.manager.findMany({
+    where: { tenantId },
+    select: { id: true, name: true },
+  })
+
   const managerMap = new Map<
     string,
     { name: string; scores: number[]; callCount: number }
   >()
+
+  for (const m of allChartManagers) {
+    managerMap.set(m.id, {
+      name: m.name,
+      scores: [],
+      callCount: 0,
+    })
+  }
+
   for (const call of calls) {
     if (!call.manager) continue
     const mid = call.manager.id

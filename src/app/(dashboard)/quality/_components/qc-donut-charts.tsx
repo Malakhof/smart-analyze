@@ -1,6 +1,6 @@
 "use client"
 
-import { DonutChart } from "@tremor/react"
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 
 interface ChartItem {
   name: string
@@ -13,16 +13,19 @@ interface QcDonutChartsProps {
   tagBreakdown: ChartItem[]
 }
 
+const CATEGORY_COLORS = ["#3b82f6", "#f59e0b", "#10b981", "#8b5cf6", "#06b6d4"]
+const TAG_COLORS = ["#ef4444", "#f97316", "#dc2626", "#ec4899", "#d946ef"]
+
 function DonutCard({
   title,
   data,
   showAllHref,
-  chartColors,
+  colors,
 }: {
   title: string
   data: ChartItem[]
   showAllHref?: string
-  chartColors: string[]
+  colors: string[]
 }) {
   const total = data.reduce((s, d) => s + d.value, 0)
 
@@ -36,24 +39,45 @@ function DonutCard({
         </div>
       ) : (
         <>
-          <div className="qc-donut-wrapper flex justify-center">
-            <DonutChart
-              data={data}
-              category="value"
-              index="name"
-              colors={chartColors}
-              showLabel={true}
-              label={String(total)}
-              valueFormatter={(v) => String(v)}
-              className="h-[160px] w-[160px]"
-              showAnimation={true}
-              showTooltip={true}
-            />
+          <div className="relative flex justify-center">
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie
+                  data={data}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={72}
+                  strokeWidth={0}
+                >
+                  {data.map((_, i) => (
+                    <Cell key={i} fill={colors[i % colors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--surface-1, #1a1a2e)",
+                    border: "1px solid var(--border-default, #2a2a4a)",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "var(--text-primary, #fff)",
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Center label */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <span className="text-[20px] font-bold text-text-primary">
+                {total}
+              </span>
+            </div>
           </div>
 
           {/* Legend */}
           <div className="mt-4 space-y-2">
-            {data.map((item) => (
+            {data.map((item, i) => (
               <div
                 key={item.name}
                 className="flex items-center justify-between text-[12px]"
@@ -61,7 +85,7 @@ function DonutCard({
                 <div className="flex items-center gap-2 min-w-0">
                   <span
                     className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                    style={{ backgroundColor: item.color }}
+                    style={{ backgroundColor: colors[i % colors.length] }}
                   />
                   <span className="truncate text-text-secondary">
                     {item.name}
@@ -93,8 +117,8 @@ export function QcDonutCharts({
 }: QcDonutChartsProps) {
   return (
     <div className="mb-5 grid grid-cols-2 gap-2.5">
-      <DonutCard title="Категории" data={categoryBreakdown} showAllHref="#" chartColors={["blue", "amber", "emerald", "violet", "cyan"]} />
-      <DonutCard title="Теги" data={tagBreakdown} showAllHref="#" chartColors={["rose", "orange", "red", "pink", "fuchsia"]} />
+      <DonutCard title="Категории" data={categoryBreakdown} showAllHref="#" colors={CATEGORY_COLORS} />
+      <DonutCard title="Теги" data={tagBreakdown} showAllHref="#" colors={TAG_COLORS} />
     </div>
   )
 }

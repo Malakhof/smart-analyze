@@ -34,22 +34,25 @@ export function QcComplianceChart({ data }: QcComplianceChartProps) {
       <h4 className="mb-4 text-[14px] font-bold text-text-primary">
         Выполнение скрипта
       </h4>
-      <AreaChart
-        data={chartData}
-        index="step"
-        categories={["Текущий период", "Предыдущий период"]}
-        colors={["violet", "fuchsia"]}
-        valueFormatter={(v: number) => Math.round(v) + "%"}
-        yAxisWidth={48}
-        showAnimation={true}
-        showLegend={true}
-        showGridLines={true}
-        showGradient={true}
-        curveType="monotone"
-        className="h-[280px]"
-        minValue={0}
-        maxValue={100}
-      />
+      <div className="overflow-visible pl-1">
+        <AreaChart
+          data={chartData}
+          index="step"
+          categories={["Текущий период", "Предыдущий период"]}
+          colors={["violet", "fuchsia"]}
+          valueFormatter={(v: number) => `${Math.round(v)}%`}
+          yAxisWidth={56}
+          showAnimation={true}
+          showLegend={true}
+          showGridLines={true}
+          showGradient={true}
+          curveType="monotone"
+          className="h-[280px]"
+          minValue={0}
+          maxValue={100}
+          showYAxis={true}
+        />
+      </div>
     </div>
   )
 }

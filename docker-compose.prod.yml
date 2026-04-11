@@ -1,10 +1,12 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: smart-analyze-db
     environment:
       POSTGRES_USER: smartanalyze
       POSTGRES_PASSWORD: ${DB_PASSWORD:-strongpassword}
       POSTGRES_DB: smartanalyze
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -15,7 +17,7 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - DATABASE_URL=postgresql://smartanalyze:${DB_PASSWORD:-strongpassword}@postgres:5432/smartanalyze
+      - DATABASE_URL=postgresql://smartanalyze:${DB_PASSWORD:-strongpassword}@smart-analyze-db:5432/smartanalyze
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3001}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}

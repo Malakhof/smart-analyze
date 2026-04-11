@@ -21,33 +21,46 @@ export const authOptions: AuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        try {
+          if (!credentials?.email || !credentials?.password) {
+            console.log("[AUTH] Missing credentials")
+            return null
+          }
+
+          console.log("[AUTH] Attempting login for:", credentials.email)
+
+          const user = await db.user.findUnique({
+            where: { email: credentials.email },
+          })
+
+          if (!user) {
+            console.log("[AUTH] User not found:", credentials.email)
+            return null
+          }
+
+          console.log("[AUTH] User found, checking password")
+
+          const isPasswordValid = await bcrypt.compare(
+            credentials.password,
+            user.password,
+          )
+
+          if (!isPasswordValid) {
+            console.log("[AUTH] Invalid password")
+            return null
+          }
+
+          console.log("[AUTH] Login successful for:", user.email)
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            tenantId: user.tenantId,
+            role: user.role,
+          }
+        } catch (error) {
+          console.error("[AUTH] Error in authorize:", error)
           return null
-        }
-
-        const user = await db.user.findUnique({
-          where: { email: credentials.email },
-        })
-
-        if (!user) {
-          return null
-        }
-
-        const isPasswordValid = await bcrypt.compare(
-          credentials.password,
-          user.password,
-        )
-
-        if (!isPasswordValid) {
-          return null
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          tenantId: user.tenantId,
-          role: user.role,
         }
       },
     }),

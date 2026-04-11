@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import type { InsightWithDetails } from "@/lib/queries/dashboard"
+import type { InsightWithDetails, DailyConversion } from "@/lib/queries/dashboard"
 import { getInsights } from "@/lib/queries/dashboard"
 
 interface KeyQuote {
@@ -41,6 +41,11 @@ export interface DealListItem {
   duration: number | null
 }
 
+export interface LostStageData {
+  stageName: string
+  count: number
+}
+
 export interface ManagerDetail {
   id: string
   name: string
@@ -59,6 +64,8 @@ export interface ManagerDetail {
   allDeals: DealListItem[]
   patterns: ManagerPattern[]
   insights: InsightWithDetails[]
+  dailyConversion: DailyConversion[]
+  lostStages: LostStageData[]
 }
 
 export async function getManagerDetail(
@@ -180,6 +187,72 @@ export async function getManagerDetail(
     0
   )
 
+  // Daily conversion for this manager
+  const managerDeals = await db.deal.findMany({
+    where: {
+      managerId,
+      status: { in: ["WON", "LOST"] },
+      closedAt: { not: null },
+    },
+    select: { status: true, closedAt: true },
+    orderBy: { closedAt: "asc" },
+  })
+
+  const dayMap = new Map<string, { won: number; total: number }>()
+  for (const deal of managerDeals) {
+    if (!deal.closedAt) continue
+    const d = deal.closedAt
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    const entry = dayMap.get(key) ?? { won: 0, total: 0 }
+    entry.total++
+    if (deal.status === "WON") entry.won++
+    dayMap.set(key, entry)
+  }
+  const sortedDays = Array.from(dayMap.entries()).sort(([a], [b]) =>
+    a.localeCompare(b)
+  )
+  const dailyConversion: DailyConversion[] = sortedDays.map(
+    ([dateKey, { won, total }]) => {
+      const [, mm, dd] = dateKey.split("-")
+      return {
+        date: `${dd}.${mm}`,
+        conversion: total > 0 ? Math.round((won / total) * 1000) / 10 : 0,
+      }
+    }
+  )
+
+  // Lost deals — last stage before loss
+  const lostDealIds = lostDeals.map((d) => d.id)
+  let lostStages: LostStageData[] = []
+  if (lostDealIds.length > 0) {
+    const stageHistories = await db.dealStageHistory.findMany({
+      where: { dealId: { in: lostDealIds } },
+      select: {
+        dealId: true,
+        stage: { select: { name: true } },
+        enteredAt: true,
+      },
+      orderBy: { enteredAt: "desc" },
+    })
+
+    // Get last stage per lost deal
+    const lastStagePerDeal = new Map<string, string>()
+    for (const sh of stageHistories) {
+      if (!lastStagePerDeal.has(sh.dealId)) {
+        lastStagePerDeal.set(sh.dealId, sh.stage.name)
+      }
+    }
+
+    const stageCounts = new Map<string, number>()
+    for (const stageName of lastStagePerDeal.values()) {
+      stageCounts.set(stageName, (stageCounts.get(stageName) ?? 0) + 1)
+    }
+
+    lostStages = Array.from(stageCounts.entries())
+      .map(([stageName, count]) => ({ stageName, count }))
+      .sort((a, b) => b.count - a.count)
+  }
+
   return {
     id: manager.id,
     name: manager.name,
@@ -198,5 +271,7 @@ export async function getManagerDetail(
     allDeals,
     patterns: Array.from(patternsMap.values()),
     insights: managerInsights,
+    dailyConversion,
+    lostStages,
   }
 }

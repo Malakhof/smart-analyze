@@ -7,6 +7,9 @@ import { ManagerStats } from "./_components/manager-stats"
 import { DealCard } from "./_components/deal-card"
 import { DealsList } from "./_components/deals-list"
 import { ManagerPatterns } from "./_components/manager-patterns"
+import { ClientTypeChart } from "./_components/client-type-chart"
+import { DealLossAnalysis } from "./_components/deal-loss-analysis"
+import { ConversionChart } from "../../_components/conversion-chart"
 import { AiInsights } from "../../_components/ai-insights"
 
 const AVATAR_CLASSES = [
@@ -66,15 +69,19 @@ export default async function ManagerDetailPage({
 
   return (
     <>
-      {/* Back link */}
-      <Link
-        href="/managers"
-        className="mb-5 inline-flex items-center gap-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
-      >
-        &larr; Менеджеры
-      </Link>
+      {/* Breadcrumb */}
+      <nav className="mb-4 text-[12px] text-text-tertiary">
+        <Link
+          href="/"
+          className="transition-colors hover:text-text-secondary"
+        >
+          {"🏠 Дашборд"}
+        </Link>
+        <span className="mx-1.5">&gt;</span>
+        <span>{manager.name}</span>
+      </nav>
 
-      {/* Manager header */}
+      {/* Manager header with search and period filter */}
       <div className="mb-6 flex items-center gap-4">
         <div
           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white ${AVATAR_CLASSES[avatarIdx]}`}
@@ -89,11 +96,25 @@ export default async function ManagerDetailPage({
             Менеджер по продажам
           </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full px-3.5 py-1 text-[12px] font-semibold ${pill.classes}`}
-        >
-          {pill.label}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <input
+            type="text"
+            placeholder="Поиск..."
+            className="h-8 w-[140px] rounded-lg border border-border-default bg-surface-2 px-2.5 text-[12px] text-text-primary placeholder:text-text-tertiary focus:border-ai-1 focus:outline-none"
+            readOnly
+          />
+          <button
+            type="button"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-border-default bg-surface-2 px-3 text-[12px] text-text-secondary transition-colors hover:border-border-hover"
+          >
+            {"📅 Всё время"}
+          </button>
+          <span
+            className={`shrink-0 rounded-full px-3.5 py-1 text-[12px] font-semibold ${pill.classes}`}
+          >
+            {pill.label}
+          </span>
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -108,6 +129,19 @@ export default async function ManagerDetailPage({
         totalSalesAmount={manager.totalSalesAmount}
         avgDealTime={manager.avgDealTime}
       />
+
+      {/* Conversion chart */}
+      {manager.dailyConversion.length > 0 && (
+        <section className="mt-8">
+          <ConversionChart data={manager.dailyConversion} />
+        </section>
+      )}
+
+      {/* Client type + Deal loss analysis */}
+      <section className="mt-8 grid grid-cols-2 gap-2.5">
+        <ClientTypeChart totalDeals={manager.totalDeals ?? 0} />
+        <DealLossAnalysis lostStages={manager.lostStages} />
+      </section>
 
       {/* Success deals */}
       {manager.wonDeals.length > 0 && (

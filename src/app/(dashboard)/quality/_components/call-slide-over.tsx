@@ -64,36 +64,85 @@ interface TranscriptMessage {
 
 function parseTranscript(raw: string): TranscriptMessage[] {
   const messages: TranscriptMessage[] = []
+
+  // First try line-based parsing (if transcript has newlines with speaker prefixes)
   const lines = raw.split("\n").filter((l) => l.trim())
+  const hasLabels = lines.some((l) =>
+    /^(?:Оператор|Менеджер|Клиент|Operator|Client)/i.test(l)
+  )
 
-  for (const line of lines) {
-    // Try patterns: "Оператор: ...", "Клиент: ...", "Менеджер: ..."
-    const operatorMatch = line.match(
-      /^(?:Оператор|Менеджер|Operator|Manager)\s*[:：]\s*(.*)/i
-    )
-    const clientMatch = line.match(
-      /^(?:Клиент|Client|Customer)\s*[:：]\s*(.*)/i
-    )
-
-    if (operatorMatch) {
-      messages.push({ speaker: "operator", text: operatorMatch[1].trim() })
-    } else if (clientMatch) {
-      messages.push({ speaker: "client", text: clientMatch[1].trim() })
-    } else {
-      // If no prefix, alternate or append to last
-      if (messages.length > 0) {
+  if (hasLabels && lines.length > 1) {
+    for (const line of lines) {
+      const operatorMatch = line.match(
+        /^(?:Оператор|Менеджер|Operator|Manager)\s*[:：]\s*(.*)/i
+      )
+      const clientMatch = line.match(
+        /^(?:Клиент|Client|Customer)\s*[:：]\s*(.*)/i
+      )
+      if (operatorMatch) {
+        messages.push({ speaker: "operator", text: operatorMatch[1].trim() })
+      } else if (clientMatch) {
+        messages.push({ speaker: "client", text: clientMatch[1].trim() })
+      } else if (messages.length > 0) {
         const lastSpeaker = messages[messages.length - 1].speaker
-        messages.push({
-          speaker: lastSpeaker === "operator" ? "client" : "operator",
-          text: line.trim(),
-        })
+        messages.push({ speaker: lastSpeaker === "operator" ? "client" : "operator", text: line.trim() })
       } else {
         messages.push({ speaker: "operator", text: line.trim() })
       }
     }
+    return messages
   }
 
-  return messages
+  // Plain text (Whisper output) — split by sentences, group by question/answer
+  const sentences = raw.match(/[^.!?]*[.!?]+/g) || [raw]
+  let currentSpeaker: "operator" | "client" = "operator"
+  let currentText = ""
+
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim()
+    if (!trimmed) continue
+
+    const isQuestion = trimmed.endsWith("?")
+
+    if (currentText === "") {
+      currentText = trimmed
+      if (isQuestion) {
+        messages.push({ speaker: "operator", text: currentText })
+        currentText = ""
+        currentSpeaker = "client"
+      }
+    } else if (currentSpeaker === "operator") {
+      currentText += " " + trimmed
+      if (isQuestion) {
+        messages.push({ speaker: "operator", text: currentText })
+        currentText = ""
+        currentSpeaker = "client"
+      }
+    } else {
+      // client — short answers, switch back on next question-like sentence
+      if (isQuestion) {
+        if (currentText) messages.push({ speaker: "client", text: currentText })
+        currentText = trimmed
+        messages.push({ speaker: "operator", text: currentText })
+        currentText = ""
+        currentSpeaker = "client"
+      } else {
+        currentText += " " + trimmed
+        // Short client answer — flush and switch
+        if (currentText.split(" ").length <= 8) {
+          messages.push({ speaker: "client", text: currentText.trim() })
+          currentText = ""
+          currentSpeaker = "operator"
+        }
+      }
+    }
+  }
+
+  if (currentText.trim()) {
+    messages.push({ speaker: currentSpeaker, text: currentText.trim() })
+  }
+
+  return messages.length > 0 ? messages : [{ speaker: "operator", text: raw }]
 }
 
 /* ---------- collapsible section ---------- */

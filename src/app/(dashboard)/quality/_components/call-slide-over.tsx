@@ -284,7 +284,7 @@ export function CallSlideOver({
                 ) : call.audioUrl ? (
                   <audio
                     controls
-                    src={call.audioUrl}
+                    src={`/api/audio?url=${encodeURIComponent(call.audioUrl)}`}
                     className="w-full rounded-lg"
                     preload="none"
                   />

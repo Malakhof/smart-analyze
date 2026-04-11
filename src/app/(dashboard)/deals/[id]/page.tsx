@@ -62,9 +62,10 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
-          {/* Audio calls */}
+          {/* Audio calls (deduplicated by audioUrl) */}
           {deal.messages
             .filter((m) => m.isAudio && m.audioUrl)
+            .filter((m, i, arr) => arr.findIndex((x) => x.audioUrl === m.audioUrl) === i)
             .map((m) => (
               <DealAudio
                 key={m.id}

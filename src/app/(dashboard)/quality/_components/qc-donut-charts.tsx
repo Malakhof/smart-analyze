@@ -17,10 +17,12 @@ function DonutCard({
   title,
   data,
   showAllHref,
+  chartColors,
 }: {
   title: string
   data: ChartItem[]
   showAllHref?: string
+  chartColors: string[]
 }) {
   const total = data.reduce((s, d) => s + d.value, 0)
 
@@ -39,7 +41,7 @@ function DonutCard({
               data={data}
               category="value"
               index="name"
-              colors={data.map((d) => d.color)}
+              colors={chartColors}
               showLabel={true}
               label={String(total)}
               valueFormatter={(v) => String(v)}
@@ -91,8 +93,8 @@ export function QcDonutCharts({
 }: QcDonutChartsProps) {
   return (
     <div className="mb-5 grid grid-cols-2 gap-2.5">
-      <DonutCard title="Категории" data={categoryBreakdown} showAllHref="#" />
-      <DonutCard title="Теги" data={tagBreakdown} showAllHref="#" />
+      <DonutCard title="Категории" data={categoryBreakdown} showAllHref="#" chartColors={["blue", "amber", "emerald", "violet", "cyan"]} />
+      <DonutCard title="Теги" data={tagBreakdown} showAllHref="#" chartColors={["rose", "orange", "red", "pink", "fuchsia"]} />
     </div>
   )
 }

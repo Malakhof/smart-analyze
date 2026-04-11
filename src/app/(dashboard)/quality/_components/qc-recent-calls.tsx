@@ -202,8 +202,8 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
                           title={`${Math.round(c.totalScore)}%`}
                         />
                       ) : (
-                        <span className="text-[12px] text-text-tertiary">
-                          —
+                        <span className="text-[11px] text-text-tertiary">
+                          Не оценен
                         </span>
                       )}
                     </td>

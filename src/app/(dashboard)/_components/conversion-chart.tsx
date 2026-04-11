@@ -36,7 +36,7 @@ export function ConversionChart({ data }: ConversionChartProps) {
         index="date"
         categories={["Конверсия %"]}
         colors={["violet"]}
-        valueFormatter={(v) => `${Math.round(v)}%`}
+        valueFormatter={(v: number) => Math.round(v) + "%"}
         yAxisWidth={45}
         showAnimation={true}
         showLegend={false}

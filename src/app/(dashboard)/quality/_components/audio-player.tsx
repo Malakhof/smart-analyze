@@ -11,7 +11,7 @@ export function AudioPlayer({ audioUrl }: AudioPlayerProps) {
       {audioUrl ? (
         <audio
           controls
-          src={audioUrl}
+          src={`/api/audio?url=${encodeURIComponent(audioUrl)}`}
           className="w-full rounded-lg"
           preload="none"
         />

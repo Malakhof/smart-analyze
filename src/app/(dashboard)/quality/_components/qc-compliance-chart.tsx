@@ -39,8 +39,8 @@ export function QcComplianceChart({ data }: QcComplianceChartProps) {
         index="step"
         categories={["Текущий период", "Предыдущий период"]}
         colors={["violet", "fuchsia"]}
-        valueFormatter={(v) => `${v}%`}
-        yAxisWidth={40}
+        valueFormatter={(v: number) => Math.round(v) + "%"}
+        yAxisWidth={48}
         showAnimation={true}
         showLegend={true}
         showGridLines={true}

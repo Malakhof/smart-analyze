@@ -88,23 +88,27 @@ export function QcManagerTable({ managers }: QcManagerTableProps) {
               </td>
               <td className="px-[18px] py-3 text-[14px]">{m.callCount}</td>
               <td className="px-[18px] py-3 text-[14px]">
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-3">
-                    <div
-                      className={`h-full rounded-full ${scoreBg(m.avgScore)}`}
-                      style={{ width: `${Math.min(100, m.avgScore)}%` }}
-                    />
+                {m.avgScore > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-3">
+                      <div
+                        className={`h-full rounded-full ${scoreBg(m.avgScore)}`}
+                        style={{ width: `${Math.min(100, m.avgScore)}%` }}
+                      />
+                    </div>
+                    <span className={`font-semibold ${scoreColor(m.avgScore)}`}>
+                      {Math.round(m.avgScore)}%
+                    </span>
                   </div>
-                  <span className={`font-semibold ${scoreColor(m.avgScore)}`}>
-                    {Math.round(m.avgScore)}%
-                  </span>
-                </div>
+                ) : (
+                  <span className="text-[12px] text-text-tertiary">Не оценен</span>
+                )}
               </td>
               <td className="px-[18px] py-3 text-[14px] text-status-green">
-                {Math.round(m.bestScore)}%
+                {m.bestScore > 0 ? Math.round(m.bestScore) + "%" : <span className="text-[12px] text-text-tertiary">—</span>}
               </td>
               <td className="px-[18px] py-3 text-[14px] text-status-red">
-                {Math.round(m.worstScore)}%
+                {m.worstScore > 0 ? Math.round(m.worstScore) + "%" : <span className="text-[12px] text-text-tertiary">—</span>}
               </td>
               <td className="px-[18px] py-3 text-[14px]">
                 {m.criticalMisses > 0 ? (

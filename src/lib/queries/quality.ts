@@ -282,6 +282,151 @@ export async function getQcFilterOptions(
   }
 }
 
+// --- Chart data for QC dashboard (Task 2) ---
+
+export interface QcBestWorstManager {
+  name: string
+  score: number
+  scoreChange: number
+  calls: number
+  callsChange: number
+}
+
+export interface QcChartData {
+  totalCalls: number
+  totalCallsChange: number
+  avgScore: number
+  avgScoreChange: number
+  categoryBreakdown: { name: string; value: number; color: string }[]
+  tagBreakdown: { name: string; value: number; color: string }[]
+  bestManager: QcBestWorstManager | null
+  worstManager: QcBestWorstManager | null
+}
+
+const CATEGORY_COLORS = ["#3B82F6", "#F59E0B", "#10B981", "#8B5CF6", "#EC4899"]
+const TAG_COLORS = ["#EF4444", "#DC2626", "#B91C1C", "#991B1B", "#7F1D1D"]
+
+export async function getQcChartData(
+  tenantId: string
+): Promise<QcChartData> {
+  const calls = await db.callRecord.findMany({
+    where: { tenantId },
+    include: {
+      manager: { select: { id: true, name: true } },
+      score: true,
+      tags: true,
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  const totalCalls = calls.length
+
+  // Scored calls
+  const scoredCalls = calls.filter((c) => c.score)
+  const avgScore =
+    scoredCalls.length > 0
+      ? scoredCalls.reduce((s, c) => s + (c.score?.totalScore ?? 0), 0) /
+        scoredCalls.length
+      : 0
+
+  // Category breakdown
+  const catMap = new Map<string, number>()
+  for (const call of calls) {
+    const cat = call.category ?? "Без категории"
+    catMap.set(cat, (catMap.get(cat) ?? 0) + 1)
+  }
+  const categoryBreakdown = Array.from(catMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+    }))
+
+  // Tag breakdown
+  const tagMap = new Map<string, number>()
+  for (const call of calls) {
+    for (const t of call.tags) {
+      tagMap.set(t.tag, (tagMap.get(t.tag) ?? 0) + 1)
+    }
+  }
+  const tagBreakdown = Array.from(tagMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: TAG_COLORS[i % TAG_COLORS.length],
+    }))
+
+  // Per-manager scores
+  const managerMap = new Map<
+    string,
+    { name: string; scores: number[]; callCount: number }
+  >()
+  for (const call of calls) {
+    if (!call.manager) continue
+    const mid = call.manager.id
+    if (!managerMap.has(mid)) {
+      managerMap.set(mid, {
+        name: call.manager.name,
+        scores: [],
+        callCount: 0,
+      })
+    }
+    const entry = managerMap.get(mid)!
+    entry.callCount++
+    if (call.score) {
+      entry.scores.push(call.score.totalScore)
+    }
+  }
+
+  const managerList = Array.from(managerMap.values())
+    .filter((m) => m.scores.length > 0)
+    .map((m) => ({
+      name: m.name,
+      score: m.scores.reduce((a, b) => a + b, 0) / m.scores.length,
+      calls: m.callCount,
+    }))
+    .sort((a, b) => b.score - a.score)
+
+  const bestManager: QcBestWorstManager | null =
+    managerList.length > 0
+      ? {
+          name: managerList[0].name,
+          score: Math.round(managerList[0].score * 10) / 10,
+          scoreChange: 0, // no period comparison yet
+          calls: managerList[0].calls,
+          callsChange: 0,
+        }
+      : null
+
+  const worstManager: QcBestWorstManager | null =
+    managerList.length > 0
+      ? {
+          name: managerList[managerList.length - 1].name,
+          score:
+            Math.round(
+              managerList[managerList.length - 1].score * 10
+            ) / 10,
+          scoreChange: 0,
+          calls: managerList[managerList.length - 1].calls,
+          callsChange: 0,
+        }
+      : null
+
+  return {
+    totalCalls,
+    totalCallsChange: 0, // no period comparison yet
+    avgScore: Math.round(avgScore * 10) / 10,
+    avgScoreChange: 0,
+    categoryBreakdown,
+    tagBreakdown,
+    bestManager,
+    worstManager,
+  }
+}
+
 export async function getCallDetail(
   callId: string
 ): Promise<QcCallDetail | null> {

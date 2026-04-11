@@ -1,8 +1,9 @@
 export const dynamic = "force-dynamic"
 
 import { AiBadge } from "@/components/ai-badge"
-import { getQualityDashboard, getQcFilterOptions, getTenantId } from "@/lib/queries/quality"
+import { getQualityDashboard, getQcFilterOptions, getQcChartData, getTenantId } from "@/lib/queries/quality"
 import { QcSummary } from "./_components/qc-summary"
+import { QcDonutCharts } from "./_components/qc-donut-charts"
 import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
 import { QcFilters } from "./_components/qc-filters"
@@ -18,9 +19,10 @@ export default async function QualityPage() {
     )
   }
 
-  const [data, filterOptions] = await Promise.all([
+  const [data, filterOptions, chartData] = await Promise.all([
     getQualityDashboard(tenantId),
     getQcFilterOptions(tenantId),
+    getQcChartData(tenantId),
   ])
 
   return (
@@ -49,10 +51,18 @@ export default async function QualityPage() {
         <div className="min-w-0 flex-1">
           {/* Summary cards */}
           <QcSummary
-            totalCalls={data.totalCalls}
-            avgScore={data.avgScore}
-            avgScriptCompliance={data.avgScriptCompliance}
-            criticalMisses={data.criticalMisses}
+            totalCalls={chartData.totalCalls}
+            totalCallsChange={chartData.totalCallsChange}
+            avgScore={chartData.avgScore}
+            avgScoreChange={chartData.avgScoreChange}
+            bestManager={chartData.bestManager}
+            worstManager={chartData.worstManager}
+          />
+
+          {/* Donut charts */}
+          <QcDonutCharts
+            categoryBreakdown={chartData.categoryBreakdown}
+            tagBreakdown={chartData.tagBreakdown}
           />
 
           {/* Manager scores */}

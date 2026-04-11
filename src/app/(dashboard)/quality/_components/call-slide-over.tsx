@@ -222,7 +222,7 @@ export function CallSlideOver({
                   >
                     &larr;
                   </button>
-                  Звонок {call.crmId ?? call.id.slice(0, 8)}
+                  {call.type === "CHAT" ? "Переписка" : "Звонок"} {call.crmId ?? call.id.slice(0, 8)}
                 </SheetTitle>
                 {call.crmId && (
                   <SheetDescription className="text-[12px] text-ai-1 hover:underline">
@@ -275,9 +275,13 @@ export function CallSlideOver({
               {/* Audio player */}
               <div className="border-b border-border-default px-5 py-4">
                 <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
-                  Аудио
+                  {call.type === "CHAT" ? "Переписка" : "Запись звонка"}
                 </h4>
-                {call.audioUrl ? (
+                {call.type === "CHAT" ? (
+                  <div className="flex h-10 items-center justify-center rounded-lg bg-surface-2 text-[12px] text-text-tertiary">
+                    Текстовая переписка
+                  </div>
+                ) : call.audioUrl ? (
                   <audio
                     controls
                     src={call.audioUrl}

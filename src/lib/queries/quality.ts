@@ -221,6 +221,7 @@ export interface QcCallDetail {
   clientName: string | null
   clientPhone: string | null
   direction: string
+  type: string
   category: string | null
   audioUrl: string | null
   transcript: string | null
@@ -524,6 +525,7 @@ export interface QcRecentCallEnhanced {
   managerName: string | null
   clientName: string | null
   direction: string
+  type: string
   duration: number | null
   totalScore: number | null
   category: string | null
@@ -579,6 +581,7 @@ export async function getRecentCallsEnhanced(
       managerName: c.manager?.name ?? null,
       clientName: c.clientName,
       direction: c.direction,
+      type: (c as Record<string, unknown>).type as string ?? "CALL",
       duration: c.duration,
       totalScore: c.score?.totalScore ?? null,
       category: c.category,
@@ -732,6 +735,7 @@ export async function getManagerQualityFull(
       managerName: c.manager?.name ?? null,
       clientName: c.clientName,
       direction: c.direction,
+      type: (c as Record<string, unknown>).type as string ?? "CALL",
       duration: c.duration,
       totalScore: c.score?.totalScore ?? null,
       category: c.category,
@@ -825,6 +829,7 @@ export async function getCallDetail(
     clientName: call.clientName,
     clientPhone: call.clientPhone,
     direction: call.direction,
+    type: (call as Record<string, unknown>).type as string ?? "CALL",
     category: call.category,
     audioUrl: call.audioUrl,
     transcript: call.transcript,

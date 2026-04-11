@@ -108,7 +108,18 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
                   >
                     {/* Звонок (ID) */}
                     <td className="whitespace-nowrap px-[14px] py-3 text-[13px] font-medium text-text-primary">
-                      {c.crmId ?? c.id.slice(0, 8)}
+                      <span className="inline-flex items-center gap-1.5">
+                        {c.type === "CHAT" ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-text-tertiary">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-text-tertiary">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                          </svg>
+                        )}
+                        {c.crmId ?? c.id.slice(0, 8)}
+                      </span>
                     </td>
 
                     {/* Дата/Время — two lines */}
@@ -262,11 +273,35 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
         </div>
       </div>
 
-      {/* Export button placeholder */}
+      {/* Export button */}
       <div className="mt-3 flex justify-end">
         <button
-          disabled
-          className="rounded-lg border border-border-default bg-surface-1 px-4 py-2 text-[13px] font-medium text-text-tertiary opacity-60 cursor-not-allowed"
+          onClick={() => {
+            const header = ["ID", "Дата", "Длительность", "Категория", "Теги", "Оценка"]
+            const rows = calls.map((c) => [
+              c.crmId ?? c.id.slice(0, 8),
+              new Date(c.createdAt).toLocaleDateString("ru-RU"),
+              c.duration != null ? String(c.duration) : "",
+              c.category ?? "",
+              c.tags.join("; "),
+              c.totalScore != null ? String(Math.round(c.totalScore)) : "",
+            ])
+            const csv = [header, ...rows]
+              .map((row) =>
+                row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")
+              )
+              .join("\n")
+            const bom = "\uFEFF"
+            const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" })
+            const url = URL.createObjectURL(blob)
+            const date = new Date().toISOString().slice(0, 10)
+            const a = document.createElement("a")
+            a.href = url
+            a.download = `calls-export-${date}.csv`
+            a.click()
+            URL.revokeObjectURL(url)
+          }}
+          className="rounded-lg border border-border-default bg-surface-1 px-4 py-2 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
         >
           Экспорт
         </button>

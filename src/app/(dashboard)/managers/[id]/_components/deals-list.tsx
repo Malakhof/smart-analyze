@@ -186,6 +186,40 @@ export function DealsList({ deals }: DealsListProps) {
         </div>
       </div>
 
+      {/* Export + Footer */}
+      {filtered.length > 0 && (
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={() => {
+              const header = ["ID", "Сумма", "Статус", "Длительность"]
+              const rows = filtered.map((d) => [
+                d.crmId ?? d.id.slice(0, 8),
+                d.amount != null ? String(d.amount) : "",
+                d.status === "WON" ? "Успешная" : d.status === "LOST" ? "Провалена" : "В работе",
+                d.duration != null ? String(d.duration) : "",
+              ])
+              const csv = [header, ...rows]
+                .map((row) =>
+                  row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")
+                )
+                .join("\n")
+              const bom = "\uFEFF"
+              const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" })
+              const url = URL.createObjectURL(blob)
+              const date = new Date().toISOString().slice(0, 10)
+              const a = document.createElement("a")
+              a.href = url
+              a.download = `deals-export-${date}.csv`
+              a.click()
+              URL.revokeObjectURL(url)
+            }}
+            className="rounded-lg border border-border-default bg-surface-1 px-4 py-2 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+          >
+            Экспорт
+          </button>
+        </div>
+      )}
+
       {/* Footer: count + toggle */}
       {filtered.length > 0 && (
         <div className="mt-2.5 flex items-center justify-between text-[12px] text-text-tertiary">

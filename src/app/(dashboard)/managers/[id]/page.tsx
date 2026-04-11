@@ -7,6 +7,7 @@ import { ManagerStats } from "./_components/manager-stats"
 import { DealCard } from "./_components/deal-card"
 import { DealsList } from "./_components/deals-list"
 import { ManagerPatterns } from "./_components/manager-patterns"
+import { AiInsights } from "../../_components/ai-insights"
 
 const AVATAR_CLASSES = [
   "bg-gradient-to-br from-ai-1 to-ai-2",
@@ -143,6 +144,13 @@ export default async function ManagerDetailPage({
 
       {/* Patterns */}
       <ManagerPatterns patterns={manager.patterns} />
+
+      {/* AI Insights accordion */}
+      {manager.insights.length > 0 && (
+        <section className="mt-8">
+          <AiInsights insights={manager.insights} />
+        </section>
+      )}
     </>
   )
 }

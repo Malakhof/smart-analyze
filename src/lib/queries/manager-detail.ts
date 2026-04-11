@@ -1,4 +1,6 @@
 import { db } from "@/lib/db"
+import type { InsightWithDetails } from "@/lib/queries/dashboard"
+import { getInsights } from "@/lib/queries/dashboard"
 
 interface KeyQuote {
   text: string
@@ -52,6 +54,7 @@ export interface ManagerDetail {
   lostDeals: DealWithAnalysis[]
   allDeals: DealListItem[]
   patterns: ManagerPattern[]
+  insights: InsightWithDetails[]
 }
 
 export async function getManagerDetail(
@@ -61,6 +64,7 @@ export async function getManagerDetail(
     where: { id: managerId },
     select: {
       id: true,
+      tenantId: true,
       name: true,
       totalDeals: true,
       successDeals: true,
@@ -157,6 +161,12 @@ export async function getManagerDetail(
     }
   }
 
+  // Fetch insights filtered to this manager
+  const allInsights = await getInsights(manager.tenantId)
+  const managerInsights = allInsights.filter((i) =>
+    i.managerIds.includes(managerId)
+  )
+
   return {
     id: manager.id,
     name: manager.name,
@@ -170,5 +180,6 @@ export async function getManagerDetail(
     lostDeals,
     allDeals,
     patterns: Array.from(patternsMap.values()),
+    insights: managerInsights,
   }
 }

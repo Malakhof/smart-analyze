@@ -336,6 +336,7 @@ model CallRecord {
   clientName  String?
   clientPhone String?
   direction   CallDirection
+  type        CommunicationType @default(CALL)
   category    String?
   audioUrl    String?
   transcript  String?
@@ -348,6 +349,11 @@ model CallRecord {
 enum CallDirection {
   INCOMING
   OUTGOING
+}
+
+enum CommunicationType {
+  CALL
+  CHAT
 }
 
 model CallScore {

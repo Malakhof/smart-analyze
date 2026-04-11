@@ -132,15 +132,22 @@ export async function extractPatterns(tenantId: string): Promise<number> {
   // Collect unique manager IDs from deals for manager metric computation
   const managerIds = [...new Set(deals.map((d) => d.manager?.id).filter(Boolean))] as string[]
 
-  // 4. Delete old patterns + deal-pattern links for this tenant, then create fresh
-  await db.dealPattern.deleteMany({
-    where: { pattern: { tenantId } },
-  })
-  await db.pattern.deleteMany({
-    where: { tenantId },
-  })
-
-  let patternCount = 0
+  // 4. Build new patterns, then atomically swap old → new in a transaction
+  const newPatterns: Array<{
+    data: {
+      tenantId: string
+      type: "SUCCESS" | "FAILURE"
+      title: string
+      description: string
+      strength: number
+      impact: number
+      reliability: number
+      coverage: number
+      dealCount: number
+      managerCount: number
+    }
+    dealIds: string[]
+  }> = []
 
   for (const p of patterns) {
     // Only keep dealIds that actually exist in our fetched deals
@@ -162,7 +169,7 @@ export async function extractPatterns(tenantId: string): Promise<number> {
     const relevantDeals = p.type === "success" ? wonIds.size : lostIds.size
     const coverage = Math.round((validDealIds.length / Math.max(relevantDeals, 1)) * 100)
 
-    const pattern = await db.pattern.create({
+    newPatterns.push({
       data: {
         tenantId,
         type: p.type === "success" ? "SUCCESS" : "FAILURE",
@@ -175,18 +182,35 @@ export async function extractPatterns(tenantId: string): Promise<number> {
         dealCount: validDealIds.length,
         managerCount: patternDealManagers.size,
       },
+      dealIds: validDealIds,
     })
-
-    // Create DealPattern links
-    await db.dealPattern.createMany({
-      data: validDealIds.map((dealId) => ({
-        dealId,
-        patternId: pattern.id,
-      })),
-    })
-
-    patternCount++
   }
+
+  let patternCount = 0
+
+  await db.$transaction(async (tx) => {
+    // Delete old patterns + deal-pattern links
+    await tx.dealPattern.deleteMany({
+      where: { pattern: { tenantId } },
+    })
+    await tx.pattern.deleteMany({
+      where: { tenantId },
+    })
+
+    // Create new patterns and links
+    for (const np of newPatterns) {
+      const pattern = await tx.pattern.create({ data: np.data })
+
+      await tx.dealPattern.createMany({
+        data: np.dealIds.map((dealId) => ({
+          dealId,
+          patternId: pattern.id,
+        })),
+      })
+
+      patternCount++
+    }
+  })
 
   // 6. Generate department insights
   const keyQuotes = deals
@@ -227,11 +251,8 @@ export async function extractPatterns(tenantId: string): Promise<number> {
   )
   const { insights } = parseJsonResponse(rawInsights, InsightsResponseSchema)
 
-  // Delete old insights for tenant
-  await db.insight.deleteMany({ where: { tenantId } })
-
-  for (const ins of insights) {
-    // Find deal IDs and manager IDs related to this insight (match by quotes)
+  // Build new insights, then atomically swap old → new
+  const newInsights = insights.map((ins) => {
     const relatedDealIds = deals
       .filter((d) => {
         if (!ins.quotes) return false
@@ -251,21 +272,37 @@ export async function extractPatterns(tenantId: string): Promise<number> {
       ),
     ]
 
-    await db.insight.create({
-      data: {
-        tenantId,
-        type: ins.type === "success" ? "SUCCESS_INSIGHT" : "FAILURE_INSIGHT",
-        title: ins.title,
-        content: ins.content,
-        detailedDescription: ins.detailedDescription ?? null,
-        dealIds: relatedDealIds.length > 0 ? relatedDealIds : undefined,
-        managerIds: relatedManagerIds.length > 0 ? relatedManagerIds : undefined,
-        quotes: ins.quotes ?? undefined,
-      },
-    })
-  }
+    return {
+      tenantId,
+      type: ins.type === "success" ? "SUCCESS_INSIGHT" as const : "FAILURE_INSIGHT" as const,
+      title: ins.title,
+      content: ins.content,
+      detailedDescription: ins.detailedDescription ?? null,
+      dealIds: relatedDealIds.length > 0 ? relatedDealIds : undefined,
+      managerIds: relatedManagerIds.length > 0 ? relatedManagerIds : undefined,
+      quotes: ins.quotes ?? undefined,
+    }
+  })
+
+  await db.$transaction(async (tx) => {
+    await tx.insight.deleteMany({ where: { tenantId } })
+
+    for (const data of newInsights) {
+      await tx.insight.create({ data })
+    }
+  })
 
   // 7. Update Manager cached metrics
+  // Calculate overall conversion from ALL tenant deals (not just analyzed ones)
+  const allTenantDealCounts = await db.deal.groupBy({
+    by: ["status"],
+    where: { tenantId, status: { in: ["WON", "LOST"] } },
+    _count: true,
+  })
+  const allWon = allTenantDealCounts.find((g) => g.status === "WON")?._count ?? 0
+  const allTotal = allTenantDealCounts.reduce((sum, g) => sum + g._count, 0)
+  const overallConversion = allTotal > 0 ? allWon / allTotal : 0
+
   for (const managerId of managerIds) {
     const managerDeals = deals.filter((d) => d.manager?.id === managerId)
     const total = managerDeals.length
@@ -294,9 +331,6 @@ export async function extractPatterns(tenantId: string): Promise<number> {
         ? analyses.reduce((sum, a) => sum + (a!.talkRatio ?? 0), 0) /
           analyses.length
         : null
-
-    const overallConversion =
-      deals.length > 0 ? wonIds.size / deals.length : 0
 
     await db.manager.update({
       where: { id: managerId },

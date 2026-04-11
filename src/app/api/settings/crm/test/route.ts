@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
+import { AmoCrmAdapter } from "@/lib/crm/amocrm"
 
 const testSchema = z.object({
   provider: z.enum(["BITRIX24", "AMOCRM"]),
@@ -68,11 +69,16 @@ export async function POST(request: Request) {
         )
       }
 
-      // For now, just validate format
-      return NextResponse.json({
-        success: true,
-        company: data.subdomain,
-      })
+      try {
+        const amoAdapter = new AmoCrmAdapter(data.subdomain, data.apiKey)
+        const amoOk = await amoAdapter.testConnection()
+        return NextResponse.json({ success: amoOk })
+      } catch {
+        return NextResponse.json(
+          { success: false, error: "Could not reach amoCRM. Check your subdomain and API key." },
+          { status: 200 },
+        )
+      }
     }
 
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 })

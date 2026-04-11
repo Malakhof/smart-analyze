@@ -1,7 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import type { QcRecentCallEnhanced } from "@/lib/queries/quality"
+import { CallSlideOver } from "./call-slide-over"
 
 function fmtDuration(seconds: number | null): string {
   if (!seconds) return "--:--"
@@ -57,6 +59,13 @@ interface QcRecentCallsProps {
 
 export function QcRecentCalls({ calls }: QcRecentCallsProps) {
   const router = useRouter()
+  const [slideOverCallId, setSlideOverCallId] = useState<string | null>(null)
+  const [slideOverOpen, setSlideOverOpen] = useState(false)
+
+  function openSlideOver(callId: string) {
+    setSlideOverCallId(callId)
+    setSlideOverOpen(true)
+  }
 
   const headers = [
     "Звонок",
@@ -94,7 +103,7 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
                 return (
                   <tr
                     key={c.id}
-                    onClick={() => router.push(`/quality/calls/${c.id}`)}
+                    onClick={() => openSlideOver(c.id)}
                     className="cursor-pointer transition-colors duration-100 hover:bg-surface-2 [&:not(:last-child)>td]:border-b [&:not(:last-child)>td]:border-border-default"
                   >
                     {/* Звонок (ID) */}
@@ -215,7 +224,7 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            router.push(`/quality/calls/${c.id}`)
+                            openSlideOver(c.id)
                           }}
                           className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary"
                           title="Подробнее"
@@ -262,6 +271,13 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
           Экспорт
         </button>
       </div>
+
+      {/* Call detail slide-over */}
+      <CallSlideOver
+        callId={slideOverCallId}
+        open={slideOverOpen}
+        onOpenChange={setSlideOverOpen}
+      />
     </div>
   )
 }

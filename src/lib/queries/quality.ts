@@ -215,6 +215,7 @@ export async function getManagerQuality(
 
 export interface QcCallDetail {
   id: string
+  crmId: string | null
   managerName: string | null
   managerId: string | null
   clientName: string | null
@@ -227,6 +228,8 @@ export interface QcCallDetail {
   createdAt: Date
   totalScore: number | null
   tags: string[]
+  summary: string | null
+  recommendation: string | null
   scoreItems: {
     id: string
     isDone: boolean
@@ -606,6 +609,13 @@ export async function getCallDetail(
         },
       },
       tags: true,
+      deal: {
+        select: {
+          analysis: {
+            select: { summary: true, recommendations: true },
+          },
+        },
+      },
     },
   })
 
@@ -616,6 +626,7 @@ export async function getCallDetail(
 
   return {
     id: call.id,
+    crmId: call.crmId,
     managerName: call.manager?.name ?? null,
     managerId: call.manager?.id ?? null,
     clientName: call.clientName,
@@ -628,6 +639,8 @@ export async function getCallDetail(
     createdAt: call.createdAt,
     totalScore: call.score?.totalScore ?? null,
     tags: call.tags.map((t) => t.tag),
+    summary: call.deal?.analysis?.summary ?? null,
+    recommendation: call.deal?.analysis?.recommendations ?? null,
     scoreItems: scoreItems.map((si) => ({
       id: si.id,
       isDone: si.isDone,

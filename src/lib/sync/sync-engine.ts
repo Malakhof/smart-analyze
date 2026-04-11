@@ -1,7 +1,7 @@
 import { db } from "@/lib/db"
 import { createCrmAdapter } from "@/lib/crm/adapter"
 import type { CrmDeal, CrmMessage } from "@/lib/crm/types"
-import type { DealStatus, MessageSender } from "@/generated/prisma"
+import type { DealStatus, MessageSender, CallDirection } from "@/generated/prisma"
 
 export interface SyncProgress {
   step: string
@@ -250,6 +250,35 @@ export async function syncFromCrm(
               })),
             })
             stats.messages += newMessages.length
+
+            // Create CallRecord entries for audio messages (for QC module)
+            const audioMessages = newMessages.filter((m) => m.isAudio)
+            for (const am of audioMessages) {
+              const direction: CallDirection =
+                am.sender === "manager" ? "OUTGOING" : "INCOMING"
+
+              // Check if CallRecord already exists for this audio URL
+              const existingCall = am.audioUrl
+                ? await db.callRecord.findFirst({
+                    where: { audioUrl: am.audioUrl, tenantId },
+                  })
+                : null
+
+              if (!existingCall) {
+                await db.callRecord.create({
+                  data: {
+                    tenantId,
+                    managerId: manager?.id ?? null,
+                    dealId: deal.id,
+                    direction,
+                    audioUrl: am.audioUrl ?? null,
+                    duration: am.duration ?? null,
+                    clientPhone: am.phone ?? null,
+                    createdAt: am.timestamp,
+                  },
+                })
+              }
+            }
           }
         }
       } catch (msgError) {

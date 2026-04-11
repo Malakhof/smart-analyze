@@ -20,6 +20,7 @@ export interface CrmMessage {
   isAudio: boolean
   audioUrl?: string
   duration?: number // seconds
+  phone?: string
 }
 
 export interface CrmManager {

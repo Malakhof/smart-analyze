@@ -77,6 +77,8 @@ interface AmoNote {
   params?: {
     duration?: number
     link?: string // audio URL for calls
+    phone?: string
+    source?: string
     text?: string
   }
   text?: string
@@ -308,18 +310,19 @@ export class AmoCrmAdapter implements CrmAdapter {
   }
 
   async getMessages(dealCrmId: string): Promise<CrmMessage[]> {
-    // Fetch notes (includes call_in, call_out note types)
-    const notes = await this.fetchAll<AmoNote>(
+    // Fetch notes from the lead itself (text notes, etc.)
+    const leadNotes = await this.fetchAll<AmoNote>(
       `/leads/${dealCrmId}/notes`,
       "notes"
     )
 
-    const messages: CrmMessage[] = notes.map((n) => {
+    const messages: CrmMessage[] = leadNotes.map((n) => {
       const isCallIn = n.note_type === "call_in"
       const isCallOut = n.note_type === "call_out"
       const isCall = isCallIn || isCallOut
       const audioUrl = n.params?.link
       const duration = n.params?.duration
+      const phone = n.params?.phone
 
       const content =
         n.params?.text ?? n.text ?? ""
@@ -336,26 +339,40 @@ export class AmoCrmAdapter implements CrmAdapter {
         isAudio: isCall && !!audioUrl,
         ...(isCall && audioUrl ? { audioUrl } : {}),
         ...(isCall && duration ? { duration } : {}),
+        ...(phone ? { phone } : {}),
       }
     })
 
-    // Also fetch call events — some calls are stored as events, not notes
-    const eventMessages = await this.fetchCallEvents(dealCrmId)
+    // Fetch call notes from linked contacts (calls are attached to contacts, not leads)
+    const contactCallMessages = await this.fetchContactCallNotes(dealCrmId)
 
-    // Merge, deduplicate by timestamp (events may duplicate notes)
-    const noteTimestamps = new Set(
+    // Merge contact call messages, dedup by timestamp (within 2s tolerance)
+    const existingTimestamps = new Set(
       messages
         .filter((m) => m.isAudio)
         .map((m) => m.timestamp.getTime())
     )
 
+    for (const cm of contactCallMessages) {
+      const isDuplicate = [...existingTimestamps].some(
+        (t) => Math.abs(t - cm.timestamp.getTime()) < 2000
+      )
+      if (!isDuplicate) {
+        messages.push(cm)
+        existingTimestamps.add(cm.timestamp.getTime())
+      }
+    }
+
+    // Also fetch call events — some calls are stored as events, not notes
+    const eventMessages = await this.fetchCallEvents(dealCrmId)
+
     for (const em of eventMessages) {
-      // Skip if we already have a note with the same timestamp (within 2s tolerance)
-      const isDuplicate = [...noteTimestamps].some(
+      const isDuplicate = [...existingTimestamps].some(
         (t) => Math.abs(t - em.timestamp.getTime()) < 2000
       )
       if (!isDuplicate) {
         messages.push(em)
+        existingTimestamps.add(em.timestamp.getTime())
       }
     }
 
@@ -413,6 +430,72 @@ export class AmoCrmAdapter implements CrmAdapter {
       return messages
     } catch {
       // Events API may not be available on all amoCRM plans — graceful fallback
+      return []
+    }
+  }
+
+  /**
+   * Fetch call notes from contacts linked to a deal.
+   * In amoCRM, call recordings are attached to contacts, not leads.
+   * Steps: get deal with contacts -> for each contact, fetch notes -> filter calls.
+   */
+  private async fetchContactCallNotes(
+    dealCrmId: string
+  ): Promise<CrmMessage[]> {
+    try {
+      // 1. Get the deal with embedded contacts
+      const lead = await this.request<AmoLead>(
+        `/leads/${dealCrmId}`,
+        { with: "contacts" }
+      )
+
+      const contacts = lead._embedded?.contacts
+      if (!contacts || contacts.length === 0) {
+        return []
+      }
+
+      const messages: CrmMessage[] = []
+
+      // 2. For each contact, fetch their notes
+      for (const contact of contacts) {
+        try {
+          const notes = await this.fetchAll<AmoNote>(
+            `/contacts/${contact.id}/notes`,
+            "notes"
+          )
+
+          // 3. Filter for call notes only
+          for (const n of notes) {
+            const isCallIn = n.note_type === "call_in"
+            const isCallOut = n.note_type === "call_out"
+            if (!isCallIn && !isCallOut) continue
+
+            const audioUrl = n.params?.link
+            const duration = n.params?.duration
+            const phone = n.params?.phone
+
+            messages.push({
+              dealCrmId,
+              sender: isCallOut
+                ? ("manager" as const)
+                : ("client" as const),
+              content: "", // empty, will be filled by Whisper transcription
+              timestamp: new Date(n.created_at * 1000),
+              isAudio: !!audioUrl,
+              ...(audioUrl ? { audioUrl } : {}),
+              ...(duration ? { duration } : {}),
+              ...(phone ? { phone } : {}),
+            })
+          }
+        } catch {
+          // Skip this contact if notes fetch fails — don't break the whole sync
+          continue
+        }
+      }
+
+      return messages
+    } catch {
+      // Graceful fallback if contacts endpoint is unavailable
       return []
     }
   }

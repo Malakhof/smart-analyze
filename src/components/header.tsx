@@ -71,6 +71,26 @@ export function Header() {
       {/* Spacer */}
       <div className="flex-1" />
 
+      {/* Search */}
+      <div className="relative">
+        <svg
+          viewBox="0 0 24 24"
+          className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 fill-none stroke-text-tertiary"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          type="text"
+          placeholder="Поиск..."
+          className="h-[30px] w-[180px] rounded-md border border-border-default bg-transparent pl-8 pr-3 font-sans text-[12px] text-text-primary placeholder:text-text-tertiary outline-none transition-[border-color] duration-[0.18s] ease-in-out focus:border-border-hover"
+          readOnly
+        />
+      </div>
+
       {/* AI badge */}
       <AiBadge text="AI активен" />
 

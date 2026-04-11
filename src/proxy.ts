@@ -9,7 +9,7 @@ export async function proxy(request: NextRequest) {
   // Allow auth pages and API routes
   const isAuthPage = pathname === "/login" || pathname === "/register"
   const isAuthApi = pathname.startsWith("/api/auth")
-  const isPublicApi = pathname.startsWith("/api/audio")
+  const isPublicApi = pathname.startsWith("/api/audio") || pathname.startsWith("/api/landing-lead")
 
   if (!token && !isAuthPage && !isAuthApi && !isPublicApi) {
     const loginUrl = new URL("/login", request.url)

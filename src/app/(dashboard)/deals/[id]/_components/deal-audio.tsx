@@ -17,32 +17,95 @@ interface TranscriptLine {
 
 function parseTranscript(raw: string): TranscriptLine[] {
   const lines: TranscriptLine[] = []
-  const parts = raw.split("\n").filter((l) => l.trim())
 
-  for (const part of parts) {
-    const operatorMatch = part.match(
-      /^(?:Оператор|Менеджер|Operator|Manager)\s*[:]\s*(.*)/i
-    )
-    const clientMatch = part.match(
-      /^(?:Клиент|Client|Customer)\s*[:]\s*(.*)/i
-    )
+  // First try: if there are newlines with speaker prefixes, use the prefixed approach
+  const rawLines = raw.split("\n").filter((l) => l.trim())
+  const hasPrefixes = rawLines.some((l) =>
+    /^(?:Оператор|Менеджер|Operator|Manager|Клиент|Client|Customer)\s*[:]/i.test(l)
+  )
 
-    if (operatorMatch) {
-      lines.push({ speaker: "operator", text: operatorMatch[1].trim() })
-    } else if (clientMatch) {
-      lines.push({ speaker: "client", text: clientMatch[1].trim() })
-    } else {
-      // Alternate speakers when no prefix detected
-      if (lines.length > 0) {
-        const lastSpeaker = lines[lines.length - 1].speaker
-        lines.push({
-          speaker: lastSpeaker === "operator" ? "client" : "operator",
-          text: part.trim(),
-        })
+  if (hasPrefixes) {
+    for (const part of rawLines) {
+      const operatorMatch = part.match(
+        /^(?:Оператор|Менеджер|Operator|Manager)\s*[:]\s*(.*)/i
+      )
+      const clientMatch = part.match(
+        /^(?:Клиент|Client|Customer)\s*[:]\s*(.*)/i
+      )
+
+      if (operatorMatch) {
+        lines.push({ speaker: "operator", text: operatorMatch[1].trim() })
+      } else if (clientMatch) {
+        lines.push({ speaker: "client", text: clientMatch[1].trim() })
+      } else if (lines.length > 0) {
+        lines[lines.length - 1].text += " " + part.trim()
       } else {
         lines.push({ speaker: "operator", text: part.trim() })
       }
     }
+    return lines
+  }
+
+  // No prefixes — split into sentences and assign by question/answer heuristic.
+  // Operator asks questions ("?"), client gives short answers.
+  // Group consecutive sentences: accumulate into operator until "?" is found,
+  // then switch to client until next question sentence appears.
+  const sentences = raw.match(/[^.!?]*[.!?]+/g)
+  if (!sentences || sentences.length === 0) {
+    if (raw.trim()) {
+      lines.push({ speaker: "operator", text: raw.trim() })
+    }
+    return lines
+  }
+
+  let speaker: "operator" | "client" = "operator"
+  let buffer = ""
+
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i].trim()
+    if (!s) continue
+
+    const isQuestion = s.endsWith("?")
+
+    if (speaker === "operator") {
+      // Accumulate operator text. Flush when we hit a "?" and next sentence is not a "?"
+      buffer += (buffer ? " " : "") + s
+      if (isQuestion) {
+        // Check if next sentence is also a question — if so, keep accumulating
+        const next = i + 1 < sentences.length ? sentences[i + 1].trim() : ""
+        const nextIsQuestion = next.endsWith("?")
+        if (!nextIsQuestion) {
+          lines.push({ speaker: "operator", text: buffer.trim() })
+          buffer = ""
+          speaker = "client"
+        }
+      }
+    } else {
+      // Client mode: accumulate until a question sentence appears
+      if (isQuestion) {
+        // This question belongs to operator — flush client first
+        if (buffer.trim()) {
+          lines.push({ speaker: "client", text: buffer.trim() })
+        }
+        buffer = s
+        speaker = "operator"
+        // Check if next is also a question
+        const next = i + 1 < sentences.length ? sentences[i + 1].trim() : ""
+        const nextIsQuestion = next.endsWith("?")
+        if (!nextIsQuestion) {
+          lines.push({ speaker: "operator", text: buffer.trim() })
+          buffer = ""
+          speaker = "client"
+        }
+      } else {
+        buffer += (buffer ? " " : "") + s
+      }
+    }
+  }
+
+  // Flush remaining buffer
+  if (buffer.trim()) {
+    lines.push({ speaker, text: buffer.trim() })
   }
 
   return lines

@@ -199,7 +199,12 @@ export async function getManagerQuality(
   if (!manager) return null
 
   const calls = await db.callRecord.findMany({
-    where: { managerId },
+    where: {
+      OR: [
+        { managerId },
+        { deal: { managerId } },
+      ],
+    },
     include: {
       score: true,
       tags: true,
@@ -654,8 +659,14 @@ export async function getManagerQualityFull(
 
   if (!manager) return null
 
+  // Include calls directly assigned to this manager OR linked via deals assigned to this manager
   const calls = await db.callRecord.findMany({
-    where: { managerId },
+    where: {
+      OR: [
+        { managerId },
+        { deal: { managerId } },
+      ],
+    },
     include: {
       manager: { select: { name: true } },
       score: {
@@ -722,7 +733,16 @@ export async function getManagerQualityFull(
     where: { script: { tenantId: manager.tenantId, isActive: true } },
     include: {
       scoreItems: {
-        where: { callScore: { callRecord: { managerId } } },
+        where: {
+          callScore: {
+            callRecord: {
+              OR: [
+                { managerId },
+                { deal: { managerId } },
+              ],
+            },
+          },
+        },
       },
     },
     orderBy: { order: "asc" },
@@ -781,14 +801,20 @@ export async function getManagerQualityFull(
   })
 
   // Filter options (without managers)
+  const callFilter = {
+    OR: [
+      { managerId },
+      { deal: { managerId } },
+    ],
+  }
   const [categoriesRaw, tagsRaw, scriptItemsForFilter] = await Promise.all([
     db.callRecord.findMany({
-      where: { managerId, category: { not: null } },
+      where: { ...callFilter, category: { not: null } },
       select: { category: true },
       distinct: ["category"],
     }),
     db.callTag.findMany({
-      where: { callRecord: { managerId } },
+      where: { callRecord: callFilter },
       select: { tag: true },
       distinct: ["tag"],
     }),

@@ -34,14 +34,14 @@ export function QcComplianceChart({ data }: QcComplianceChartProps) {
       <h4 className="mb-4 text-[14px] font-bold text-text-primary">
         Выполнение скрипта
       </h4>
-      <div className="overflow-visible pl-1">
+      <div className="overflow-visible pl-2">
         <AreaChart
           data={chartData}
           index="step"
           categories={["Текущий период", "Предыдущий период"]}
           colors={["violet", "fuchsia"]}
           valueFormatter={(v: number) => `${Math.round(v)}%`}
-          yAxisWidth={56}
+          yAxisWidth={64}
           showAnimation={true}
           showLegend={true}
           showGridLines={true}

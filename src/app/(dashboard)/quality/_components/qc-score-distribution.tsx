@@ -32,18 +32,20 @@ export function QcScoreDistribution({ data }: QcScoreDistributionProps) {
       <h4 className="mb-4 text-[14px] font-bold text-text-primary">
         Распределение оценок по звонкам
       </h4>
-      <BarChart
-        data={chartData}
-        index="range"
-        categories={["Текущий период", "Предыдущий период"]}
-        colors={["violet", "fuchsia"]}
-        valueFormatter={(v) => String(v)}
-        yAxisWidth={40}
-        showAnimation={true}
-        showLegend={true}
-        showGridLines={true}
-        className="h-[280px]"
-      />
+      <div className="overflow-visible pl-2">
+        <BarChart
+          data={chartData}
+          index="range"
+          categories={["Текущий период", "Предыдущий период"]}
+          colors={["violet", "fuchsia"]}
+          valueFormatter={(v) => String(v)}
+          yAxisWidth={48}
+          showAnimation={true}
+          showLegend={true}
+          showGridLines={true}
+          className="h-[280px]"
+        />
+      </div>
     </div>
   )
 }

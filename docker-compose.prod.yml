@@ -26,6 +26,7 @@ services:
       - WHISPER_API_KEY=${WHISPER_API_KEY}
       - WHISPER_API_URL=${WHISPER_API_URL}
       - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     depends_on:
       - postgres
     restart: unless-stopped

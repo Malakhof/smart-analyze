@@ -5,6 +5,16 @@ export async function GET(request: Request) {
   const audioUrl = searchParams.get("url")
   if (!audioUrl) return new Response("Missing url param", { status: 400 })
 
+  // SSRF protection: only allow known audio sources
+  const allowedPrefixes = [
+    "http://80.76.60.130:8089/recordings/",
+    "https://",
+  ]
+  const isAllowed = allowedPrefixes.some(prefix => audioUrl.startsWith(prefix))
+  if (!isAllowed) {
+    return new Response("URL not allowed", { status: 403 })
+  }
+
   try {
     const range = request.headers.get("Range")
 

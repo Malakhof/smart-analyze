@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { requireTenantId } from "@/lib/auth"
 
 const bitrixSchema = z.object({
   provider: z.literal("BITRIX24"),
@@ -27,19 +28,9 @@ const crmConfigSchema = z.discriminatedUnion("provider", [
   getcourseSchema,
 ])
 
-async function getTenantId(): Promise<string | null> {
-  const tenant = await db.tenant.findFirst({
-    select: { id: true },
-  })
-  return tenant?.id ?? null
-}
-
 export async function GET() {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const configs = await db.crmConfig.findMany({
       where: { tenantId },
@@ -58,18 +49,15 @@ export async function GET() {
     return NextResponse.json({ configs, tenant, funnels })
   } catch {
     return NextResponse.json(
-      { error: "Failed to fetch CRM config" },
-      { status: 500 },
+      { error: "Unauthorized" },
+      { status: 401 },
     )
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const body = await request.json()
     const result = crmConfigSchema.safeParse(body)
@@ -118,8 +106,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ config: created }, { status: 201 })
   } catch {
     return NextResponse.json(
-      { error: "Failed to save CRM config" },
-      { status: 500 },
+      { error: "Unauthorized" },
+      { status: 401 },
     )
   }
 }

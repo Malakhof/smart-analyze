@@ -1,4 +1,5 @@
 import { AuthOptions } from "next-auth"
+import { getServerSession } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { db } from "@/lib/db"
@@ -82,4 +83,27 @@ export const authOptions: AuthOptions = {
       return session
     },
   },
+}
+
+/**
+ * Require an authenticated session. Throws if not authenticated.
+ */
+export async function requireAuth() {
+  const session = await getServerSession(authOptions)
+  if (!session?.user) {
+    throw new Error("Unauthorized")
+  }
+  return session
+}
+
+/**
+ * Require an authenticated session and return the tenant ID. Throws if not authenticated or no tenant.
+ */
+export async function requireTenantId(): Promise<string> {
+  const session = await requireAuth()
+  const tenantId = session.user.tenantId
+  if (!tenantId) {
+    throw new Error("Unauthorized: no tenant")
+  }
+  return tenantId
 }

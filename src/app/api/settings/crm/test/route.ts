@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { AmoCrmAdapter } from "@/lib/crm/amocrm"
+import { requireAuth } from "@/lib/auth"
 
 const testSchema = z.object({
   provider: z.enum(["BITRIX24", "AMOCRM", "GETCOURSE"]),
@@ -10,6 +11,12 @@ const testSchema = z.object({
 })
 
 export async function POST(request: Request) {
+  try {
+    await requireAuth()
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   try {
     const body = await request.json()
     const result = testSchema.safeParse(body)

@@ -1,6 +1,9 @@
+import { requireAuth } from "@/lib/auth"
+
 // GET /api/audio?url=http://80.76.60.130:8089/recordings/xxx.wav
 // Proxies audio with Range support (required for Safari <audio>)
 export async function GET(request: Request) {
+  try { await requireAuth() } catch { return new Response("Unauthorized", { status: 401 }) }
   const { searchParams } = new URL(request.url)
   const audioUrl = searchParams.get("url")
   if (!audioUrl) return new Response("Missing url param", { status: 400 })

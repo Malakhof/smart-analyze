@@ -102,6 +102,12 @@ model CrmConfig {
   gcPassword String?   // GetCourse login password (encrypted)
   gcCookie   String?   // PHPSESSID cookie (auto-refreshed)
   gcCookieAt DateTime? // When cookie was last refreshed
+
+  // OAuth (amoCRM external integration)
+  clientId     String?   // OAuth client_id
+  clientSecret String?   // OAuth client_secret (encrypted)
+  refreshToken String?   // OAuth refresh_token (encrypted)
+  tokenExpiresAt DateTime? // When access_token expires
 }
 
 enum CrmProvider {

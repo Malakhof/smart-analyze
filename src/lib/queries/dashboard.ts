@@ -183,12 +183,6 @@ export async function getInsights(
   return enriched
 }
 
-export async function getTenantId(): Promise<string | null> {
-  const tenant = await db.tenant.findFirst({
-    select: { id: true },
-  })
-  return tenant?.id ?? null
-}
 
 export interface DailyConversion {
   date: string // DD.MM format

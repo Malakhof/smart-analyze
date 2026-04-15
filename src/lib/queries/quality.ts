@@ -1,7 +1,5 @@
 import { db } from "@/lib/db"
-import { getTenantId } from "./dashboard"
 
-export { getTenantId }
 
 export interface QcManagerRow {
   id: string

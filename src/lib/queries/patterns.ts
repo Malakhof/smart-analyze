@@ -1,5 +1,4 @@
 import { db } from "@/lib/db"
-import { getTenantId } from "./dashboard"
 
 export interface PatternQuote {
   text: string
@@ -120,4 +119,3 @@ export async function getPatterns(
   })
 }
 
-export { getTenantId }

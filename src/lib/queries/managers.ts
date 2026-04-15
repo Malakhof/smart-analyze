@@ -1,5 +1,4 @@
 import { db } from "@/lib/db"
-import { getTenantId } from "./dashboard"
 
 export interface ManagerListItem {
   id: string
@@ -50,4 +49,3 @@ export async function getManagersList(tenantId: string): Promise<{
   return { managers, summary }
 }
 
-export { getTenantId }

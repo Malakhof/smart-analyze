@@ -8,7 +8,8 @@ export async function GET(request: Request) {
   // SSRF protection: only allow known audio sources
   const allowedPrefixes = [
     "http://80.76.60.130:8089/recordings/",
-    "https://",
+    "https://dl.amocrm.ru/",
+    "https://amocrm.ru/",
   ]
   const isAllowed = allowedPrefixes.some(prefix => audioUrl.startsWith(prefix))
   if (!isAllowed) {

@@ -2,13 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { sendTelegramMessage } from "@/lib/telegram/bot"
-
-async function getTenantId(): Promise<string | null> {
-  const tenant = await db.tenant.findFirst({
-    select: { id: true },
-  })
-  return tenant?.id ?? null
-}
+import { requireTenantId } from "@/lib/auth"
 
 const telegramConfigSchema = z.object({
   botToken: z.string().min(1),
@@ -25,17 +19,17 @@ const testSchema = z.object({
 
 export async function GET() {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const config = await db.telegramConfig.findUnique({
       where: { tenantId },
     })
 
     return NextResponse.json({ config })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unauthorized")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     return NextResponse.json(
       { error: "Failed to fetch telegram config" },
       { status: 500 },
@@ -45,10 +39,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const body = await request.json()
 
@@ -99,7 +90,10 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({ config })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unauthorized")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     return NextResponse.json(
       { error: "Failed to save telegram config" },
       { status: 500 },

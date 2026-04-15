@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { db } from "@/lib/db"
-
-async function getTenantId(): Promise<string | null> {
-  const tenant = await db.tenant.findFirst({
-    select: { id: true },
-  })
-  return tenant?.id ?? null
-}
+import { requireTenantId } from "@/lib/auth"
 
 const scriptItemSchema = z.object({
   id: z.string().optional(),
@@ -34,10 +28,7 @@ const updateScriptSchema = z.object({
 
 export async function GET() {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const scripts = await db.script.findMany({
       where: { tenantId },
@@ -50,7 +41,10 @@ export async function GET() {
     })
 
     return NextResponse.json({ scripts })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unauthorized")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     return NextResponse.json(
       { error: "Failed to fetch scripts" },
       { status: 500 },
@@ -60,10 +54,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const body = await request.json()
     const result = createScriptSchema.safeParse(body)
@@ -100,7 +91,10 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({ script }, { status: 201 })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unauthorized")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     return NextResponse.json(
       { error: "Failed to create script" },
       { status: 500 },
@@ -110,10 +104,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const body = await request.json()
     const result = updateScriptSchema.safeParse(body)
@@ -162,7 +153,10 @@ export async function PUT(request: Request) {
     })
 
     return NextResponse.json({ script })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unauthorized")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     return NextResponse.json(
       { error: "Failed to update script" },
       { status: 500 },
@@ -172,10 +166,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const tenantId = await getTenantId()
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
-    }
+    const tenantId = await requireTenantId()
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
@@ -198,7 +189,10 @@ export async function DELETE(request: Request) {
     await db.script.delete({ where: { id } })
 
     return NextResponse.json({ success: true })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unauthorized")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     return NextResponse.json(
       { error: "Failed to delete script" },
       { status: 500 },

@@ -46,7 +46,16 @@ export async function GET() {
       select: { id: true, name: true },
     })
 
-    return NextResponse.json({ configs, tenant, funnels })
+    // Strip sensitive fields before returning
+    const safeConfigs = configs.map((c) => ({
+      id: c.id,
+      provider: c.provider,
+      subdomain: c.subdomain,
+      isActive: c.isActive,
+      lastSyncAt: c.lastSyncAt,
+      createdAt: c.createdAt,
+    }))
+    return NextResponse.json({ configs: safeConfigs, tenant, funnels })
   } catch {
     return NextResponse.json(
       { error: "Unauthorized" },

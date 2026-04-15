@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     "https://amocrm.ru/",
   ]
   const isAllowed = allowedPrefixes.some(prefix => audioUrl.startsWith(prefix))
-  if (!isAllowed) {
+  if (!isAllowed || audioUrl.includes("..")) {
     return new Response("URL not allowed", { status: 403 })
   }
 

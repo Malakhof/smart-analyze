@@ -34,7 +34,7 @@ export const authOptions: AuthOptions = {
           })
 
           if (!user) {
-            console.log("[AUTH] User not found:", credentials.email)
+            console.log("[AUTH] Authentication failed")
             return null
           }
 
@@ -46,7 +46,7 @@ export const authOptions: AuthOptions = {
           )
 
           if (!isPasswordValid) {
-            console.log("[AUTH] Invalid password")
+            console.log("[AUTH] Authentication failed")
             return null
           }
 

@@ -3,7 +3,7 @@ import { z } from "zod"
 import { AmoCrmAdapter } from "@/lib/crm/amocrm"
 
 const testSchema = z.object({
-  provider: z.enum(["BITRIX24", "AMOCRM"]),
+  provider: z.enum(["BITRIX24", "AMOCRM", "GETCOURSE"]),
   webhookUrl: z.string().url().optional(),
   subdomain: z.string().optional(),
   apiKey: z.string().optional(),
@@ -76,6 +76,29 @@ export async function POST(request: Request) {
       } catch {
         return NextResponse.json(
           { success: false, error: "Could not reach amoCRM. Check your subdomain and API key." },
+          { status: 200 },
+        )
+      }
+    }
+
+    if (data.provider === "GETCOURSE") {
+      if (!data.subdomain) {
+        return NextResponse.json(
+          { error: "Account name is required" },
+          { status: 400 },
+        )
+      }
+
+      try {
+        const testUrl = `https://${data.subdomain}.getcourse.ru/cms/system/login`
+        const response = await fetch(testUrl, {
+          method: "GET",
+          signal: AbortSignal.timeout(10000),
+        })
+        return NextResponse.json({ success: response.ok })
+      } catch {
+        return NextResponse.json(
+          { success: false, error: "Could not reach GetCourse. Check your account name." },
           { status: 200 },
         )
       }

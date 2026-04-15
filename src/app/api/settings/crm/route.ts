@@ -14,9 +14,17 @@ const amocrmSchema = z.object({
   apiKey: z.string().min(1, "API key is required"),
 })
 
+const getcourseSchema = z.object({
+  provider: z.literal("GETCOURSE"),
+  subdomain: z.string().min(1, "Account name is required"),
+  gcEmail: z.string().email("Valid email required"),
+  gcPassword: z.string().min(1, "Password is required"),
+})
+
 const crmConfigSchema = z.discriminatedUnion("provider", [
   bitrixSchema,
   amocrmSchema,
+  getcourseSchema,
 ])
 
 async function getTenantId(): Promise<string | null> {
@@ -80,13 +88,21 @@ export async function POST(request: Request) {
       where: { tenantId, provider: data.provider },
     })
 
+    function getProviderData(d: typeof data) {
+      switch (d.provider) {
+        case "BITRIX24":
+          return { webhookUrl: d.webhookUrl, isActive: true }
+        case "AMOCRM":
+          return { subdomain: d.subdomain, apiKey: d.apiKey, isActive: true }
+        case "GETCOURSE":
+          return { subdomain: d.subdomain, gcEmail: d.gcEmail, gcPassword: d.gcPassword, isActive: true }
+      }
+    }
+
     if (existing) {
       const updated = await db.crmConfig.update({
         where: { id: existing.id },
-        data:
-          data.provider === "BITRIX24"
-            ? { webhookUrl: data.webhookUrl, isActive: true }
-            : { subdomain: data.subdomain, apiKey: data.apiKey, isActive: true },
+        data: getProviderData(data),
       })
       return NextResponse.json({ config: updated })
     }
@@ -95,13 +111,7 @@ export async function POST(request: Request) {
       data: {
         tenantId,
         provider: data.provider,
-        ...(data.provider === "BITRIX24"
-          ? { webhookUrl: data.webhookUrl, isActive: true }
-          : {
-              subdomain: data.subdomain,
-              apiKey: data.apiKey,
-              isActive: true,
-            }),
+        ...getProviderData(data),
       },
     })
 

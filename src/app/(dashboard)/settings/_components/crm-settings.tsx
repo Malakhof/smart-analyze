@@ -4,10 +4,12 @@ import { useState, useEffect } from "react"
 
 interface CrmConfigData {
   id: string
-  provider: "BITRIX24" | "AMOCRM"
+  provider: "BITRIX24" | "AMOCRM" | "GETCOURSE"
   webhookUrl: string | null
   apiKey: string | null
   subdomain: string | null
+  gcEmail: string | null
+  gcPassword: string | null
   isActive: boolean
   lastSyncAt: string | null
 }
@@ -28,6 +30,12 @@ export function CrmSettings() {
   const [amoSubdomain, setAmoSubdomain] = useState("")
   const [amoApiKey, setAmoApiKey] = useState("")
   const [amoConnected, setAmoConnected] = useState(false)
+
+  const [gcSubdomain, setGcSubdomain] = useState("")
+  const [gcEmail, setGcEmail] = useState("")
+  const [gcPassword, setGcPassword] = useState("")
+  const [gcConnected, setGcConnected] = useState(false)
+  const [gcTesting, setGcTesting] = useState(false)
 
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -58,6 +66,15 @@ export function CrmSettings() {
       if (amo) {
         setAmoSubdomain(amo.subdomain || "")
         setAmoConnected(amo.isActive)
+      }
+
+      const gc = data.configs?.find(
+        (c: CrmConfigData) => c.provider === "GETCOURSE",
+      )
+      if (gc) {
+        setGcSubdomain(gc.subdomain || "")
+        setGcEmail(gc.gcEmail || "")
+        setGcConnected(gc.isActive)
       }
 
       if (data.tenant?.name) {
@@ -144,6 +161,59 @@ export function CrmSettings() {
       }
       setAmoConnected(true)
       setMessage({ type: "success", text: "amoCRM подключен" })
+    } catch {
+      setMessage({ type: "error", text: "Ошибка сети" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTestGc() {
+    setGcTesting(true)
+    setMessage(null)
+    try {
+      const res = await fetch("/api/settings/crm/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "GETCOURSE",
+          subdomain: gcSubdomain,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setMessage({ type: "success", text: "GetCourse доступен" })
+      } else {
+        setMessage({ type: "error", text: data.error || "Не удалось подключиться к GetCourse" })
+      }
+    } catch {
+      setMessage({ type: "error", text: "Ошибка сети" })
+    } finally {
+      setGcTesting(false)
+    }
+  }
+
+  async function handleSaveGc() {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch("/api/settings/crm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "GETCOURSE",
+          subdomain: gcSubdomain,
+          gcEmail,
+          gcPassword,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setMessage({ type: "error", text: data.error || "Ошибка сохранения" })
+        return
+      }
+      setGcConnected(true)
+      setMessage({ type: "success", text: "GetCourse подключён" })
     } catch {
       setMessage({ type: "error", text: "Ошибка сети" })
     } finally {
@@ -311,6 +381,88 @@ export function CrmSettings() {
       >
         Подключить amoCRM
       </button>
+
+      {/* Divider */}
+      <hr className="my-6 border-border-default" />
+
+      {/* GetCourse */}
+      <div
+        className={`mb-3 inline-flex items-center gap-2 rounded-[6px] border px-3 py-1.5 text-[13px] font-medium ${
+          gcConnected
+            ? "border-status-green-border bg-status-green-dim text-status-green"
+            : "border-status-red-border bg-status-red-dim text-status-red"
+        }`}
+      >
+        {gcConnected ? (
+          <>
+            <span>&#10003;</span> GetCourse подключён
+          </>
+        ) : (
+          <>
+            <span>&#10005;</span> GetCourse не подключён
+          </>
+        )}
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div>
+          <label className="mb-1.5 block text-[12px] font-medium text-text-secondary">
+            Аккаунт (субдомен)
+          </label>
+          <input
+            type="text"
+            value={gcSubdomain}
+            onChange={(e) => setGcSubdomain(e.target.value)}
+            placeholder="myschool"
+            className="w-full rounded-[6px] border border-border-default bg-surface-2 px-3 py-2 text-[13px] text-text-primary outline-none transition-colors focus:border-ai-1"
+          />
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            myschool.getcourse.ru
+          </p>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[12px] font-medium text-text-secondary">
+            Email сотрудника
+          </label>
+          <input
+            type="email"
+            value={gcEmail}
+            onChange={(e) => setGcEmail(e.target.value)}
+            placeholder="manager@company.ru"
+            className="w-full rounded-[6px] border border-border-default bg-surface-2 px-3 py-2 text-[13px] text-text-primary outline-none transition-colors focus:border-ai-1"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[12px] font-medium text-text-secondary">
+            Пароль сотрудника
+          </label>
+          <input
+            type="password"
+            value={gcPassword}
+            onChange={(e) => setGcPassword(e.target.value)}
+            placeholder="Пароль"
+            className="w-full rounded-[6px] border border-border-default bg-surface-2 px-3 py-2 text-[13px] text-text-primary outline-none transition-colors focus:border-ai-1"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleTestGc}
+          disabled={gcTesting || !gcSubdomain}
+          className="cursor-pointer rounded-[6px] px-4 py-2 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: "var(--ai-grad)" }}
+        >
+          {gcTesting ? "Проверка..." : "Проверить подключение"}
+        </button>
+        <button
+          onClick={handleSaveGc}
+          disabled={saving || !gcSubdomain || !gcEmail || !gcPassword}
+          className="cursor-pointer rounded-[6px] border border-border-default bg-transparent px-4 py-2 text-[13px] font-medium text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? "Сохранение..." : "Сохранить"}
+        </button>
+      </div>
     </div>
   )
 }

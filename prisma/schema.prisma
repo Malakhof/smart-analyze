@@ -98,11 +98,16 @@ model CrmConfig {
   isActive   Boolean     @default(false)
   lastSyncAt DateTime?
   createdAt  DateTime    @default(now())
+  gcEmail    String?   // GetCourse login email
+  gcPassword String?   // GetCourse login password (encrypted)
+  gcCookie   String?   // PHPSESSID cookie (auto-refreshed)
+  gcCookieAt DateTime? // When cookie was last refreshed
 }
 
 enum CrmProvider {
   BITRIX24
   AMOCRM
+  GETCOURSE
 }
 
 // === SALES DATA ===

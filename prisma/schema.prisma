@@ -23,6 +23,7 @@ model Tenant {
   funnels    Funnel[]
   managers   Manager[]
   deals      Deal[]
+  tasks      Task[]
   patterns   Pattern[]
   insights   Insight[]
 
@@ -149,6 +150,7 @@ model Manager {
   createdAt DateTime      @default(now())
   deals     Deal[]
   callRecords CallRecord[]
+  tasks       Task[]
 
   totalDeals      Int?
   successDeals    Int?
@@ -180,6 +182,7 @@ model Deal {
   amount       Float?
   status       DealStatus
   duration     Float?
+  currentStageCrmId String?
 
   createdAt    DateTime           @default(now())
   closedAt     DateTime?
@@ -192,6 +195,7 @@ model Deal {
   analysis     DealAnalysis?
   dealPatterns DealPattern[]
   callRecords  CallRecord[]
+  tasks        Task[]
 }
 
 enum DealStatus {
@@ -405,4 +409,32 @@ model TelegramConfig {
   isActive        Boolean @default(true)
   alertOnCritical Boolean @default(true)
   createdAt       DateTime @default(now())
+}
+
+enum TaskType {
+  CALL
+  MEETING
+  LETTER
+  OTHER
+}
+
+model Task {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  dealId        String?
+  deal          Deal?     @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  managerId     String?
+  manager       Manager?  @relation(fields: [managerId], references: [id])
+
+  crmId         String?   // amoCRM task id
+  type          TaskType
+  text          String
+  createdAt     DateTime
+  dueAt         DateTime?
+  completedAt   DateTime?
+  isCompleted   Boolean   @default(false)
+
+  @@index([tenantId, managerId])
+  @@index([tenantId, dealId])
 }

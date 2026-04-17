@@ -273,7 +273,8 @@ export class AmoCrmAdapter implements CrmAdapter {
     }
 
     if (funnelId !== undefined) {
-      params["filter[pipe_id]"] = funnelId
+      // amoCRM v4 uses filter[pipeline_id]; filter[pipe_id] (v2 name) is silently ignored.
+      params["filter[pipeline_id]"] = funnelId
     }
 
     if (since) {

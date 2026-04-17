@@ -243,8 +243,10 @@ export class AmoCrmAdapter implements CrmAdapter {
   }
 
   async getDeals(funnelId?: string, since?: Date): Promise<CrmDeal[]> {
+    // Newest first — so with MAX_PAGES cap we import recent deals, not legacy.
     const params: Record<string, unknown> = {
       with: "contacts",
+      "order[created_at]": "desc",
     }
 
     if (funnelId !== undefined) {

@@ -17,22 +17,34 @@ export async function getAmoCrmAccessToken(crmConfigId: string): Promise<string>
     where: { id: crmConfigId },
   })
 
-  if (!config.apiKey) throw new Error("No access token stored")
+  // Reuse existing access_token if present and not expired.
+  // tokenExpiresAt=NULL with apiKey present = legacy long-lived token (keep as-is).
+  // apiKey=NULL = new client that hasn't completed OAuth handshake yet — fall through to refresh.
+  if (config.apiKey) {
+    if (!config.tokenExpiresAt) {
+      // Legacy long-lived token — no expiry tracked, reuse indefinitely
+      try {
+        return decrypt(config.apiKey)
+      } catch {
+        // Not encrypted (legacy) — return as-is
+        return config.apiKey
+      }
+    }
 
-  // Check if token is still valid (with 5 min buffer)
-  const now = new Date()
-  const buffer = 5 * 60 * 1000
-  const isExpired = config.tokenExpiresAt && config.tokenExpiresAt.getTime() - buffer < now.getTime()
+    // Check if token is still valid (with 5 min buffer)
+    const buffer = 5 * 60 * 1000
+    const isExpired = config.tokenExpiresAt.getTime() - buffer < Date.now()
 
-  if (!isExpired) {
-    // Token still valid — decrypt and return
-    try {
-      return decrypt(config.apiKey)
-    } catch {
-      // Not encrypted (legacy) — return as-is
-      return config.apiKey
+    if (!isExpired) {
+      try {
+        return decrypt(config.apiKey)
+      } catch {
+        // Not encrypted (legacy) — return as-is
+        return config.apiKey
+      }
     }
   }
+  // apiKey missing or token expired → fall through to refresh
 
   // Token expired — refresh
   if (!config.refreshToken || !config.clientId || !config.clientSecret || !config.subdomain) {

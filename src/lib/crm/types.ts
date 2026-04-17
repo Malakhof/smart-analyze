@@ -8,6 +8,7 @@ export interface CrmDeal {
   funnelId: string | null
   funnelName: string | null
   stageName: string | null
+  stageCrmId: string | null
   createdAt: Date
   closedAt: Date | null
 }
@@ -41,4 +42,17 @@ export interface CrmAdapter {
   getDeals(funnelId?: string, since?: Date): Promise<CrmDeal[]>
   getMessages(dealCrmId: string): Promise<CrmMessage[]>
   getManagers(): Promise<CrmManager[]>
+  getTasks(since?: Date): Promise<CrmTask[]>
+}
+
+export interface CrmTask {
+  crmId: string
+  dealCrmId: string | null
+  managerCrmId: string | null
+  type: "CALL" | "MEETING" | "LETTER" | "OTHER"
+  text: string
+  createdAt: Date
+  dueAt: Date | null
+  completedAt: Date | null
+  isCompleted: boolean
 }

@@ -1,4 +1,4 @@
-import type { CrmAdapter, CrmDeal, CrmFunnel, CrmManager, CrmMessage } from "./types"
+import type { CrmAdapter, CrmDeal, CrmFunnel, CrmManager, CrmMessage, CrmTask } from "./types"
 import { fetchGcCalls, fetchGcCallDetail, fetchGcUsers } from "./getcourse-parser"
 
 export class GetCourseAdapter implements CrmAdapter {
@@ -47,6 +47,7 @@ export class GetCourseAdapter implements CrmAdapter {
       funnelId: "gc-orders",
       funnelName: "Заказы GetCourse",
       stageName: null,
+      stageCrmId: null,
       createdAt: new Date(c.date || Date.now()),
       closedAt: null,
     }))
@@ -77,5 +78,9 @@ export class GetCourseAdapter implements CrmAdapter {
         name: u.name || u.email,
         email: u.email,
       }))
+  }
+
+  async getTasks(): Promise<CrmTask[]> {
+    return []
   }
 }

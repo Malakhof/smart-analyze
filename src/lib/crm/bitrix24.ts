@@ -4,6 +4,7 @@ import {
   CrmFunnel,
   CrmManager,
   CrmMessage,
+  CrmTask,
 } from "./types"
 
 /** Rate-limit pause: Bitrix24 webhooks allow ~2 req/sec */
@@ -265,6 +266,7 @@ export class Bitrix24Adapter implements CrmAdapter {
         funnelId: stageInfo?.funnelId ?? d.CATEGORY_ID ?? null,
         funnelName: stageInfo?.funnelName ?? null,
         stageName: stageInfo?.stageName ?? null,
+        stageCrmId: null,
         createdAt: new Date(d.DATE_CREATE),
         closedAt: d.CLOSEDATE ? new Date(d.CLOSEDATE) : null,
       }
@@ -341,6 +343,11 @@ export class Bitrix24Adapter implements CrmAdapter {
       name: [u.NAME, u.LAST_NAME].filter(Boolean).join(" ").trim() || `User ${u.ID}`,
       email: u.EMAIL || undefined,
     }))
+  }
+
+  async getTasks(): Promise<CrmTask[]> {
+    // TODO: Task #9 (B24 pre-Phase 1) — real implementation pending.
+    return []
   }
 
   // ------- Private helpers -------

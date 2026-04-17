@@ -7,6 +7,9 @@
  *
  * Idempotent: if a CrmConfig with matching subdomain already exists, it is updated instead of duplicated.
  */
+// Use explicit `/client` path: tsx's Node resolver does not handle the directory
+// import that Next.js-bundled code (`@/generated/prisma`) can, so we point at the
+// file directly.
 import { PrismaClient } from "../src/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { encrypt } from "../src/lib/crypto"
@@ -35,8 +38,9 @@ async function main() {
     requireEnv(`${c.envPrefix}_REFRESH_TOKEN`)
   }
   requireEnv("ENCRYPTION_KEY")
+  const databaseUrl = requireEnv("DATABASE_URL")
 
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
+  const adapter = new PrismaPg({ connectionString: databaseUrl })
   const prisma = new PrismaClient({ adapter })
 
   try {
@@ -50,7 +54,7 @@ async function main() {
       let tenant = await prisma.tenant.findFirst({ where: { name: c.tenantName } })
       if (!tenant) {
         tenant = await prisma.tenant.create({
-          data: { name: c.tenantName, plan: "DEMO", dealsLimit: 50 },
+          data: { name: c.tenantName },
         })
         console.log(`  Tenant CREATED: ${c.tenantName} (${tenant.id})`)
       } else {
@@ -62,23 +66,30 @@ async function main() {
         where: { tenantId: tenant.id, provider: "AMOCRM", subdomain },
       })
 
-      const payload = {
+      // Split create vs update:
+      // - createData: full payload; new rows explicitly start with no access token.
+      // - updateData: omits apiKey / tokenExpiresAt so re-running the seed does not
+      //   wipe a freshly minted access token that the OAuth refresh flow populated.
+      const updateData = {
         tenantId: tenant.id,
         provider: "AMOCRM" as const,
         subdomain,
         clientId,
         clientSecret: encrypt(clientSecret),
         refreshToken: encrypt(refreshToken),
+        isActive: true,
+      }
+      const createData = {
+        ...updateData,
         apiKey: null,
         tokenExpiresAt: null,
-        isActive: true,
       }
 
       if (existing) {
-        await prisma.crmConfig.update({ where: { id: existing.id }, data: payload })
+        await prisma.crmConfig.update({ where: { id: existing.id }, data: updateData })
         console.log(`  CrmConfig UPDATED: ${c.tenantName}/${subdomain} (${existing.id})`)
       } else {
-        const created = await prisma.crmConfig.create({ data: payload })
+        const created = await prisma.crmConfig.create({ data: createData })
         console.log(`  CrmConfig CREATED: ${c.tenantName}/${subdomain} (${created.id})`)
       }
     }

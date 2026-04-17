@@ -108,6 +108,7 @@ model CrmConfig {
   clientSecret String?   // OAuth client_secret (encrypted)
   refreshToken String?   // OAuth refresh_token (encrypted)
   tokenExpiresAt DateTime? // When access_token expires
+  redirectUri  String?   // OAuth redirect_uri registered with the integration
 }
 
 enum CrmProvider {

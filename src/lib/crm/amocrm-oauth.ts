@@ -63,7 +63,8 @@ export async function getAmoCrmAccessToken(crmConfigId: string): Promise<string>
       client_secret: clientSecret,
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      redirect_uri: "https://sa.qupai.ru/api/auth/amocrm/callback",
+      redirect_uri:
+        config.redirectUri ?? "https://sa.qupai.ru/api/auth/amocrm/callback",
     }),
     signal: AbortSignal.timeout(15000),
   })

@@ -1,0 +1,1 @@
+ALTER TABLE "CrmConfig" ADD COLUMN IF NOT EXISTS "redirectUri" TEXT;

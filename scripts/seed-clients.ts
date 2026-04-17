@@ -36,6 +36,7 @@ async function main() {
     requireEnv(`${c.envPrefix}_CLIENT_ID`)
     requireEnv(`${c.envPrefix}_CLIENT_SECRET`)
     requireEnv(`${c.envPrefix}_REFRESH_TOKEN`)
+    requireEnv(`${c.envPrefix}_REDIRECT_URI`)
   }
   requireEnv("ENCRYPTION_KEY")
   const databaseUrl = requireEnv("DATABASE_URL")
@@ -49,6 +50,7 @@ async function main() {
       const clientId = requireEnv(`${c.envPrefix}_CLIENT_ID`)
       const clientSecret = requireEnv(`${c.envPrefix}_CLIENT_SECRET`)
       const refreshToken = requireEnv(`${c.envPrefix}_REFRESH_TOKEN`)
+      const redirectUri = requireEnv(`${c.envPrefix}_REDIRECT_URI`)
 
       // 1) Tenant — upsert by name
       let tenant = await prisma.tenant.findFirst({ where: { name: c.tenantName } })
@@ -77,6 +79,7 @@ async function main() {
         clientId,
         clientSecret: encrypt(clientSecret),
         refreshToken: encrypt(refreshToken),
+        redirectUri,
         isActive: true,
       }
       const createData = {

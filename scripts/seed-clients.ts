@@ -7,7 +7,7 @@
  *
  * Idempotent: if a CrmConfig with matching subdomain already exists, it is updated instead of duplicated.
  */
-import { PrismaClient } from "../src/generated/prisma"
+import { PrismaClient } from "../src/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { encrypt } from "../src/lib/crypto"
 
@@ -28,16 +28,64 @@ function requireEnv(name: string): string {
 }
 
 async function main() {
-  // Validate all env vars first — fail fast
   for (const c of CLIENTS) {
     requireEnv(`${c.envPrefix}_SUBDOMAIN`)
     requireEnv(`${c.envPrefix}_CLIENT_ID`)
     requireEnv(`${c.envPrefix}_CLIENT_SECRET`)
     requireEnv(`${c.envPrefix}_REFRESH_TOKEN`)
   }
-  // ENCRYPTION_KEY is read by crypto.ts — touch it now for clearer error
   requireEnv("ENCRYPTION_KEY")
-  console.log("Env validation: OK")
+
+  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
+  const prisma = new PrismaClient({ adapter })
+
+  try {
+    for (const c of CLIENTS) {
+      const subdomain = requireEnv(`${c.envPrefix}_SUBDOMAIN`)
+      const clientId = requireEnv(`${c.envPrefix}_CLIENT_ID`)
+      const clientSecret = requireEnv(`${c.envPrefix}_CLIENT_SECRET`)
+      const refreshToken = requireEnv(`${c.envPrefix}_REFRESH_TOKEN`)
+
+      // 1) Tenant — upsert by name
+      let tenant = await prisma.tenant.findFirst({ where: { name: c.tenantName } })
+      if (!tenant) {
+        tenant = await prisma.tenant.create({
+          data: { name: c.tenantName, plan: "DEMO", dealsLimit: 50 },
+        })
+        console.log(`  Tenant CREATED: ${c.tenantName} (${tenant.id})`)
+      } else {
+        console.log(`  Tenant exists:  ${c.tenantName} (${tenant.id})`)
+      }
+
+      // 2) CrmConfig — upsert by (tenantId, provider=AMOCRM, subdomain)
+      const existing = await prisma.crmConfig.findFirst({
+        where: { tenantId: tenant.id, provider: "AMOCRM", subdomain },
+      })
+
+      const payload = {
+        tenantId: tenant.id,
+        provider: "AMOCRM" as const,
+        subdomain,
+        clientId,
+        clientSecret: encrypt(clientSecret),
+        refreshToken: encrypt(refreshToken),
+        apiKey: null,
+        tokenExpiresAt: null,
+        isActive: true,
+      }
+
+      if (existing) {
+        await prisma.crmConfig.update({ where: { id: existing.id }, data: payload })
+        console.log(`  CrmConfig UPDATED: ${c.tenantName}/${subdomain} (${existing.id})`)
+      } else {
+        const created = await prisma.crmConfig.create({ data: payload })
+        console.log(`  CrmConfig CREATED: ${c.tenantName}/${subdomain} (${created.id})`)
+      }
+    }
+    console.log("Done.")
+  } finally {
+    await prisma.$disconnect()
+  }
 }
 
 main().catch((e) => {

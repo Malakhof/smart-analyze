@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
 import { createCrmAdapter } from "@/lib/crm/adapter"
+import { getAmoCrmAccessToken } from "@/lib/crm/amocrm-oauth"
 import type { CrmDeal, CrmMessage } from "@/lib/crm/types"
 import type { DealStatus, MessageSender, CallDirection } from "@/generated/prisma"
 
@@ -64,11 +65,19 @@ export async function syncFromCrm(
   }
 
   // 2. Create adapter via factory
+  // For amoCRM — fetch a fresh access_token (refresh via stored refreshToken if expired/missing).
+  // For other providers, pass apiKey as stored.
+  let apiKeyForAdapter = crmConfig.apiKey
+  if (crmConfig.provider === "AMOCRM") {
+    apiKeyForAdapter = await getAmoCrmAccessToken(crmConfig.id)
+  }
+
   const adapter = createCrmAdapter({
     provider: crmConfig.provider,
     webhookUrl: crmConfig.webhookUrl,
     subdomain: crmConfig.subdomain,
-    apiKey: crmConfig.apiKey,
+    apiKey: apiKeyForAdapter,
+    gcCookie: crmConfig.gcCookie,
   })
 
   const stats: SyncResult = { managers: 0, funnels: 0, deals: 0, messages: 0 }

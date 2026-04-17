@@ -46,10 +46,16 @@ function calcDuration(createdAt: Date, closedAt: Date | null): number | null {
   return (closedAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60) // hours
 }
 
+export interface SyncOptions {
+  pipelines?: string[]     // amoCRM pipeline IDs to include (others skipped)
+  sinceDays?: number       // only deals created in last N days
+}
+
 export async function syncFromCrm(
   tenantId: string,
   crmConfigId: string,
   onProgress?: (progress: SyncProgress) => void,
+  options?: SyncOptions,
 ): Promise<SyncResult> {
   // 1. Fetch CrmConfig from DB
   const crmConfig = await db.crmConfig.findFirst({
@@ -161,9 +167,21 @@ export async function syncFromCrm(
     onProgress?.({ step: "funnels", current: i + 1, total: crmFunnels.length })
   }
 
-  // 5. Sync deals
+  // 5. Sync deals — optional pipeline + since filter
   onProgress?.({ step: "deals", current: 0, total: 0 })
-  const crmDeals = await adapter.getDeals()
+  const since = options?.sinceDays
+    ? new Date(Date.now() - options.sinceDays * 24 * 60 * 60 * 1000)
+    : undefined
+  let crmDeals: CrmDeal[]
+  if (options?.pipelines && options.pipelines.length > 0) {
+    crmDeals = []
+    for (const pid of options.pipelines) {
+      const pipelineDeals = await adapter.getDeals(pid, since)
+      crmDeals = crmDeals.concat(pipelineDeals)
+    }
+  } else {
+    crmDeals = await adapter.getDeals(undefined, since)
+  }
   onProgress?.({ step: "deals", current: 0, total: crmDeals.length })
 
   for (let i = 0; i < crmDeals.length; i++) {

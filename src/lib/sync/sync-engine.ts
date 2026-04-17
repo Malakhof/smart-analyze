@@ -15,6 +15,7 @@ export interface SyncResult {
   funnels: number
   deals: number
   messages: number
+  tasks: number
 }
 
 const DEAL_BATCH_SIZE = 10
@@ -86,7 +87,7 @@ export async function syncFromCrm(
     gcCookie: crmConfig.gcCookie,
   })
 
-  const stats: SyncResult = { managers: 0, funnels: 0, deals: 0, messages: 0 }
+  const stats: SyncResult = { managers: 0, funnels: 0, deals: 0, messages: 0, tasks: 0 }
 
   // 3. Sync managers
   onProgress?.({ step: "managers", current: 0, total: 0 })
@@ -206,8 +207,13 @@ export async function syncFromCrm(
 
       const existingDeal = await db.deal.findFirst({
         where: { crmId: cd.crmId, tenantId },
-        select: { id: true, messages: { select: { id: true }, take: 1 } },
+        select: {
+          id: true,
+          currentStageCrmId: true,
+          messages: { select: { id: true }, take: 1 },
+        },
       })
+      const priorStageCrmId = existingDeal?.currentStageCrmId ?? null
 
       const dealData = {
         title: cd.title,
@@ -215,6 +221,7 @@ export async function syncFromCrm(
         status: mapDealStatus(cd.status),
         managerId: manager?.id ?? null,
         funnelId: funnel?.id ?? null,
+        currentStageCrmId: cd.stageCrmId,
         closedAt: cd.closedAt,
         duration: calcDuration(cd.createdAt, cd.closedAt),
       }
@@ -234,6 +241,37 @@ export async function syncFromCrm(
           })
 
       stats.deals++
+
+      // Stage transition detection — close prior open history, open new one.
+      // Semantics: history is "from our sync's perspective" (transitions observed
+      // between syncs), not a true amoCRM event-feed backfill.
+      if (cd.stageCrmId && cd.stageCrmId !== priorStageCrmId) {
+        const stageRow = cd.funnelId
+          ? await db.funnelStage.findFirst({
+              where: {
+                funnel: { tenantId, crmId: cd.funnelId },
+                crmId: cd.stageCrmId,
+              },
+              select: { id: true },
+            })
+          : null
+
+        if (stageRow) {
+          await db.dealStageHistory.updateMany({
+            where: { dealId: deal.id, leftAt: null },
+            data: { leftAt: new Date() },
+          })
+
+          await db.dealStageHistory.create({
+            data: {
+              dealId: deal.id,
+              stageId: stageRow.id,
+              enteredAt: new Date(),
+              leftAt: null,
+            },
+          })
+        }
+      }
 
       // 6. Sync messages in batches
       if (i % DEAL_BATCH_SIZE === 0) {
@@ -323,13 +361,75 @@ export async function syncFromCrm(
     onProgress?.({ step: "deals", current: i + 1, total: crmDeals.length })
   }
 
-  // 7. Update CrmConfig.lastSyncAt
+  // 7. Sync tasks
+  onProgress?.({ step: "tasks", current: 0, total: 0 })
+  const sinceForTasks = options?.sinceDays
+    ? new Date(Date.now() - options.sinceDays * 24 * 60 * 60 * 1000)
+    : undefined
+  const crmTasks = await adapter.getTasks(sinceForTasks)
+  onProgress?.({ step: "tasks", current: 0, total: crmTasks.length })
+
+  for (let i = 0; i < crmTasks.length; i++) {
+    const ct = crmTasks[i]
+
+    try {
+      // Resolve deal (may be null if task points to a lead we didn't sync)
+      const deal = ct.dealCrmId
+        ? await db.deal.findFirst({
+            where: { tenantId, crmId: ct.dealCrmId },
+            select: { id: true },
+          })
+        : null
+
+      // Resolve manager
+      const manager = ct.managerCrmId
+        ? await db.manager.findFirst({
+            where: { tenantId, crmId: ct.managerCrmId },
+            select: { id: true },
+          })
+        : null
+
+      // Upsert by (tenantId, crmId)
+      const existing = await db.task.findFirst({
+        where: { tenantId, crmId: ct.crmId },
+        select: { id: true },
+      })
+
+      const commonData = {
+        tenantId,
+        dealId: deal?.id ?? null,
+        managerId: manager?.id ?? null,
+        crmId: ct.crmId,
+        type: ct.type,
+        text: ct.text,
+        createdAt: ct.createdAt,
+        dueAt: ct.dueAt,
+        completedAt: ct.completedAt,
+        isCompleted: ct.isCompleted,
+      }
+
+      if (existing) {
+        await db.task.update({ where: { id: existing.id }, data: commonData })
+      } else {
+        await db.task.create({ data: commonData })
+      }
+
+      stats.tasks++
+    } catch (taskError) {
+      // Log but continue -- don't break entire sync for individual task errors
+      console.error(`Failed to sync task ${ct.crmId}:`, taskError)
+    }
+
+    onProgress?.({ step: "tasks", current: i + 1, total: crmTasks.length })
+  }
+
+  // 8. Update CrmConfig.lastSyncAt
   await db.crmConfig.update({
     where: { id: crmConfigId },
     data: { lastSyncAt: new Date() },
   })
 
-  // 8. Update Tenant.dealsUsed count
+  // 9. Update Tenant.dealsUsed count
   const totalDeals = await db.deal.count({ where: { tenantId } })
   await db.tenant.update({
     where: { id: tenantId },

@@ -4,6 +4,7 @@ import {
   CrmFunnel,
   CrmManager,
   CrmMessage,
+  CrmTask,
 } from "./types"
 
 /** Rate-limit pause: amoCRM allows 7 req/sec */
@@ -109,6 +110,28 @@ interface AmoUser {
   id: number
   name: string
   email: string
+}
+
+interface AmoTask {
+  id: number
+  entity_id: number      // lead id
+  entity_type: "leads" | "contacts" | "companies" | "customers"
+  responsible_user_id: number
+  task_type_id: number
+  text: string
+  created_at: number
+  complete_till: number
+  updated_at: number
+  is_completed: boolean
+}
+
+function mapTaskType(id: number): CrmTask["type"] {
+  switch (id) {
+    case 1: return "CALL"
+    case 2: return "MEETING"
+    case 3: return "LETTER"
+    default: return "OTHER"
+  }
 }
 
 export class AmoCrmAdapter implements CrmAdapter {
@@ -311,6 +334,7 @@ export class AmoCrmAdapter implements CrmAdapter {
         funnelId: pipelineId,
         funnelName: funnelNameById.get(pipelineId) ?? null,
         stageName: stageInfo?.stageName ?? null,
+        stageCrmId: String(l.status_id),
         createdAt: new Date(l.created_at * 1000),
         closedAt: l.closed_at ? new Date(l.closed_at * 1000) : null,
       }
@@ -506,6 +530,29 @@ export class AmoCrmAdapter implements CrmAdapter {
       // Graceful fallback if contacts endpoint is unavailable
       return []
     }
+  }
+
+  async getTasks(since?: Date): Promise<CrmTask[]> {
+    const params: Record<string, unknown> = {
+      "filter[entity_type]": "leads",
+    }
+    if (since) {
+      params["filter[updated_at][from]"] = Math.floor(since.getTime() / 1000)
+    }
+
+    const raw = await this.fetchAll<AmoTask>("/tasks", "tasks", params)
+
+    return raw.map((t) => ({
+      crmId: String(t.id),
+      dealCrmId: t.entity_type === "leads" ? String(t.entity_id) : null,
+      managerCrmId: t.responsible_user_id ? String(t.responsible_user_id) : null,
+      type: mapTaskType(t.task_type_id),
+      text: t.text ?? "",
+      createdAt: new Date(t.created_at * 1000),
+      dueAt: t.complete_till ? new Date(t.complete_till * 1000) : null,
+      completedAt: t.is_completed ? new Date(t.updated_at * 1000) : null,
+      isCompleted: Boolean(t.is_completed),
+    }))
   }
 
   async getManagers(): Promise<CrmManager[]> {

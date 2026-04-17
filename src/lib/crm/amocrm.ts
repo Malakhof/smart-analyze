@@ -271,24 +271,30 @@ export class AmoCrmAdapter implements CrmAdapter {
     ]
     const userMap = await this.resolveUsers(uniqueUserIds)
 
-    // Build stage map from pipelines
+    // Build lookup tables from pipelines.
+    // IMPORTANT: amoCRM status IDs 142/143 (Успех/Неуспех) are GLOBAL — they appear in
+    // every pipeline with the same ID. Keying stageMap by status_id alone causes the
+    // last-iterated pipeline to overwrite all earlier ones. Key by pipeline+status.
     const funnels = await this.getFunnels()
-    const stageMap = new Map<
-      string,
-      { funnelId: string; funnelName: string; stageName: string }
+    const funnelNameById = new Map<string, string>()
+    const stageByPipeAndStatus = new Map<
+      string, // `${pipeline_id}:${status_id}`
+      { stageCrmId: string; stageName: string }
     >()
     for (const f of funnels) {
+      funnelNameById.set(f.crmId, f.name)
       for (const s of f.stages) {
-        stageMap.set(s.crmId, {
-          funnelId: f.crmId,
-          funnelName: f.name,
+        stageByPipeAndStatus.set(`${f.crmId}:${s.crmId}`, {
+          stageCrmId: s.crmId,
           stageName: s.name,
         })
       }
     }
 
     return leads.map((l) => {
-      const stageInfo = stageMap.get(String(l.status_id))
+      const pipelineId = String(l.pipeline_id)
+      const statusId = String(l.status_id)
+      const stageInfo = stageByPipeAndStatus.get(`${pipelineId}:${statusId}`)
       const user = l.responsible_user_id
         ? userMap.get(l.responsible_user_id)
         : null
@@ -302,8 +308,8 @@ export class AmoCrmAdapter implements CrmAdapter {
           ? String(l.responsible_user_id)
           : null,
         managerName: user ?? null,
-        funnelId: stageInfo?.funnelId ?? String(l.pipeline_id) ?? null,
-        funnelName: stageInfo?.funnelName ?? null,
+        funnelId: pipelineId,
+        funnelName: funnelNameById.get(pipelineId) ?? null,
         stageName: stageInfo?.stageName ?? null,
         createdAt: new Date(l.created_at * 1000),
         closedAt: l.closed_at ? new Date(l.closed_at * 1000) : null,

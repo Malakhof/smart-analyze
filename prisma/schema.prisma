@@ -30,6 +30,7 @@ model Tenant {
   // QC relations
   scripts         Script[]
   callRecords     CallRecord[]
+  messages        Message[]
   telegramConfig  TelegramConfig?
 }
 
@@ -150,6 +151,7 @@ model Manager {
   createdAt DateTime      @default(now())
   deals     Deal[]
   callRecords CallRecord[]
+  messages    Message[]
   tasks       Task[]
 
   totalDeals      Int?
@@ -211,9 +213,22 @@ enum DealAnalysisType {
 }
 
 model Message {
-  id        String        @id @default(cuid())
-  dealId    String
-  deal      Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  id          String        @id @default(cuid())
+  // Optional FK to Deal — GC conversation messages may not be tied to a sale
+  dealId      String?
+  deal        Deal?         @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  // Optional tenant + client/manager linkage for conversations w/o deal
+  tenantId    String?
+  tenant      Tenant?       @relation(fields: [tenantId], references: [id])
+  managerId   String?
+  manager     Manager?      @relation(fields: [managerId], references: [id])
+
+  // GC conversation reference (ResponseId / convId from "Обращения")
+  crmId       String?
+  threadId    String?       // GC respId — multiple messages share the same thread
+  channel     String?       // "telegram", "whatsapp", "vk", "сайт", etc
+
   sender    MessageSender
   content   String
   timestamp DateTime

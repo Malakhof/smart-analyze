@@ -20,6 +20,7 @@ import {
   type ParsedDeal,
 } from "@/lib/crm/getcourse/parsers/deal-list"
 import type { ParsedContact } from "@/lib/crm/getcourse/parsers/contact-list"
+import type { ParsedResponse } from "@/lib/crm/getcourse/parsers/responses"
 import type { CrmConfig } from "@/generated/prisma/client"
 
 export interface GcSyncOptions {
@@ -27,10 +28,14 @@ export interface GcSyncOptions {
   dryRun?: boolean          // skip DB writes, only return what would happen
   maxDealPages?: number     // pagination cap for deals (default 1000)
   maxContactPages?: number  // pagination cap for contacts (default 500)
+  maxResponsePages?: number // pagination cap for responses (default 50, ~1000 threads)
   startDealPage?: number    // resume from this page (default 1)
   startContactPage?: number // resume from this page (default 1)
+  startResponsePage?: number // resume from this page (default 1)
+  syncResponses?: boolean   // enable responses sync (default true)
+  syncClosedResponses?: boolean // include closed (default false — open only)
   rateLimitMs?: number      // sleep between page fetches (default 1000)
-  onPageProgress?: (kind: "deal" | "contact", page: number, written: number) => void
+  onPageProgress?: (kind: "deal" | "contact" | "response" | "thread", page: number, written: number) => void
 }
 
 export interface GcSyncReport {
@@ -40,13 +45,17 @@ export interface GcSyncReport {
   totals: {
     dealsFromGc: number
     contactsFromGc: number
+    responsesFromGc: number
+    threadMessagesFromGc: number
     expectedDealsTotal: number | null
     expectedContactsTotal: number | null
+    expectedResponsesOpen: number | null
   }
   written: {
     managers: { created: number; updated: number }
     deals: { created: number; updated: number }
     callRecords: { created: number; updated: number }
+    messages: { created: number; updated: number }
   }
   warnings: string[]
 }
@@ -73,13 +82,17 @@ export async function syncGetCourseTenant(
     totals: {
       dealsFromGc: 0,
       contactsFromGc: 0,
+      responsesFromGc: 0,
+      threadMessagesFromGc: 0,
       expectedDealsTotal: null,
       expectedContactsTotal: null,
+      expectedResponsesOpen: null,
     },
     written: {
       managers: { created: 0, updated: 0 },
       deals: { created: 0, updated: 0 },
       callRecords: { created: 0, updated: 0 },
+      messages: { created: 0, updated: 0 },
     },
     warnings: [],
   }
@@ -142,13 +155,138 @@ export async function syncGetCourseTenant(
     }
   )
 
-  // 4) Mark sync complete
+  // 4) Stream responses (обращения) → write each thread to Message table
+  if (options.syncResponses !== false) {
+    const statuses: Array<"open" | "closed"> =
+      options.syncClosedResponses ? ["open", "closed"] : ["open"]
+    for (const status of statuses) {
+      await adapter.streamResponses(
+        status,
+        async (responses) => {
+          for (const resp of responses) {
+            const written = await writeResponseThread(
+              tenantId,
+              resp,
+              adapter,
+              managerIdMap
+            )
+            report.written.messages.created += written.messagesCreated
+            report.written.messages.updated += written.messagesUpdated
+            report.written.managers.created += written.managersCreated
+            report.totals.threadMessagesFromGc += written.fetchedCount
+          }
+          report.totals.responsesFromGc += responses.length
+          options.onPageProgress?.(
+            "response",
+            -1,
+            report.written.messages.created + report.written.messages.updated
+          )
+        },
+        {
+          maxPages: options.maxResponsePages ?? 50,
+          startPage: options.startResponsePage ?? 1,
+          rateLimitMs: options.rateLimitMs ?? 1000,
+        }
+      )
+    }
+  }
+
+  // 5) Mark sync complete
   await db.crmConfig.update({
     where: { id: cfg.id },
     data: { lastSyncAt: new Date() },
   })
 
   return report
+}
+
+/**
+ * Fetch one response thread + write each message to DB.
+ * - threadId = response crmId
+ * - sender derived from authorUserId match against managerIdMap
+ * - Manager auto-created if seen in thread but not yet in DB
+ */
+async function writeResponseThread(
+  tenantId: string,
+  resp: ParsedResponse,
+  adapter: GetCourseAdapter,
+  managerIdMap: Map<string, string>
+): Promise<{
+  messagesCreated: number
+  messagesUpdated: number
+  managersCreated: number
+  fetchedCount: number
+}> {
+  let messagesCreated = 0
+  let messagesUpdated = 0
+  let managersCreated = 0
+
+  let messages
+  try {
+    messages = await adapter.getResponseThread(resp.crmId)
+  } catch (e) {
+    console.error(`[GC_SYNC_V2] Failed to fetch thread ${resp.crmId}:`, e)
+    return { messagesCreated: 0, messagesUpdated: 0, managersCreated: 0, fetchedCount: 0 }
+  }
+  const fetchedCount = messages.length
+
+  // Ensure responsible manager exists (from list metadata)
+  if (resp.managerUserId && resp.managerUserName && !managerIdMap.has(resp.managerUserId)) {
+    const existing = await db.manager.findFirst({
+      where: { tenantId, crmId: resp.managerUserId },
+    })
+    if (existing) {
+      managerIdMap.set(resp.managerUserId, existing.id)
+    } else {
+      const created = await db.manager.create({
+        data: {
+          tenantId,
+          crmId: resp.managerUserId,
+          name: resp.managerUserName,
+        },
+      })
+      managerIdMap.set(resp.managerUserId, created.id)
+      managersCreated++
+    }
+  }
+
+  for (const msg of messages) {
+    // Skip empty/system events with no content for now (can be enabled later)
+    if (!msg.text || msg.text.length === 0) continue
+
+    // Determine sender role
+    const isAuthorManager = msg.authorUserId && managerIdMap.has(msg.authorUserId)
+    let sender: "MANAGER" | "CLIENT" | "SYSTEM"
+    if (msg.isSystem) sender = "SYSTEM"
+    else if (isAuthorManager) sender = "MANAGER"
+    else if (msg.authorUserId === resp.clientUserId) sender = "CLIENT"
+    else sender = "SYSTEM" // unknown → safe default
+
+    const data = {
+      tenantId,
+      managerId: isAuthorManager ? managerIdMap.get(msg.authorUserId!) : null,
+      crmId: msg.commentId,
+      threadId: resp.crmId,
+      channel: msg.channel,
+      sender,
+      content: msg.text,
+      timestamp: msg.timestamp ?? new Date(),
+      isAudio: false,
+    }
+
+    const existing = await db.message.findFirst({
+      where: { tenantId, crmId: msg.commentId },
+    })
+    if (existing) {
+      await db.message.update({ where: { id: existing.id }, data })
+      messagesUpdated++
+    } else {
+      await db.message.create({ data })
+      messagesCreated++
+    }
+  }
+
+  return { messagesCreated, messagesUpdated, managersCreated, fetchedCount }
 }
 
 async function writeDealsPage(

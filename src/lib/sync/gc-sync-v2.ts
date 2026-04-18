@@ -1,9 +1,10 @@
 /**
  * GetCourse v2 sync flow.
  *
- * Pulls deals + contacts (calls) from GetCourse using the new
- * src/lib/crm/getcourse/adapter.ts and upserts them into our DB with strict
- * tenantId isolation. Manager attribution is derived from contact rows.
+ * Streaming pull: each page from GetCourse is written to our DB immediately,
+ * then released from memory. Allows full 22K+ deal sync without OOM and gives
+ * resumability — if the run is killed at page N, restarting at startPage=N+1
+ * just continues.
  *
  * Idempotent: re-running the same date range will UPSERT by (tenantId, crmId)
  * rather than duplicating.
@@ -14,14 +15,22 @@
 import { db } from "@/lib/db"
 import { decrypt } from "@/lib/crypto"
 import { GetCourseAdapter } from "@/lib/crm/getcourse/adapter"
-import { gcStatusToUnified } from "@/lib/crm/getcourse/parsers/deal-list"
+import {
+  gcStatusToUnified,
+  type ParsedDeal,
+} from "@/lib/crm/getcourse/parsers/deal-list"
+import type { ParsedContact } from "@/lib/crm/getcourse/parsers/contact-list"
 import type { CrmConfig } from "@/generated/prisma/client"
 
 export interface GcSyncOptions {
   daysBack: number          // e.g. 7 for first test, 90 for full
   dryRun?: boolean          // skip DB writes, only return what would happen
-  maxPages?: number         // pagination cap (test mode = small, prod = high)
-  perPage?: number
+  maxDealPages?: number     // pagination cap for deals (default 1000)
+  maxContactPages?: number  // pagination cap for contacts (default 500)
+  startDealPage?: number    // resume from this page (default 1)
+  startContactPage?: number // resume from this page (default 1)
+  rateLimitMs?: number      // sleep between page fetches (default 1000)
+  onPageProgress?: (kind: "deal" | "contact", page: number, written: number) => void
 }
 
 export interface GcSyncReport {
@@ -75,81 +84,152 @@ export async function syncGetCourseTenant(
     warnings: [],
   }
 
-  // Step 1: cheap probe — how much should be there?
+  // 1) Probe — cheap totals
   await adapter.testConnection()
   report.totals.expectedDealsTotal = await adapter.getTotalDealsInRange(from, to)
   report.totals.expectedContactsTotal = await adapter.getTotalContactsInRange(from, to)
 
-  // Step 2: fetch (paginated)
-  const deals = await adapter.getDealsByDateRange(from, to, {
-    maxPages: options.maxPages ?? 5,
-    perPage: options.perPage ?? 100,
-  })
-  report.totals.dealsFromGc = deals.length
-
-  const contacts = await adapter.getContactsByDateRange(from, to, {
-    maxPages: options.maxPages ?? 5,
-    perPage: options.perPage ?? 100,
-  })
-  report.totals.contactsFromGc = contacts.length
-
-  if (options.dryRun) return report
-
-  // Step 3: write managers (upsert from unique manager IDs in contacts)
-  const uniqueManagers = new Map<string, string>()
-  for (const c of contacts) {
-    if (c.managerCrmId && c.managerName && !uniqueManagers.has(c.managerCrmId)) {
-      uniqueManagers.set(c.managerCrmId, c.managerName)
-    }
+  if (options.dryRun) {
+    // For dryRun, fetch one sample page only to get a sense of structure.
+    const sampleDeals = await adapter.getDealsByDateRange(from, to, { maxPages: 1 })
+    const sampleContacts = await adapter.getContactsByDateRange(from, to, { maxPages: 1 })
+    report.totals.dealsFromGc = sampleDeals.length
+    report.totals.contactsFromGc = sampleContacts.length
+    return report
   }
 
-  const managerIdMap = new Map<string, string>() // GC id → our DB id
-  for (const [crmId, name] of uniqueManagers) {
-    const existing = await db.manager.findFirst({ where: { tenantId, crmId } })
-    if (existing) {
-      managerIdMap.set(crmId, existing.id)
-      if (existing.name !== name) {
-        await db.manager.update({ where: { id: existing.id }, data: { name } })
-        report.written.managers.updated++
-      }
-    } else {
-      const m = await db.manager.create({
-        data: { tenantId, crmId, name },
-      })
-      managerIdMap.set(crmId, m.id)
-      report.written.managers.created++
+  // 2) Stream deals → write per page
+  const dealIdMap = new Map<string, string>() // crmId → DB id
+  await adapter.streamDealsByDateRange(
+    from,
+    to,
+    async (rows) => {
+      const pageWritten = await writeDealsPage(tenantId, rows, dealIdMap)
+      report.written.deals.created += pageWritten.created
+      report.written.deals.updated += pageWritten.updated
+      report.totals.dealsFromGc += rows.length
+      options.onPageProgress?.("deal", -1, report.written.deals.created + report.written.deals.updated)
+    },
+    {
+      maxPages: options.maxDealPages ?? 1000,
+      startPage: options.startDealPage ?? 1,
+      rateLimitMs: options.rateLimitMs ?? 1000,
     }
-  }
+  )
 
-  // Step 4: write deals (upsert by tenantId + crmId)
-  const dealIdMap = new Map<string, string>() // GC deal id → our DB id
-  for (const d of deals) {
-    const existing = await db.deal.findFirst({
-      where: { tenantId, crmId: d.crmId },
-    })
+  // 3) Stream contacts → write per page (with manager + deal linking)
+  const managerIdMap = new Map<string, string>()
+  await adapter.streamContactsByDateRange(
+    from,
+    to,
+    async (rows) => {
+      const pageWritten = await writeContactsPage(tenantId, rows, managerIdMap, dealIdMap)
+      report.written.callRecords.created += pageWritten.callsCreated
+      report.written.callRecords.updated += pageWritten.callsUpdated
+      report.written.managers.created += pageWritten.managersCreated
+      report.written.managers.updated += pageWritten.managersUpdated
+      report.totals.contactsFromGc += rows.length
+      options.onPageProgress?.(
+        "contact",
+        -1,
+        report.written.callRecords.created + report.written.callRecords.updated
+      )
+    },
+    {
+      maxPages: options.maxContactPages ?? 500,
+      startPage: options.startContactPage ?? 1,
+      rateLimitMs: options.rateLimitMs ?? 1000,
+    }
+  )
+
+  // 4) Mark sync complete
+  await db.crmConfig.update({
+    where: { id: cfg.id },
+    data: { lastSyncAt: new Date() },
+  })
+
+  return report
+}
+
+async function writeDealsPage(
+  tenantId: string,
+  rows: ParsedDeal[],
+  dealIdMap: Map<string, string>
+): Promise<{ created: number; updated: number }> {
+  let created = 0
+  let updated = 0
+  for (const d of rows) {
     const data = {
       tenantId,
       crmId: d.crmId,
       title: d.title || `Deal ${d.crmId}`,
       amount: d.amount ?? null,
-      status: gcStatusToUnified(d.status).toUpperCase() as "OPEN" | "WON" | "LOST",
+      status: gcStatusToUnified(d.status).toUpperCase() as
+        | "OPEN"
+        | "WON"
+        | "LOST",
     }
+    const existing = await db.deal.findFirst({
+      where: { tenantId, crmId: d.crmId },
+    })
     if (existing) {
       await db.deal.update({ where: { id: existing.id }, data })
       dealIdMap.set(d.crmId, existing.id)
-      report.written.deals.updated++
+      updated++
     } else {
-      const created = await db.deal.create({ data })
-      dealIdMap.set(d.crmId, created.id)
-      report.written.deals.created++
+      const createdRow = await db.deal.create({ data })
+      dealIdMap.set(d.crmId, createdRow.id)
+      created++
+    }
+  }
+  return { created, updated }
+}
+
+async function writeContactsPage(
+  tenantId: string,
+  rows: ParsedContact[],
+  managerIdMap: Map<string, string>,
+  dealIdMap: Map<string, string>
+): Promise<{
+  callsCreated: number
+  callsUpdated: number
+  managersCreated: number
+  managersUpdated: number
+}> {
+  // 1) ensure managers
+  let managersCreated = 0
+  let managersUpdated = 0
+  for (const c of rows) {
+    if (!c.managerCrmId || !c.managerName || managerIdMap.has(c.managerCrmId)) continue
+    const existing = await db.manager.findFirst({
+      where: { tenantId, crmId: c.managerCrmId },
+    })
+    if (existing) {
+      managerIdMap.set(c.managerCrmId, existing.id)
+      if (existing.name !== c.managerName) {
+        await db.manager.update({
+          where: { id: existing.id },
+          data: { name: c.managerName },
+        })
+        managersUpdated++
+      }
+    } else {
+      const m = await db.manager.create({
+        data: { tenantId, crmId: c.managerCrmId, name: c.managerName },
+      })
+      managerIdMap.set(c.managerCrmId, m.id)
+      managersCreated++
     }
   }
 
-  // Step 5: write call records (upsert by tenantId + crmId)
-  for (const c of contacts) {
-    const existing = await db.callRecord.findFirst({
-      where: { tenantId, crmId: c.crmId },
-    })
+  // 2) call records
+  let callsCreated = 0
+  let callsUpdated = 0
+  for (const c of rows) {
+    const linkedDealId = c.linkedDealId
+      ? await resolveDealId(tenantId, c.linkedDealId, dealIdMap)
+      : null
+
     const data = {
       tenantId,
       crmId: c.crmId,
@@ -163,25 +243,43 @@ export async function syncGetCourseTenant(
       managerId: c.managerCrmId
         ? managerIdMap.get(c.managerCrmId) ?? null
         : null,
-      dealId: c.linkedDealId ? dealIdMap.get(c.linkedDealId) ?? null : null,
+      dealId: linkedDealId,
       createdAt: c.callDate ?? new Date(),
     }
+    const existing = await db.callRecord.findFirst({
+      where: { tenantId, crmId: c.crmId },
+    })
     if (existing) {
       await db.callRecord.update({ where: { id: existing.id }, data })
-      report.written.callRecords.updated++
+      callsUpdated++
     } else {
       await db.callRecord.create({ data })
-      report.written.callRecords.created++
+      callsCreated++
     }
   }
 
-  // Step 6: update CrmConfig.lastSyncAt
-  await db.crmConfig.update({
-    where: { id: cfg.id },
-    data: { lastSyncAt: new Date() },
-  })
+  return { callsCreated, callsUpdated, managersCreated, managersUpdated }
+}
 
-  return report
+/**
+ * Look up dealId from cache; on miss, query DB once and cache.
+ * Returns null if deal isn't in our DB yet (e.g. older than the sync window).
+ */
+async function resolveDealId(
+  tenantId: string,
+  crmId: string,
+  cache: Map<string, string>
+): Promise<string | null> {
+  if (cache.has(crmId)) return cache.get(crmId)!
+  const found = await db.deal.findFirst({
+    where: { tenantId, crmId },
+    select: { id: true },
+  })
+  if (found) {
+    cache.set(crmId, found.id)
+    return found.id
+  }
+  return null
 }
 
 function resolveAccountUrl(cfg: Pick<CrmConfig, "subdomain">): string {
@@ -189,8 +287,6 @@ function resolveAccountUrl(cfg: Pick<CrmConfig, "subdomain">): string {
   if (!sub) {
     throw new Error("CrmConfig.subdomain is required for GetCourse")
   }
-  // If subdomain contains a dot, treat it as a full host (e.g. "web.diva.school").
-  // Otherwise build the canonical *.getcourse.ru URL.
   if (sub.includes(".")) return `https://${sub}`
   return `https://${sub}.getcourse.ru`
 }
@@ -199,7 +295,6 @@ function decryptCookie(cfg: Pick<CrmConfig, "gcCookie">): string {
   if (!cfg.gcCookie) {
     throw new Error("CrmConfig.gcCookie is missing — cookie not provisioned yet")
   }
-  // Cookie may be stored as plain or encrypted. Try decrypt; on failure assume plain.
   try {
     return decrypt(cfg.gcCookie)
   } catch {

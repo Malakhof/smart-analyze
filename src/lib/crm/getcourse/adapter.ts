@@ -39,6 +39,13 @@ interface PaginatedFetchOptions {
   onProgress?: (page: number, totalRows: number) => void
 }
 
+export interface PaginatedStreamOptions {
+  maxPages?: number       // hard cap (default 2000 for full sync)
+  startPage?: number      // resume from this page (default 1)
+  perPage?: number        // request size (GC ignores, but kept for parity)
+  rateLimitMs?: number    // sleep between pages (default 1000)
+}
+
 export class GetCourseAdapter {
   constructor(
     public readonly accountUrl: string,  // e.g. "https://web.diva.school"
@@ -96,6 +103,30 @@ export class GetCourseAdapter {
   }
 
   /**
+   * Stream deals page-by-page, calling onPage(rows, pageNum) for each.
+   * Returns total rows fetched. Memory stays O(1 page).
+   */
+  async streamDealsByDateRange(
+    from: Date,
+    to: Date,
+    onPage: (rows: ParsedDeal[], pageNum: number) => Promise<void>,
+    options: PaginatedStreamOptions = {}
+  ): Promise<number> {
+    const baseUrl = buildDateFilteredUrl(this.accountUrl, "deal", from, to)
+    return this.streamGrid(baseUrl, parseDealList, onPage, options)
+  }
+
+  async streamContactsByDateRange(
+    from: Date,
+    to: Date,
+    onPage: (rows: ParsedContact[], pageNum: number) => Promise<void>,
+    options: PaginatedStreamOptions = {}
+  ): Promise<number> {
+    const baseUrl = buildDateFilteredUrl(this.accountUrl, "contact", from, to)
+    return this.streamGrid(baseUrl, parseContactList, onPage, options)
+  }
+
+  /**
    * Fetch users (managers + clients). Page 1 only by default — GetCourse has
    * 249K users for diva and full enumeration is wasteful. Caller should paginate
    * explicitly only when needed.
@@ -107,6 +138,40 @@ export class GetCourseAdapter {
   }
 
   // ─── private ──────────────────────────────────────────────────────────────
+
+  /**
+   * Streaming version of paginateGrid: invokes onPage(rows, n) per page,
+   * so caller can flush to DB without holding everything in memory.
+   * Returns total rows seen. Uses startPage for resumability.
+   */
+  private async streamGrid<T>(
+    baseUrl: string,
+    parser: (html: string) => T[],
+    onPage: (rows: T[], pageNum: number) => Promise<void>,
+    options: PaginatedStreamOptions
+  ): Promise<number> {
+    const maxPages = options.maxPages ?? 2000
+    const startPage = options.startPage ?? 1
+    const perPage = options.perPage ?? 100
+    const rateLimitMs = options.rateLimitMs ?? RATE_LIMIT_DELAY_MS
+
+    let totalRows = 0
+    for (let page = startPage; page < startPage + maxPages; page++) {
+      const sep = baseUrl.includes("?") ? "&" : "?"
+      const url = `${baseUrl}${sep}page=${page}&per-page=${perPage}`
+
+      const result = await safeFetch(url, { cookie: this.cookie })
+      const rows = parser(result.html)
+
+      if (rows.length === 0) break
+      totalRows += rows.length
+
+      await onPage(rows, page)
+
+      await sleep(rateLimitMs)
+    }
+    return totalRows
+  }
 
   private async paginateGrid<T>(
     baseUrl: string,

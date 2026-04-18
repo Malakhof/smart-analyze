@@ -23,13 +23,19 @@ if (!tenantName) {
 }
 
 const daysArg = args.find((a) => a.startsWith("--days="))
-const maxPagesArg = args.find((a) => a.startsWith("--max-pages="))
-const perPageArg = args.find((a) => a.startsWith("--per-page="))
+const maxDealPagesArg = args.find((a) => a.startsWith("--max-deal-pages="))
+const maxContactPagesArg = args.find((a) => a.startsWith("--max-contact-pages="))
+const startDealPageArg = args.find((a) => a.startsWith("--start-deal-page="))
+const startContactPageArg = args.find((a) => a.startsWith("--start-contact-page="))
+const rateLimitArg = args.find((a) => a.startsWith("--rate-ms="))
 const dryRun = args.includes("--dry-run")
 
 const daysBack = daysArg ? Number(daysArg.split("=")[1]) : 7
-const maxPages = maxPagesArg ? Number(maxPagesArg.split("=")[1]) : 5
-const perPage = perPageArg ? Number(perPageArg.split("=")[1]) : 100
+const maxDealPages = maxDealPagesArg ? Number(maxDealPagesArg.split("=")[1]) : 1000
+const maxContactPages = maxContactPagesArg ? Number(maxContactPagesArg.split("=")[1]) : 500
+const startDealPage = startDealPageArg ? Number(startDealPageArg.split("=")[1]) : 1
+const startContactPage = startContactPageArg ? Number(startContactPageArg.split("=")[1]) : 1
+const rateLimitMs = rateLimitArg ? Number(rateLimitArg.split("=")[1]) : 1000
 
 if (!process.env.DATABASE_URL) {
   console.error("Missing env: DATABASE_URL")
@@ -45,19 +51,34 @@ async function main() {
   })
 
   console.log(`\n=== GetCourse sync for ${tenantName} ===`)
-  console.log(`  tenantId:  ${tenant.id}`)
-  console.log(`  daysBack:  ${daysBack}`)
-  console.log(`  maxPages:  ${maxPages}`)
-  console.log(`  perPage:   ${perPage}`)
-  console.log(`  dryRun:    ${dryRun}`)
+  console.log(`  tenantId:        ${tenant.id}`)
+  console.log(`  daysBack:        ${daysBack}`)
+  console.log(`  maxDealPages:    ${maxDealPages}`)
+  console.log(`  maxContactPages: ${maxContactPages}`)
+  console.log(`  startDealPage:   ${startDealPage}`)
+  console.log(`  startContactPage:${startContactPage}`)
+  console.log(`  rateLimitMs:     ${rateLimitMs}`)
+  console.log(`  dryRun:          ${dryRun}`)
   console.log()
 
   const started = Date.now()
+  let lastLogged = Date.now()
   const report = await syncGetCourseTenant(tenant.id, {
     daysBack,
     dryRun,
-    maxPages,
-    perPage,
+    maxDealPages,
+    maxContactPages,
+    startDealPage,
+    startContactPage,
+    rateLimitMs,
+    onPageProgress: (kind, _page, written) => {
+      const now = Date.now()
+      if (now - lastLogged > 5000) {
+        const elapsed = ((now - started) / 1000).toFixed(0)
+        console.log(`  [${elapsed}s] ${kind}s written: ${written}`)
+        lastLogged = now
+      }
+    },
   })
   const elapsedSec = ((Date.now() - started) / 1000).toFixed(1)
 

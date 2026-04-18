@@ -13,7 +13,7 @@
  * src/lib/sync/gc-sync-v2.ts uses this class directly. After Phase 5 we will
  * unify by replacing the old class.
  */
-import { safeFetch } from "./safe-fetch"
+import { safeFetch, safeFetchJson, extractInnerHtml } from "./safe-fetch"
 import {
   buildDateFilteredUrl,
   parseTotalRecords,
@@ -30,6 +30,14 @@ import {
   parseUserList,
   type ParsedGcUser,
 } from "./parsers/user-list"
+import {
+  parseResponsesList,
+  type ParsedResponse,
+} from "./parsers/responses"
+import {
+  parseConversationThread,
+  type ParsedConversationMessage,
+} from "./parsers/conversation"
 
 const RATE_LIMIT_DELAY_MS = 1000 // 1 req/sec safe default
 
@@ -135,6 +143,65 @@ export class GetCourseAdapter {
     const url = `${this.accountUrl}/pl/user/user/index?page=${pageNumber}`
     const result = await safeFetch(url, { cookie: this.cookie })
     return parseUserList(result.html)
+  }
+
+  /**
+   * List responses (обращения) of a given status with pagination.
+   * status: "open" → 0, "closed" → 1.
+   * objectTypeId: 55 = thread/conversation type for diva.school.
+   */
+  async getResponsesPage(
+    status: "open" | "closed",
+    pageNumber: number,
+    objectTypeId = 55
+  ): Promise<{ models: ParsedResponse[]; totalCount: number }> {
+    const statusNum = status === "open" ? 0 : 1
+    const url =
+      `${this.accountUrl}/pl/tasks/resp/models-list` +
+      `?filter%5Bobject_type_id%5D=${objectTypeId}` +
+      `&filter%5Bstatus%5D=${statusNum}` +
+      `&page=${pageNumber}`
+    const result = await safeFetchJson(url, this.cookie)
+    const parsed = parseResponsesList(result)
+    return { models: parsed.models, totalCount: parsed.totalCount }
+  }
+
+  /**
+   * Stream all responses of a given status, page by page,
+   * calling onPage(models, pageNum) for each. Stops on empty page or maxPages.
+   */
+  async streamResponses(
+    status: "open" | "closed",
+    onPage: (models: ParsedResponse[], pageNum: number) => Promise<void>,
+    options: { maxPages?: number; startPage?: number; rateLimitMs?: number; objectTypeId?: number } = {}
+  ): Promise<number> {
+    const maxPages = options.maxPages ?? 200
+    const startPage = options.startPage ?? 1
+    const rate = options.rateLimitMs ?? RATE_LIMIT_DELAY_MS
+    const objectTypeId = options.objectTypeId ?? 55
+
+    let total = 0
+    for (let page = startPage; page < startPage + maxPages; page++) {
+      const { models } = await this.getResponsesPage(status, page, objectTypeId)
+      if (models.length === 0) break
+      total += models.length
+      await onPage(models, page)
+      await sleep(rate)
+    }
+    return total
+  }
+
+  /**
+   * Fetch full conversation thread for a respId.
+   * Returns ordered list of messages (system events + human comments).
+   */
+  async getResponseThread(respId: string): Promise<ParsedConversationMessage[]> {
+    const url =
+      `${this.accountUrl}/pl/tasks/resp/model-view?id=${respId}&withHistory=1`
+    const json = await safeFetchJson(url, this.cookie)
+    const innerHtml = extractInnerHtml(json)
+    if (!innerHtml) return []
+    return parseConversationThread(innerHtml)
   }
 
   // ─── private ──────────────────────────────────────────────────────────────

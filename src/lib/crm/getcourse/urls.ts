@@ -21,6 +21,10 @@ export const GC_WHITELIST_PREFIXES = [
   "/pl/tasks/task/my",
   "/pl/tasks/task/stat",
   "/pl/tasks/resp",
+  "/pl/tasks/resp/models-list",   // AJAX list of responses (JSON)
+  "/pl/tasks/resp/model-view",    // AJAX detail of one response (JSON+HTML)
+  "/pl/tasks/resp/objects",
+  "/pl/tasks/resp/one",
   "/pl/tasks/mission/index",
   "/pl/logic/funnel",
   "/chtm/app/builder/v2",

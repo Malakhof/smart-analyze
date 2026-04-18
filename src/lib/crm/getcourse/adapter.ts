@@ -130,9 +130,9 @@ export class GetCourseAdapter {
 
       onProgress?.(page, allRows.length)
 
-      // Stop if we got fewer rows than per-page (last page)
-      if (rows.length < perPage) break
-
+      // GetCourse Yii2 GridView ignores ?per-page= param and returns its own
+      // default (~30 rows). Cannot use rows.length < perPage as EOF heuristic.
+      // Only stop on truly empty page.
       await sleep(RATE_LIMIT_DELAY_MS)
     }
     return allRows

@@ -9,6 +9,7 @@
  *       ./node_modules/.bin/tsx scripts/extract-audio-batch.ts <tenantName> <limit> > /tmp/batch.jsonl'
  */
 import { PrismaClient } from "../src/generated/prisma/client"
+import { PrismaPg } from "@prisma/adapter-pg"
 
 const tenantName = process.argv[2]
 const limit = Number(process.argv[3] ?? 300)
@@ -20,7 +21,8 @@ if (!tenantName) {
 }
 
 async function main() {
-  const db = new PrismaClient()
+  const adapterPg = new PrismaPg({ connectionString: process.env.DATABASE_URL })
+  const db = new PrismaClient({ adapter: adapterPg })
   const tenant = await db.tenant.findFirst({ where: { name: tenantName } })
   if (!tenant) {
     console.error(`tenant not found: ${tenantName}`)

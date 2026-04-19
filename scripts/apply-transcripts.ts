@@ -10,6 +10,7 @@
  */
 import { readFileSync } from "node:fs"
 import { PrismaClient } from "../src/generated/prisma/client"
+import { PrismaPg } from "@prisma/adapter-pg"
 
 const inputPath = process.argv[2]
 if (!inputPath) {
@@ -26,7 +27,8 @@ interface Row {
 }
 
 async function main() {
-  const db = new PrismaClient()
+  const adapterPg = new PrismaPg({ connectionString: process.env.DATABASE_URL })
+  const db = new PrismaClient({ adapter: adapterPg })
   const lines = readFileSync(inputPath, "utf-8").split("\n").filter(Boolean)
   const rows: Row[] = lines.map((l) => JSON.parse(l) as Row)
 

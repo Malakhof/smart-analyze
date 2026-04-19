@@ -34,7 +34,7 @@ export function Header({ tenantName }: HeaderProps = {}) {
     <header className="sticky top-0 z-50 flex h-[52px] items-center gap-8 border-b border-border-default bg-header-bg px-8 backdrop-blur-[20px]">
       {/* Logo — Sales GURU (Чернобай). Прозрачный фон в light theme, surface-2 в dark */}
       <Link href="/" className="group flex items-center gap-2.5 no-underline">
-        <span className="block h-9 w-9 overflow-hidden rounded-full bg-transparent dark:bg-surface-2 transition-transform duration-300 ease-in-out group-hover:rotate-[15deg]">
+        <span className="block h-9 w-9 overflow-hidden rounded-full bg-surface-2 transition-transform duration-300 ease-in-out group-hover:rotate-[15deg]">
           <Image
             src="/sg-logo.png"
             alt="Sales GURU"

@@ -30,21 +30,35 @@ async function main() {
   }
 
   // Sipuni-only for v1: stereo channels = perfect role split.
+  // GC fs[N].getcourse.ru also stereo + public-by-hash.
   // Gravitel/AICall blocked (auth/cert issues) — handle in v2.
-  const onlySipuni = process.env.SIPUNI_ONLY !== "false"
-  const maxDuration = Number(process.env.MAX_DURATION ?? 1200) // skip marathon calls
+  const audioFilter = process.env.AUDIO_FILTER ?? "sipuni" // sipuni | gc | any
+  const maxDuration = Number(process.env.MAX_DURATION ?? 1200)
+  const noDurationFilter = process.env.NO_DURATION_FILTER === "true"
+  const requireDeal = process.env.REQUIRE_DEAL !== "false"
+  const orderBy = process.env.ORDER_BY === "date" ? { createdAt: "desc" as const } : { duration: "desc" as const }
+
+  let audioUrlWhere: { startsWith?: string; not?: null }
+  if (audioFilter === "gc") {
+    audioUrlWhere = { startsWith: "https://fs" }
+  } else if (audioFilter === "any") {
+    audioUrlWhere = { not: null }
+  } else {
+    audioUrlWhere = { startsWith: "https://sipuni.com/" }
+  }
+
   const calls = await db.callRecord.findMany({
     where: {
       tenantId: tenant.id,
-      audioUrl: onlySipuni
-        ? { startsWith: "https://sipuni.com/" }
-        : { not: null },
-      dealId: { not: null },
-      duration: { gte: minDuration, lte: maxDuration },
+      audioUrl: audioUrlWhere,
+      ...(requireDeal ? { dealId: { not: null } } : {}),
+      ...(noDurationFilter
+        ? {}
+        : { duration: { gte: minDuration, lte: maxDuration } }),
       transcript: null,
     },
     select: { id: true, audioUrl: true, duration: true, direction: true },
-    orderBy: { duration: "desc" },
+    orderBy,
     take: limit,
   })
 

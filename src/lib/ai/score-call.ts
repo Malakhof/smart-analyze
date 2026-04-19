@@ -12,6 +12,8 @@ interface ScoringItem {
 interface ScoringResult {
   items: ScoringItem[]
   overallComment: string
+  category?: string
+  tags?: string[]
 }
 
 export async function scoreCall(callRecordId: string) {
@@ -130,6 +132,24 @@ export async function scoreCall(callRecordId: string) {
       },
     },
   })
+
+  // 6b. Update CallRecord.category + CallTag rows
+  if (result.category) {
+    await db.callRecord.update({
+      where: { id: callRecordId },
+      data: { category: result.category },
+    })
+  }
+  if (result.tags && result.tags.length > 0) {
+    // Replace existing tags atomically
+    await db.callTag.deleteMany({ where: { callRecordId } })
+    await db.callTag.createMany({
+      data: result.tags
+        .filter((t) => typeof t === "string" && t.trim().length > 0)
+        .slice(0, 5)
+        .map((t) => ({ callRecordId, tag: t.trim().toLowerCase() })),
+    })
+  }
 
   // 7. Check for critical items missed -> send alerts
   const missedCritical = result.items.filter((item) => {

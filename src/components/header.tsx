@@ -14,14 +14,27 @@ const NAV_ITEMS = [
   { label: "Настройки", href: "/settings" },
 ] as const
 
-export function Header() {
+interface HeaderProps {
+  tenantName?: string
+}
+
+const TENANT_DISPLAY_NAMES: Record<string, string> = {
+  reklamalift74: "ReklamaLift74",
+  vastu: "Vastu Club",
+  "diva-school": "Diva School",
+}
+
+export function Header({ tenantName }: HeaderProps = {}) {
   const pathname = usePathname()
+  const displayName = tenantName
+    ? TENANT_DISPLAY_NAMES[tenantName] ?? tenantName
+    : "Организация"
 
   return (
     <header className="sticky top-0 z-50 flex h-[52px] items-center gap-8 border-b border-border-default bg-header-bg px-8 backdrop-blur-[20px]">
-      {/* Logo — Sales GURU (Чернобай) с лёгкой анимацией лапы */}
+      {/* Logo — Sales GURU (Чернобай). Прозрачный фон в light theme, surface-2 в dark */}
       <Link href="/" className="group flex items-center gap-2.5 no-underline">
-        <span className="block h-9 w-9 overflow-hidden rounded-full bg-surface-2 transition-transform duration-300 ease-in-out group-hover:rotate-[15deg]">
+        <span className="block h-9 w-9 overflow-hidden rounded-full bg-transparent dark:bg-surface-2 transition-transform duration-300 ease-in-out group-hover:rotate-[15deg]">
           <Image
             src="/sg-logo.png"
             alt="Sales GURU"
@@ -87,36 +100,19 @@ export function Header() {
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Search */}
-      <div className="relative">
-        <svg
-          viewBox="0 0 24 24"
-          className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 fill-none stroke-text-tertiary"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path d="M21 21l-4.35-4.35" />
-        </svg>
-        <input
-          type="text"
-          placeholder="Поиск..."
-          className="h-[30px] w-[180px] rounded-md border border-border-default bg-transparent pl-8 pr-3 font-sans text-[12px] text-text-primary placeholder:text-text-tertiary outline-none transition-[border-color] duration-[0.18s] ease-in-out focus:border-border-hover"
-          readOnly
-        />
-      </div>
-
       {/* AI badge */}
       <AiBadge text="AI активен" />
 
       {/* Theme toggle */}
       <ThemeToggle />
 
-      {/* Org button */}
-      <button className="cursor-pointer rounded-md border border-border-default bg-transparent px-2.5 py-[5px] font-sans text-xs text-text-tertiary transition-[border-color] duration-[0.18s] ease-in-out hover:border-border-hover">
-        Организация
-      </button>
+      {/* Tenant name */}
+      <span
+        className="rounded-md border border-border-default bg-transparent px-2.5 py-[5px] font-sans text-xs text-text-secondary"
+        title="Текущий клиент"
+      >
+        {displayName}
+      </span>
 
       {/* Logout */}
       <a

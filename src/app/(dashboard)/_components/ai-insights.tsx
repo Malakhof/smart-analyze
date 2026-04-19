@@ -151,6 +151,7 @@ function InsightBlock({
                       key={qi}
                       text={q.text}
                       dealCrmId={q.dealCrmId}
+                      source={q.source ?? null}
                     />
                   ))}
                 </div>

@@ -256,6 +256,7 @@ export async function getManagerRanking(tenantId: string) {
 interface InsightQuote {
   text: string
   dealCrmId: string
+  source?: "transcript" | "message" | null
 }
 
 export interface InsightWithDetails {
@@ -285,7 +286,7 @@ export async function getInsights(
       const managerIds = (insight.managerIds as string[] | null) ?? []
       const quotes = (insight.quotes as InsightQuote[] | null) ?? []
 
-      const [deals, managers] = await Promise.all([
+      const [deals, managers, dealsWithContent] = await Promise.all([
         dealIds.length > 0
           ? db.deal.findMany({
               where: { id: { in: dealIds } },
@@ -298,7 +299,41 @@ export async function getInsights(
               select: { id: true, name: true },
             })
           : Promise.resolve([]),
+        // Pull transcripts + message content for the insight's deals to detect quote source
+        dealIds.length > 0
+          ? db.deal.findMany({
+              where: { id: { in: dealIds } },
+              select: {
+                callRecords: {
+                  where: { transcript: { not: null } },
+                  select: { transcript: true },
+                },
+                messages: { select: { content: true } },
+              },
+            })
+          : Promise.resolve([]),
       ])
+
+      // Detect source of each quote — search first 30 chars in transcripts vs messages
+      const transcriptBlob = dealsWithContent
+        .flatMap((d) => d.callRecords.map((c) => c.transcript ?? ""))
+        .join(" \n ")
+        .toLowerCase()
+      const messagesBlob = dealsWithContent
+        .flatMap((d) => d.messages.map((m) => m.content ?? ""))
+        .join(" \n ")
+        .toLowerCase()
+      const quotesWithSource: InsightQuote[] = quotes.map((q) => {
+        const needle = q.text.trim().slice(0, 30).toLowerCase()
+        if (!needle) return { ...q, source: null }
+        const inT = transcriptBlob.includes(needle)
+        const inM = messagesBlob.includes(needle)
+        let source: "transcript" | "message" | null = null
+        if (inT && !inM) source = "transcript"
+        else if (inM && !inT) source = "message"
+        else if (inT) source = "transcript"
+        return { ...q, source }
+      })
 
       return {
         id: insight.id,
@@ -308,7 +343,7 @@ export async function getInsights(
         detailedDescription: insight.detailedDescription,
         dealIds,
         managerIds,
-        quotes,
+        quotes: quotesWithSource,
         deals,
         managers,
       }

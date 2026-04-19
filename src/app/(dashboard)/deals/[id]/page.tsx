@@ -67,12 +67,8 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
-          {/* Audio calls — show if (a) recent enough to likely play OR (b) has transcript */}
+          {/* Audio calls — meaningful (≥60s OR has transcript), newest first */}
           {(() => {
-            // Sipuni retains audio ~4 months; older recordings won't play.
-            // Show them ONLY if we have a transcript (then audio not needed anyway).
-            const PLAYABLE_AGE_MS = 4 * 30 * 24 * 60 * 60 * 1000
-            const now = Date.now()
             const audios = deal.messages
               .filter(
                 (m) =>
@@ -85,20 +81,25 @@ export default async function DealDetailPage({
                 (m, i, arr) =>
                   arr.findIndex((x) => x.audioUrl === m.audioUrl) === i
               )
-              .map((m) => ({
-                m,
-                age: now - new Date(m.timestamp).getTime(),
-                hasTranscript: (m.content?.trim().length ?? 0) > 50,
-              }))
-              .sort((a, b) => a.age - b.age) // newest first
-            // Keep only: (recent enough to play) OR (has transcript)
-            const visible = audios.filter(
-              (x) => x.age < PLAYABLE_AGE_MS || x.hasTranscript
-            )
-            const hidden = audios.length - visible.length
+              .sort(
+                (a, b) =>
+                  new Date(b.timestamp).getTime() -
+                  new Date(a.timestamp).getTime()
+              )
+            const transcripts = audios.filter(
+              (m) => (m.content?.trim().length ?? 0) > 50
+            ).length
             return (
               <>
-                {visible.map(({ m }) => (
+                {audios.length > 0 && (
+                  <div className="rounded-[10px] border border-status-amber/30 bg-status-amber-dim/10 px-4 py-2.5 text-[11px] text-status-amber">
+                    💡 Если запись не играет — провайдер CRM (Sipuni/Gravitel)
+                    ограничил доступ к аудио для этого аккаунта или срок хранения
+                    истёк. Транскрипты, расшифрованные нами раньше,
+                    остаются доступны ниже ({transcripts} из {audios.length}).
+                  </div>
+                )}
+                {audios.map((m) => (
                   <DealAudio
                     key={m.id}
                     audioUrl={m.audioUrl!}
@@ -107,18 +108,6 @@ export default async function DealDetailPage({
                     recordedAt={new Date(m.timestamp)}
                   />
                 ))}
-                {hidden > 0 && (
-                  <div className="rounded-[10px] border border-border-default bg-surface-1 p-3 text-center text-[11px] text-text-tertiary">
-                    Скрыто {hidden} ст{hidden === 1 ? "арая" : "арых"}{" "}
-                    {hidden === 1
-                      ? "запись"
-                      : hidden < 5
-                        ? "записи"
-                        : "записей"}{" "}
-                    без транскрипта — аудио истекло у провайдера. После
-                    транскрибации появятся в контроле качества.
-                  </div>
-                )}
               </>
             )
           })()}

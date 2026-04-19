@@ -16,8 +16,6 @@ interface FunnelTimelineProps {
   dealClosedAt?: Date | null
 }
 
-const MIN_AUDIO_SECONDS = 60 // hide noise: short auto-pickup / "не дозвонился"
-
 function fmtDateTime(d: Date): string {
   return (
     d.toLocaleDateString("ru-RU", {
@@ -128,11 +126,8 @@ function anchorMessages(
 
 function shouldKeepMessage(m: DealDetailMessage): boolean {
   if (m.sender === "SYSTEM") return false
-  if (m.isAudio) {
-    // Hide tiny audio (auto-greetings, "не дозвонился") unless we have content/transcript
-    if (!m.content?.trim() && (m.duration ?? 0) < MIN_AUDIO_SECONDS) return false
-    return true
-  }
+  // Audio messages render in DealAudioList above — don't double-render in chronology
+  if (m.isAudio) return false
   return Boolean(m.content?.trim())
 }
 

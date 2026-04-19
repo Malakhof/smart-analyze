@@ -30,11 +30,20 @@ export interface QcDashboardData {
   recentCalls: QcRecentCall[]
 }
 
+// Filter out worthless QC noise: short auto-pickups, "operators busy",
+// "call-back later" — keep only calls that are either long enough OR have a transcript.
+const QC_FILTER = {
+  OR: [
+    { duration: { gte: 90 } },
+    { transcript: { not: null } },
+  ],
+}
+
 export async function getQualityDashboard(
   tenantId: string
 ): Promise<QcDashboardData> {
   const calls = await db.callRecord.findMany({
-    where: { tenantId },
+    where: { tenantId, ...QC_FILTER },
     include: {
       manager: { select: { id: true, name: true } },
       score: {
@@ -337,7 +346,7 @@ export async function getQcChartData(
   tenantId: string
 ): Promise<QcChartData> {
   const calls = await db.callRecord.findMany({
-    where: { tenantId },
+    where: { tenantId, ...QC_FILTER },
     include: {
       manager: { select: { id: true, name: true } },
       score: true,
@@ -577,7 +586,7 @@ export async function getRecentCallsEnhanced(
   limit = 20
 ): Promise<QcRecentCallEnhanced[]> {
   const calls = await db.callRecord.findMany({
-    where: { tenantId },
+    where: { tenantId, ...QC_FILTER },
     include: {
       manager: { select: { name: true } },
       score: {

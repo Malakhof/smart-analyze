@@ -32,6 +32,7 @@ async function main() {
   // Sipuni-only for v1: stereo channels = perfect role split.
   // Gravitel/AICall blocked (auth/cert issues) — handle in v2.
   const onlySipuni = process.env.SIPUNI_ONLY !== "false"
+  const maxDuration = Number(process.env.MAX_DURATION ?? 1200) // skip marathon calls
   const calls = await db.callRecord.findMany({
     where: {
       tenantId: tenant.id,
@@ -39,7 +40,7 @@ async function main() {
         ? { startsWith: "https://sipuni.com/" }
         : { not: null },
       dealId: { not: null },
-      duration: { gte: minDuration },
+      duration: { gte: minDuration, lte: maxDuration },
       transcript: null,
     },
     select: { id: true, audioUrl: true, duration: true },

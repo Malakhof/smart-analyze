@@ -2,7 +2,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { ai, AI_MODEL } from "./client"
 import { PATTERN_EXTRACTION_PROMPT, INSIGHT_GENERATION_PROMPT } from "./prompts"
-import type { ManagerStatus } from "@/generated/prisma"
+import type { ManagerStatus } from "@/generated/prisma/client"
 
 // --- Schemas ---
 

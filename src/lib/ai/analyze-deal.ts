@@ -2,7 +2,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { ai, AI_MODEL } from "./client"
 import { DEAL_ANALYSIS_PROMPT } from "./prompts"
-import type { DealAnalysis } from "@/generated/prisma"
+import type { DealAnalysis } from "@/generated/prisma/client"
 
 const KeyQuoteSchema = z.object({
   text: z.string(),
@@ -90,31 +90,73 @@ function parseJsonResponse<T>(raw: string, schema: z.ZodType<T>): T {
 }
 
 export async function analyzeDeal(dealId: string): Promise<DealAnalysis> {
-  // 1. Fetch deal with messages
+  // 1. Fetch deal with messages + transcribed call records
   const deal = await db.deal.findUniqueOrThrow({
     where: { id: dealId },
     include: {
       messages: { orderBy: { timestamp: "asc" } },
       manager: { select: { name: true } },
+      callRecords: {
+        where: { transcript: { not: null } },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          transcript: true,
+          duration: true,
+          createdAt: true,
+          direction: true,
+        },
+      },
     },
   })
 
-  if (deal.messages.length === 0) {
-    throw new Error(`Deal ${dealId} has no messages to analyze`)
+  // Drop SYSTEM noise (amoCRM common notes, GC bot mailings, sms blasts).
+  // Keep only actual MANAGER↔CLIENT conversation.
+  const realMessages = deal.messages.filter(
+    (m) => m.sender !== "SYSTEM" && (m.content?.trim() || m.isAudio)
+  )
+
+  if (realMessages.length === 0 && deal.callRecords.length === 0) {
+    throw new Error(`Deal ${dealId} has no MANAGER↔CLIENT content to analyze`)
   }
 
-  // 2. Build conversation string
-  const conversation = formatConversation(deal.messages)
+  // 2. Build conversation string (text messages)
+  const conversation = formatConversation(realMessages)
+
+  // 2b. Build call transcripts block (already labeled МЕНЕДЖЕР/КЛИЕНТ by Whisper stereo split)
+  const callsBlock = deal.callRecords.length
+    ? deal.callRecords
+        .map((c, i) => {
+          const ts = new Date(c.createdAt)
+          const date = ts.toLocaleDateString("ru-RU", {
+            day: "2-digit",
+            month: "2-digit",
+          })
+          const time = ts.toLocaleTimeString("ru-RU", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+          const dur = c.duration ? ` (${Math.round(c.duration / 60)} мин)` : ""
+          return `=== ЗВОНОК ${i + 1} — ${date} ${time}${dur} ===\n${c.transcript}`
+        })
+        .join("\n\n")
+    : ""
 
   // 3. Build user message with context
-  const outcomeLabel = deal.status === "WON" ? "ВЫИГРАНА" : "ПРОИГРАНА"
+  const outcomeLabel =
+    deal.status === "WON"
+      ? "ВЫИГРАНА"
+      : deal.status === "LOST"
+        ? "ПРОИГРАНА"
+        : "В РАБОТЕ"
   const userMessage = `Статус сделки: ${outcomeLabel}
 Название сделки: ${deal.title}
 ${deal.amount ? `Сумма: ${deal.amount} руб.` : ""}
 ${deal.manager?.name ? `Менеджер: ${deal.manager.name}` : ""}
 
-Переписка:
-${conversation}`
+${conversation ? `Переписка:\n${conversation}` : ""}
+
+${callsBlock ? `Расшифровки звонков (по ролям):\n${callsBlock}` : ""}`.trim()
 
   // 4. Call DeepSeek
   const rawResponse = await callDeepSeek(DEAL_ANALYSIS_PROMPT, userMessage)
@@ -163,30 +205,68 @@ ${conversation}`
   return dealAnalysis
 }
 
-export async function analyzeDeals(tenantId: string): Promise<number> {
-  // Find all unanalyzed closed deals for tenant
+export interface AnalyzeDealsOptions {
+  // Only WON/LOST (best for pattern mining) — false includes OPEN deals too.
+  closedOnly?: boolean
+  // Cap how many deals to process this run (cost control).
+  limit?: number
+  // Skip already-analyzed deals (default true; set false to re-analyze).
+  skipAnalyzed?: boolean
+  // Require at least one transcribed call (good for prioritising rich deals).
+  requireTranscript?: boolean
+}
+
+export async function analyzeDeals(
+  tenantId: string,
+  opts: AnalyzeDealsOptions = {}
+): Promise<{ analyzed: number; skipped: number; failed: number }> {
+  const closedOnly = opts.closedOnly !== false
+  const skipAnalyzed = opts.skipAnalyzed !== false
+
   const deals = await db.deal.findMany({
     where: {
       tenantId,
-      isAnalyzed: false,
-      status: { in: ["WON", "LOST"] },
-      messages: { some: {} },
+      ...(skipAnalyzed ? { isAnalyzed: false } : {}),
+      ...(closedOnly ? { status: { in: ["WON", "LOST"] } } : {}),
+      OR: [
+        { messages: { some: { sender: { in: ["MANAGER", "CLIENT"] } } } },
+        ...(opts.requireTranscript
+          ? []
+          : [{ callRecords: { some: { transcript: { not: null } } } }]),
+        ...(opts.requireTranscript
+          ? [{ callRecords: { some: { transcript: { not: null } } } }]
+          : []),
+      ],
     },
     select: { id: true },
+    orderBy: [{ amount: "desc" }, { createdAt: "desc" }],
+    ...(opts.limit ? { take: opts.limit } : {}),
   })
 
-  let analyzedCount = 0
+  let analyzed = 0
+  let skipped = 0
+  let failed = 0
 
-  // Analyze sequentially to respect rate limits
-  for (const deal of deals) {
+  // Sequential to respect API rate limits.
+  for (const [i, deal] of deals.entries()) {
     try {
       await analyzeDeal(deal.id)
-      analyzedCount++
+      analyzed++
+      if ((i + 1) % 10 === 0) {
+        console.log(
+          `[analyzeDeals] ${i + 1}/${deals.length} done (ok=${analyzed} fail=${failed})`
+        )
+      }
     } catch (error) {
-      console.error(`Failed to analyze deal ${deal.id}:`, error)
-      // Continue with next deal
+      const msg = (error as Error).message ?? String(error)
+      if (/no MANAGER↔CLIENT content|no messages/.test(msg)) {
+        skipped++
+      } else {
+        failed++
+        console.error(`[analyzeDeals] deal ${deal.id} failed:`, msg)
+      }
     }
   }
 
-  return analyzedCount
+  return { analyzed, skipped, failed }
 }

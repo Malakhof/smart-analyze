@@ -42,7 +42,7 @@ export default async function DashboardPage({
     await Promise.all([
       getDashboardStats(tenantId, period),
       getFunnelList(tenantId),
-      getFunnelData(tenantId, selectedFunnelId),
+      getFunnelData(tenantId, selectedFunnelId, period),
       getManagerRanking(tenantId),
       getInsights(tenantId),
       getDailyConversion(tenantId, period),

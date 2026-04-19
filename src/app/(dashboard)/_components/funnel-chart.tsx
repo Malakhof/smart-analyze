@@ -56,9 +56,9 @@ export function FunnelChart({
         )}
       </div>
       <div
-        className="grid gap-2"
+        className="grid gap-2 overflow-x-auto pb-1"
         style={{
-          gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(120px, 1fr))`,
         }}
       >
         {stages.map((stage) => {
@@ -73,16 +73,19 @@ export function FunnelChart({
               {stage.conversion < 50 && (
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-status-red" />
               )}
-              <div className="mb-2 text-[11px] font-medium text-text-tertiary">
+              <div
+                className="mb-2 text-[11px] font-medium text-text-tertiary line-clamp-2 min-h-[28px]"
+                title={stage.name}
+              >
                 {stage.name}
               </div>
               <div
-                className={`text-[22px] font-bold tracking-[-0.03em] ${getConversionColor(stage.conversion)}`}
+                className={`text-[20px] font-bold tracking-[-0.03em] leading-tight ${getConversionColor(stage.conversion)}`}
               >
                 {fmtPercent(stage.conversion)}
               </div>
               <div className="mt-1 text-[10px] text-text-muted">
-                {fmtDays(stage.avgTime)}
+                {stage.dealCount} {stage.dealCount === 1 ? "сделка" : stage.dealCount < 5 ? "сделки" : "сделок"}
               </div>
               <div className="absolute bottom-0 left-0 right-0 h-0.5">
                 <div

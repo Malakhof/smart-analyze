@@ -93,7 +93,12 @@ export async function getDashboardStats(tenantId: string, period?: Period) {
   }
 }
 
-export async function getFunnelData(tenantId: string, funnelId?: string) {
+export async function getFunnelData(
+  tenantId: string,
+  funnelId?: string,
+  period?: Period
+) {
+  const cutoff = periodToCutoff(period)
   // Pick the funnel that ACTUALLY has the most deals attached, not just first by id.
   // Avoids showing a near-empty funnel when client has 8 funnels but only 1 active.
   const funnels = await db.funnel.findMany({
@@ -113,7 +118,10 @@ export async function getFunnelData(tenantId: string, funnelId?: string) {
     [...funnels].sort((a, b) => b._count.deals - a._count.deals)[0]
 
   const orderedStages = [...funnel.stages].sort((a, b) => a.order - b.order)
-  const totalDeals = funnel._count.deals
+  // For period-aware totalDeals: count only deals created within cutoff
+  const totalDeals = await db.deal.count({
+    where: { tenantId, funnelId: funnel.id, createdAt: { gte: cutoff } },
+  })
 
   const stagesWithData = await Promise.all(
     orderedStages.map(async (stage) => {
@@ -126,7 +134,10 @@ export async function getFunnelData(tenantId: string, funnelId?: string) {
 
       const [historyDealIdRows, currentDeals, histories] = await Promise.all([
         db.dealStageHistory.findMany({
-          where: { stageId: stage.id },
+          where: {
+            stageId: stage.id,
+            deal: { createdAt: { gte: cutoff } },
+          },
           select: { dealId: true },
           distinct: ["dealId"],
         }),
@@ -135,6 +146,7 @@ export async function getFunnelData(tenantId: string, funnelId?: string) {
             tenantId,
             funnelId: funnel.id,
             currentStageCrmId: { in: futureStageCrmIds },
+            createdAt: { gte: cutoff },
           },
           select: { id: true },
         }),

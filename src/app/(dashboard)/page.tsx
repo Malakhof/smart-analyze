@@ -10,6 +10,7 @@ import {
   getInsights,
   getDailyConversion,
   getDealStatSnapshot,
+  getDuplicateStats,
 } from "@/lib/queries/dashboard"
 import { PeriodFilter } from "./_components/period-filter"
 import { FunnelChart } from "./_components/funnel-chart"
@@ -20,6 +21,7 @@ import { ConversionChart } from "./_components/conversion-chart"
 import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
 import { DealStatSnapshotWidget } from "./_components/dealstat-snapshot"
+import { DuplicateBadge } from "./_components/duplicate-badge"
 
 export default async function DashboardPage({
   searchParams,
@@ -30,7 +32,7 @@ export default async function DashboardPage({
   const sp = (await searchParams) ?? {}
   const selectedFunnelId = sp.funnel
 
-  const [stats, funnels, funnel, managers, insights, daily, dealStat] =
+  const [stats, funnels, funnel, managers, insights, daily, dealStat, dupes] =
     await Promise.all([
       getDashboardStats(tenantId),
       getFunnelList(tenantId),
@@ -39,11 +41,15 @@ export default async function DashboardPage({
       getInsights(tenantId),
       getDailyConversion(tenantId),
       getDealStatSnapshot(tenantId),
+      getDuplicateStats(tenantId),
     ])
 
   return (
     <div className="space-y-6 p-6">
-      <PeriodFilter totalDeals={stats.totalDeals} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PeriodFilter totalDeals={stats.totalDeals} />
+        <DuplicateBadge stats={dupes} />
+      </div>
 
       <Suspense>
         <KeyMetrics

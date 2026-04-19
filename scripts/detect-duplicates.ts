@@ -79,7 +79,7 @@ async function main() {
        SELECT count(*) as cnt FROM paired`,
       t.id
     )
-    const dealDupCount = Number(dealDups[0]?.cnt ?? 0n)
+    const dealDupCount = Number(dealDups[0]?.cnt ?? 0)
     console.log(`  💼 Deal dup pairs (same title+manager+7d): ${dealDupCount}`)
 
     reports.push({

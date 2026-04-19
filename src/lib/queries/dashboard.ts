@@ -137,6 +137,52 @@ export async function getFunnelData(tenantId: string, funnelId?: string) {
   return stagesWithData
 }
 
+export interface DuplicateStats {
+  callDuplicates: number
+  dealDuplicateCandidates: number
+  messageDuplicateRows: number
+}
+
+// Counts potential duplicates without modifying data.
+// Heuristic: same audioUrl for calls; same title+manager+createdAt±7d for deals;
+// same content+sender+dealId for messages. Numbers are rough — for indicator only.
+export async function getDuplicateStats(
+  tenantId: string
+): Promise<DuplicateStats> {
+  const callRows = await db.$queryRawUnsafe<{ extra: bigint }[]>(
+    `SELECT COALESCE(SUM(c-1),0)::bigint AS extra FROM (
+       SELECT count(*)::bigint AS c FROM "CallRecord"
+       WHERE "tenantId"=$1 AND "audioUrl" IS NOT NULL
+       GROUP BY "audioUrl" HAVING count(*)>1
+     ) t`,
+    tenantId
+  )
+  const dealRows = await db.$queryRawUnsafe<{ pairs: bigint }[]>(
+    `SELECT count(*)::bigint AS pairs FROM "Deal" d1
+     JOIN "Deal" d2 ON d1."tenantId"=d2."tenantId"
+       AND d1."managerId"=d2."managerId"
+       AND d1.id<d2.id
+       AND abs(extract(epoch from (d1."createdAt"-d2."createdAt")))<86400*7
+       AND lower(trim(d1.title))=lower(trim(d2.title))
+     WHERE d1."tenantId"=$1 AND d1."managerId" IS NOT NULL`,
+    tenantId
+  )
+  const msgRows = await db.$queryRawUnsafe<{ extra: bigint }[]>(
+    `SELECT COALESCE(SUM(c-1),0)::bigint AS extra FROM (
+       SELECT count(*)::bigint AS c FROM "Message"
+       WHERE "tenantId"=$1 AND content IS NOT NULL
+         AND length(content)>10 AND "dealId" IS NOT NULL
+       GROUP BY content, sender, "dealId" HAVING count(*)>1
+     ) t`,
+    tenantId
+  )
+  return {
+    callDuplicates: Number(callRows[0]?.extra ?? 0),
+    dealDuplicateCandidates: Number(dealRows[0]?.pairs ?? 0),
+    messageDuplicateRows: Number(msgRows[0]?.extra ?? 0),
+  }
+}
+
 export async function getFunnelList(
   tenantId: string
 ): Promise<{ id: string; name: string; dealCount: number }[]> {

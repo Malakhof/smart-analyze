@@ -67,25 +67,37 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
-          {/* Audio calls — newest first, default 5 visible */}
+          {/* Audio calls — show only useful ones:
+              (a) recent enough that Sipuni still serves audio (≤4 months) OR
+              (b) has transcript (text useful regardless of audio playback)
+              Old + no transcript = useless dead player → hide */}
           <DealAudioList
-            audios={deal.messages
-              .filter(
-                (m) =>
-                  m.isAudio &&
-                  m.audioUrl &&
-                  ((m.duration ?? 0) >= 60 ||
-                    (m.content?.trim().length ?? 0) > 0)
-              )
-              .filter(
-                (m, i, arr) =>
-                  arr.findIndex((x) => x.audioUrl === m.audioUrl) === i
-              )
-              .sort(
-                (a, b) =>
-                  new Date(b.timestamp).getTime() -
-                  new Date(a.timestamp).getTime()
-              )}
+            audios={(() => {
+              const PLAYABLE_AGE_MS = 4 * 30 * 24 * 60 * 60 * 1000
+              const now = Date.now()
+              return deal.messages
+                .filter(
+                  (m) =>
+                    m.isAudio &&
+                    m.audioUrl &&
+                    ((m.duration ?? 0) >= 60 ||
+                      (m.content?.trim().length ?? 0) > 0)
+                )
+                .filter(
+                  (m, i, arr) =>
+                    arr.findIndex((x) => x.audioUrl === m.audioUrl) === i
+                )
+                .filter((m) => {
+                  const age = now - new Date(m.timestamp).getTime()
+                  const hasTranscript = (m.content?.trim().length ?? 0) > 50
+                  return age < PLAYABLE_AGE_MS || hasTranscript
+                })
+                .sort(
+                  (a, b) =>
+                    new Date(b.timestamp).getTime() -
+                    new Date(a.timestamp).getTime()
+                )
+            })()}
           />
 
           {/* Funnel timeline — full funnel structure + per-stage messages */}

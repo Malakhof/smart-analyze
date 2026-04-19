@@ -7,6 +7,31 @@ interface KeyQuote {
   context?: string
   isPositive: boolean
   dealCrmId?: string
+  source?: "transcript" | "message" | null
+}
+
+/**
+ * Detect for each quote whether it likely came from a transcript or a text message.
+ * Heuristic: look for the first 30 chars of the quote in each source.
+ */
+function detectQuoteSources(
+  quotes: KeyQuote[],
+  transcripts: string[],
+  messageContents: string[]
+): KeyQuote[] {
+  const transcriptBlob = transcripts.join(" \n ").toLowerCase()
+  const messagesBlob = messageContents.join(" \n ").toLowerCase()
+  return quotes.map((q) => {
+    const needle = q.text.trim().slice(0, 30).toLowerCase()
+    if (!needle) return { ...q, source: null }
+    const inTranscript = transcriptBlob.includes(needle)
+    const inMessages = messagesBlob.includes(needle)
+    let source: "transcript" | "message" | null = null
+    if (inTranscript && !inMessages) source = "transcript"
+    else if (inMessages && !inTranscript) source = "message"
+    else if (inTranscript) source = "transcript" // both — prefer transcript
+    return { ...q, source }
+  })
 }
 
 export interface DealWithAnalysis {
@@ -89,7 +114,11 @@ export async function getManagerDetail(
         where: { status: { in: ["WON", "LOST"] } },
         include: {
           analysis: true,
-          messages: { select: { id: true } },
+          messages: { select: { id: true, content: true } },
+          callRecords: {
+            where: { transcript: { not: null } },
+            select: { transcript: true },
+          },
           stageHistory: { select: { id: true } },
           dealPatterns: {
             include: {
@@ -151,7 +180,11 @@ export async function getManagerDetail(
             summary: deal.analysis.summary,
             successFactors: deal.analysis.successFactors,
             failureFactors: deal.analysis.failureFactors,
-            keyQuotes: (deal.analysis.keyQuotes as KeyQuote[] | null) ?? [],
+            keyQuotes: detectQuoteSources(
+              (deal.analysis.keyQuotes as KeyQuote[] | null) ?? [],
+              deal.callRecords.map((c) => c.transcript ?? ""),
+              deal.messages.map((m) => m.content ?? "")
+            ),
           }
         : null,
     }

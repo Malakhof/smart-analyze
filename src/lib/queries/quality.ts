@@ -30,13 +30,11 @@ export interface QcDashboardData {
   recentCalls: QcRecentCall[]
 }
 
-// Filter out worthless QC noise: short auto-pickups, "operators busy",
-// "call-back later" — keep only calls that are either long enough OR have a transcript.
+// QC показывает ТОЛЬКО звонки с транскриптом — иначе оценивать нечего.
+// Звонки без транскрипта (короткие <3min, expired Sipuni, не дошли до Whisper)
+// видны в карточках сделок но НЕ в Контроле качества.
 const QC_FILTER = {
-  OR: [
-    { duration: { gte: 90 } },
-    { transcript: { not: null } },
-  ],
+  transcript: { not: null },
 }
 
 export async function getQualityDashboard(

@@ -67,27 +67,63 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
-          {/* Audio calls — only meaningful (≥60s OR has transcript) */}
-          {deal.messages
-            .filter(
-              (m) =>
-                m.isAudio &&
-                m.audioUrl &&
-                ((m.duration ?? 0) >= 60 || (m.content?.trim().length ?? 0) > 0)
+          {/* Audio calls — meaningful + likely playable */}
+          {(() => {
+            const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
+            const now = Date.now()
+            const audios = deal.messages
+              .filter(
+                (m) =>
+                  m.isAudio &&
+                  m.audioUrl &&
+                  ((m.duration ?? 0) >= 60 ||
+                    (m.content?.trim().length ?? 0) > 0)
+              )
+              .filter(
+                (m, i, arr) =>
+                  arr.findIndex((x) => x.audioUrl === m.audioUrl) === i
+              )
+              .map((m) => ({
+                m,
+                age: now - new Date(m.timestamp).getTime(),
+              }))
+              // Newest first so likely-playable recordings appear at top
+              .sort((a, b) => a.age - b.age)
+            const playable = audios.filter((x) => x.age < ONE_YEAR_MS)
+            const oldHidden = audios.length - playable.length
+            return (
+              <>
+                {playable.map(({ m }) => (
+                  <DealAudio
+                    key={m.id}
+                    audioUrl={m.audioUrl!}
+                    transcript={m.content || undefined}
+                    duration={m.duration ?? undefined}
+                    recordedAt={new Date(m.timestamp)}
+                  />
+                ))}
+                {oldHidden > 0 && (
+                  <div className="rounded-[10px] border border-border-default bg-surface-1 p-4 text-center text-[12px] text-text-tertiary">
+                    Скрыто {oldHidden}{" "}
+                    {oldHidden === 1
+                      ? "запись"
+                      : oldHidden < 5
+                        ? "записи"
+                        : "записей"}{" "}
+                    старше года — провайдер CRM (Sipuni/Gravitel) хранит аудио
+                    ограниченное время.
+                  </div>
+                )}
+                {playable.length === 0 && audios.length > 0 && (
+                  <div className="rounded-[10px] border border-status-amber/30 bg-status-amber-dim/10 p-4 text-center text-[12px] text-status-amber">
+                    Все {audios.length} звонков сделки старше года и недоступны
+                    для прослушивания. Свежие звонки появятся при следующих
+                    взаимодействиях с клиентом.
+                  </div>
+                )}
+              </>
             )
-            .filter(
-              (m, i, arr) =>
-                arr.findIndex((x) => x.audioUrl === m.audioUrl) === i
-            )
-            .map((m) => (
-              <DealAudio
-                key={m.id}
-                audioUrl={m.audioUrl!}
-                transcript={m.content || undefined}
-                duration={m.duration ?? undefined}
-                recordedAt={new Date(m.timestamp)}
-              />
-            ))}
+          })()}
 
           {/* Funnel timeline — full funnel structure + per-stage messages */}
           {deal.funnel ? (

@@ -32,6 +32,9 @@ model Tenant {
   callRecords     CallRecord[]
   messages        Message[]
   telegramConfig  TelegramConfig?
+
+  // Pre-aggregated CRM stats (e.g. GetCourse /pl/sales/dealstat/chartdata)
+  dealStatSnapshots DealStatSnapshot[]
 }
 
 enum Plan {
@@ -136,8 +139,15 @@ model FunnelStage {
   funnelId String
   funnel   Funnel             @relation(fields: [funnelId], references: [id])
   name     String
+  // Display order in kanban. GC convention: 1..N for active stages,
+  // 9999 for terminal "Won/Завершен", 10000 for terminal "Lost/Отменен".
   order    Int
   crmId    String?
+  // Terminal kind derived from CRM marker (e.g. GC `system` field):
+  //   null = active stage
+  //   "WON"  = успешный финал (Завершен)
+  //   "LOST" = отменённый финал (Отменен)
+  terminalKind String?
   deals    DealStageHistory[]
 }
 
@@ -452,4 +462,44 @@ model Task {
 
   @@index([tenantId, managerId])
   @@index([tenantId, dealId])
+}
+
+// === PRE-AGGREGATED CRM STATS ===
+
+// Snapshot of ready-made aggregations from CRM stat endpoints
+// (e.g. GetCourse /pl/sales/dealstat/chartdata — totals + monthly chart).
+// Stored as snapshots to avoid recomputing from raw deals + to support
+// time-series trending (compare last week's snapshot vs this week's).
+model DealStatSnapshot {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  // Source identifier — e.g. "getcourse:dealstat", "amocrm:pipeline-stat"
+  source      String
+  // Optional scope identifiers — manager filter, product filter, period.
+  // Empty/null = all-time, all managers, all products.
+  scopeJson   Json?
+
+  // Totals block
+  ordersCreatedCount   Int?
+  ordersCreatedAmount  Float?
+  ordersPaidCount      Int?
+  ordersPaidAmount     Float?
+  buyersCount          Int?
+  prepaymentsCount     Int?
+  prepaymentsAmount    Float?
+  taxAmount            Float?
+  commissionAmount     Float?
+  earnedAmount         Float?
+
+  // Monthly chart series — array of [{name, points: [{month, value}]}]
+  seriesJson  Json?
+
+  // Raw payload for debugging / re-parsing
+  rawJson     Json?
+
+  capturedAt  DateTime @default(now())
+
+  @@index([tenantId, source, capturedAt])
 }

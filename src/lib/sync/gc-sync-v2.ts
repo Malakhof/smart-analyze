@@ -21,6 +21,10 @@ import {
 } from "@/lib/crm/getcourse/parsers/deal-list"
 import type { ParsedContact } from "@/lib/crm/getcourse/parsers/contact-list"
 import type { ParsedResponse } from "@/lib/crm/getcourse/parsers/responses"
+import type {
+  ParsedFunnel,
+  ParsedStage,
+} from "@/lib/crm/getcourse/parsers/funnels"
 import type { CrmConfig } from "@/generated/prisma/client"
 
 export interface GcSyncOptions {
@@ -34,8 +38,10 @@ export interface GcSyncOptions {
   startResponsePage?: number // resume from this page (default 1)
   syncResponses?: boolean   // enable responses sync (default true)
   syncClosedResponses?: boolean // include closed (default false — open only)
+  syncFunnels?: boolean     // sync funnels + stages (default true) — Wave 1 #15
+  syncDealStat?: boolean    // capture dealstat snapshot (default true) — Wave 1 #16
   rateLimitMs?: number      // sleep between page fetches (default 1000)
-  onPageProgress?: (kind: "deal" | "contact" | "response" | "thread", page: number, written: number) => void
+  onPageProgress?: (kind: "deal" | "contact" | "response" | "thread" | "funnel" | "stat", page: number, written: number) => void
 }
 
 export interface GcSyncReport {
@@ -56,6 +62,9 @@ export interface GcSyncReport {
     deals: { created: number; updated: number }
     callRecords: { created: number; updated: number }
     messages: { created: number; updated: number }
+    funnels: { created: number; updated: number }
+    stages: { created: number; updated: number }
+    dealStatSnapshots: number
   }
   warnings: string[]
 }
@@ -93,6 +102,9 @@ export async function syncGetCourseTenant(
       deals: { created: 0, updated: 0 },
       callRecords: { created: 0, updated: 0 },
       messages: { created: 0, updated: 0 },
+      funnels: { created: 0, updated: 0 },
+      stages: { created: 0, updated: 0 },
+      dealStatSnapshots: 0,
     },
     warnings: [],
   }
@@ -101,6 +113,34 @@ export async function syncGetCourseTenant(
   await adapter.testConnection()
   report.totals.expectedDealsTotal = await adapter.getTotalDealsInRange(from, to)
   report.totals.expectedContactsTotal = await adapter.getTotalContactsInRange(from, to)
+
+  // 1b) Sync funnels + stages (Wave 1 #15) — must run BEFORE deals so we
+  // can later map Deal.funnelId / currentStageCrmId. Cheap: 1 + N requests
+  // where N = number of funnels (4 for diva).
+  if (options.syncFunnels !== false) {
+    try {
+      const funnels = await adapter.getFunnels()
+      for (const funnel of funnels) {
+        const dbFunnelId = await upsertFunnel(tenantId, funnel)
+        if (dbFunnelId.created) report.written.funnels.created++
+        else report.written.funnels.updated++
+
+        const stages = await adapter.getFunnelStages(funnel.id)
+        for (const stage of stages) {
+          const w = await upsertStage(dbFunnelId.id, stage)
+          if (w.created) report.written.stages.created++
+          else report.written.stages.updated++
+        }
+        options.onPageProgress?.(
+          "funnel",
+          -1,
+          report.written.stages.created + report.written.stages.updated
+        )
+      }
+    } catch (e) {
+      report.warnings.push(`funnels/stages sync failed: ${String(e)}`)
+    }
+  }
 
   if (options.dryRun) {
     // For dryRun, fetch one sample page only to get a sense of structure.
@@ -191,13 +231,97 @@ export async function syncGetCourseTenant(
     }
   }
 
-  // 5) Mark sync complete
+  // 5) Capture dealstat snapshot (Wave 1 #16) — pre-aggregated totals + chart
+  if (options.syncDealStat !== false) {
+    try {
+      const stat = await adapter.getDealStat()
+      await db.dealStatSnapshot.create({
+        data: {
+          tenantId,
+          source: "getcourse:dealstat",
+          scopeJson: { ruleString: "", locationId: 0, allTime: true },
+          ordersCreatedCount: stat.totals.ordersCreatedCount,
+          ordersCreatedAmount: stat.totals.ordersCreatedAmount,
+          ordersPaidCount: stat.totals.ordersPaidCount,
+          ordersPaidAmount: stat.totals.ordersPaidAmount,
+          buyersCount: stat.totals.buyersCount,
+          prepaymentsCount: stat.totals.prepaymentsCount,
+          prepaymentsAmount: stat.totals.prepaymentsAmount,
+          taxAmount: stat.totals.taxAmount,
+          commissionAmount: stat.totals.commissionAmount,
+          earnedAmount: stat.totals.earnedAmount,
+          seriesJson: JSON.parse(JSON.stringify(stat.series)),
+          rawJson: JSON.parse(JSON.stringify(stat.rawJson)),
+        },
+      })
+      report.written.dealStatSnapshots = 1
+      options.onPageProgress?.("stat", -1, 1)
+    } catch (e) {
+      report.warnings.push(`dealstat snapshot failed: ${String(e)}`)
+    }
+  }
+
+  // 6) Mark sync complete
   await db.crmConfig.update({
     where: { id: cfg.id },
     data: { lastSyncAt: new Date() },
   })
 
   return report
+}
+
+/**
+ * UPSERT funnel by (tenantId, crmId). Returns DB id + whether it was newly created.
+ */
+async function upsertFunnel(
+  tenantId: string,
+  f: ParsedFunnel
+): Promise<{ id: string; created: boolean }> {
+  const existing = await db.funnel.findFirst({
+    where: { tenantId, crmId: f.id },
+  })
+  if (existing) {
+    if (existing.name !== f.name) {
+      await db.funnel.update({ where: { id: existing.id }, data: { name: f.name } })
+    }
+    return { id: existing.id, created: false }
+  }
+  const created = await db.funnel.create({
+    data: { tenantId, crmId: f.id, name: f.name },
+  })
+  return { id: created.id, created: true }
+}
+
+/**
+ * UPSERT funnel stage by (funnelId, crmId). Maps GC `system` field to terminalKind.
+ */
+async function upsertStage(
+  dbFunnelId: string,
+  s: ParsedStage
+): Promise<{ created: boolean }> {
+  const terminalKind = s.system === 2 ? "WON" : s.system === 1 ? "LOST" : null
+  const existing = await db.funnelStage.findFirst({
+    where: { funnelId: dbFunnelId, crmId: s.id },
+  })
+  const data = {
+    name: s.name,
+    order: s.position,
+    terminalKind,
+  }
+  if (existing) {
+    if (
+      existing.name !== s.name ||
+      existing.order !== s.position ||
+      existing.terminalKind !== terminalKind
+    ) {
+      await db.funnelStage.update({ where: { id: existing.id }, data })
+    }
+    return { created: false }
+  }
+  await db.funnelStage.create({
+    data: { funnelId: dbFunnelId, crmId: s.id, ...data },
+  })
+  return { created: true }
 }
 
 /**

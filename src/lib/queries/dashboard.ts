@@ -1,10 +1,25 @@
 import { db } from "@/lib/db"
 
-export async function getDashboardStats(tenantId: string) {
+export type Period = "day" | "week" | "month" | "quarter" | "all"
+
+/** Convert UI period code to a Date cutoff (Date or null = no filter). */
+export function periodToCutoff(period: Period | undefined | null): Date | null {
+  if (!period || period === "all") return null
+  const now = new Date()
+  const days =
+    period === "day" ? 1 : period === "week" ? 7 : period === "month" ? 30 : 90
+  const cutoff = new Date(now)
+  cutoff.setDate(cutoff.getDate() - days)
+  return cutoff
+}
+
+export async function getDashboardStats(tenantId: string, period?: Period) {
+  const cutoff = periodToCutoff(period)
+  const dateFilter = cutoff ? { createdAt: { gte: cutoff } } : {}
   const [totalDeals, wonDeals, lostDeals] = await Promise.all([
-    db.deal.count({ where: { tenantId } }),
-    db.deal.findMany({ where: { tenantId, status: "WON" } }),
-    db.deal.findMany({ where: { tenantId, status: "LOST" } }),
+    db.deal.count({ where: { tenantId, ...dateFilter } }),
+    db.deal.findMany({ where: { tenantId, status: "WON", ...dateFilter } }),
+    db.deal.findMany({ where: { tenantId, status: "LOST", ...dateFilter } }),
   ])
 
   const wonCount = wonDeals.length
@@ -290,13 +305,15 @@ export interface DailyConversion {
 }
 
 export async function getDailyConversion(
-  tenantId: string
+  tenantId: string,
+  period?: Period
 ): Promise<DailyConversion[]> {
+  const cutoff = periodToCutoff(period)
   const deals = await db.deal.findMany({
     where: {
       tenantId,
       status: { in: ["WON", "LOST"] },
-      closedAt: { not: null },
+      closedAt: { not: null, ...(cutoff ? { gte: cutoff } : {}) },
     },
     select: {
       status: true,

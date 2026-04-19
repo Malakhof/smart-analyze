@@ -18,7 +18,7 @@ interface PeriodFilterProps {
 export function PeriodFilter({ totalDeals }: PeriodFilterProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const current = searchParams.get("period") ?? "week"
+  const current = searchParams.get("period") ?? "all"
 
   function handleClick(value: string) {
     const params = new URLSearchParams(searchParams.toString())

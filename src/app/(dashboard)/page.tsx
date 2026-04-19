@@ -26,20 +26,26 @@ import { DuplicateBadge } from "./_components/duplicate-badge"
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ funnel?: string }>
+  searchParams?: Promise<{ funnel?: string; period?: string }>
 }) {
   const tenantId = await requireTenantId()
   const sp = (await searchParams) ?? {}
   const selectedFunnelId = sp.funnel
+  const period = (sp.period ?? "all") as
+    | "day"
+    | "week"
+    | "month"
+    | "quarter"
+    | "all"
 
   const [stats, funnels, funnel, managers, insights, daily, dealStat, dupes] =
     await Promise.all([
-      getDashboardStats(tenantId),
+      getDashboardStats(tenantId, period),
       getFunnelList(tenantId),
       getFunnelData(tenantId, selectedFunnelId),
       getManagerRanking(tenantId),
       getInsights(tenantId),
-      getDailyConversion(tenantId),
+      getDailyConversion(tenantId, period),
       getDealStatSnapshot(tenantId),
       getDuplicateStats(tenantId),
     ])

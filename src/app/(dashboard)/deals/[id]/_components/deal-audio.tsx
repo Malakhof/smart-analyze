@@ -139,8 +139,9 @@ export function DealAudio({ audioUrl, transcript, duration }: DealAudioProps) {
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <audio
           controls
-          className="w-full"
-          preload="metadata"
+          className="w-full rounded-lg"
+          src={`/api/audio?url=${encodeURIComponent(audioUrl)}`}
+          preload="none"
           onError={(e) => {
             const a = e.currentTarget
             const code = a.error?.code
@@ -152,9 +153,7 @@ export function DealAudio({ audioUrl, transcript, duration }: DealAudioProps) {
             }
             setError(code ? map[code] ?? `code=${code}` : "неизвестная ошибка")
           }}
-        >
-          <source src={`/api/audio?url=${encodeURIComponent(audioUrl)}`} />
-        </audio>
+        />
       )}
 
       {transcript && (

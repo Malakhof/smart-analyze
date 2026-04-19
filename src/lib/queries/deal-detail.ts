@@ -20,6 +20,23 @@ export interface DealDetailStage {
   duration: number | null
 }
 
+export interface DealDetailFunnelStage {
+  id: string
+  name: string
+  order: number
+  crmId: string | null
+  totalDeals: number
+  conversion: number
+  isCurrent: boolean
+  wasVisited: boolean
+}
+
+export interface DealDetailFunnel {
+  id: string
+  name: string
+  stages: DealDetailFunnelStage[]
+}
+
 export interface DealDetailData {
   id: string
   title: string
@@ -27,6 +44,7 @@ export interface DealDetailData {
   status: string
   duration: number | null
   createdAt: Date
+  currentStageCrmId: string | null
   manager: { id: string; name: string } | null
   analysis: {
     summary: string
@@ -35,6 +53,7 @@ export interface DealDetailData {
   } | null
   messages: DealDetailMessage[]
   stageHistory: DealDetailStage[]
+  funnel: DealDetailFunnel | null
 }
 
 export async function getDealDetail(
@@ -108,6 +127,74 @@ export async function getDealDetail(
     }
   }
 
+  // Build mini-funnel: all stages of this deal's funnel + per-stage progressive
+  // conversion + flag of which stages this deal visited / is currently at.
+  let funnel: DealDetailFunnel | null = null
+  if (deal.funnelId) {
+    const f = await db.funnel.findUnique({
+      where: { id: deal.funnelId },
+      include: {
+        stages: { orderBy: { order: "asc" } },
+        _count: { select: { deals: true } },
+      },
+    })
+    if (f) {
+      const totalFunnelDeals = f._count.deals
+      const visitedCrmIds = new Set<string>()
+      for (const sh of deal.stageHistory) {
+        // Look up stage crmId from history's stage relation; we already loaded order
+        // but not crmId, so derive from funnel stages list
+        const fs = f.stages.find((s) => s.id === sh.stageId)
+        if (fs?.crmId) visitedCrmIds.add(fs.crmId)
+      }
+      if (deal.currentStageCrmId) visitedCrmIds.add(deal.currentStageCrmId)
+
+      const stagesData = await Promise.all(
+        f.stages.map(async (stage) => {
+          const futureStageCrmIds = f.stages
+            .filter((s) => s.order >= stage.order)
+            .map((s) => s.crmId)
+            .filter((c): c is string => Boolean(c))
+
+          const [historyDealIds, currentDeals] = await Promise.all([
+            db.dealStageHistory.findMany({
+              where: { stageId: stage.id },
+              select: { dealId: true },
+              distinct: ["dealId"],
+            }),
+            db.deal.findMany({
+              where: {
+                funnelId: f.id,
+                currentStageCrmId: { in: futureStageCrmIds },
+              },
+              select: { id: true },
+            }),
+          ])
+          const set = new Set<string>()
+          for (const h of historyDealIds) set.add(h.dealId)
+          for (const d of currentDeals) set.add(d.id)
+          const stageDealCount = set.size
+          return {
+            id: stage.id,
+            name: stage.name,
+            order: stage.order,
+            crmId: stage.crmId,
+            totalDeals: stageDealCount,
+            conversion:
+              totalFunnelDeals > 0
+                ? (stageDealCount / totalFunnelDeals) * 100
+                : 0,
+            isCurrent: stage.crmId === deal.currentStageCrmId,
+            wasVisited: stage.crmId
+              ? visitedCrmIds.has(stage.crmId)
+              : false,
+          }
+        })
+      )
+      funnel = { id: f.id, name: f.name, stages: stagesData }
+    }
+  }
+
   return {
     id: deal.id,
     title: deal.title,
@@ -115,6 +202,7 @@ export async function getDealDetail(
     status: deal.status,
     duration: deal.duration,
     createdAt: deal.createdAt,
+    currentStageCrmId: deal.currentStageCrmId,
     manager: deal.manager,
     analysis: deal.analysis,
     messages: deal.messages.map((m) => ({
@@ -127,5 +215,6 @@ export async function getDealDetail(
       duration: m.duration ?? null,
     })),
     stageHistory,
+    funnel,
   }
 }

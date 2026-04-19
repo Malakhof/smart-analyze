@@ -10,6 +10,7 @@ import { DealMetrics } from "./_components/deal-metrics"
 import { StageTree } from "./_components/stage-tree"
 import { DealStatsSidebar } from "./_components/deal-stats-sidebar"
 import { StageNavigation } from "./_components/stage-navigation"
+import { DealFunnelMini } from "./_components/deal-funnel-mini"
 
 export default async function DealDetailPage({
   params,
@@ -55,6 +56,9 @@ export default async function DealDetailPage({
       <div className="grid grid-cols-[1fr_320px] gap-6">
         {/* LEFT COLUMN */}
         <div className="min-w-0 space-y-5">
+          {/* Funnel context (mini-funnel as accordion) */}
+          {deal.funnel && <DealFunnelMini funnel={deal.funnel} />}
+
           {/* AI Analysis */}
           {deal.analysis && (
             <DealAiAnalysis summary={deal.analysis.summary} />

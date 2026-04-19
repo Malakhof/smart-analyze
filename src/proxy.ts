@@ -26,6 +26,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next|favicon\\.ico|sitemap\\.xml|robots\\.txt).*)",
+    // Skip auth for: _next/, public static files (any extension), favicon, sitemap, robots
+    "/((?!_next|.*\\.(?:png|jpg|jpeg|svg|webp|ico|gif|woff|woff2|ttf|css|js|map)$|favicon\\.ico|sitemap\\.xml|robots\\.txt).*)",
   ],
 }

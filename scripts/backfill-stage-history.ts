@@ -10,6 +10,7 @@
 import { PrismaClient } from "../src/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { AmoCrmAdapter } from "../src/lib/crm/amocrm"
+import { getAmoCrmAccessToken } from "../src/lib/crm/amocrm-oauth"
 
 const tenantName = process.argv[2]
 const limit = process.argv[3] ? Number(process.argv[3]) : undefined
@@ -58,10 +59,13 @@ async function main() {
   const cfg = await db.crmConfig.findFirstOrThrow({
     where: { tenantId: tenant.id, provider: "AMOCRM" },
   })
-  if (!cfg.subdomain || !cfg.apiKey)
-    throw new Error("amoCRM config missing (subdomain or apiKey)")
+  if (!cfg.subdomain)
+    throw new Error("amoCRM config missing subdomain")
 
-  const client = new AmoCrmAdapter(cfg.subdomain, cfg.apiKey)
+  // Auto-refresh access token if expired (uses refreshToken from CrmConfig).
+  const accessToken = await getAmoCrmAccessToken(cfg.id)
+  const client = new AmoCrmAdapter(cfg.subdomain, accessToken)
+  console.log(`amoCRM client ready (subdomain=${cfg.subdomain})`)
 
   // Map FunnelStage by crmId for fast lookup
   const stages = await db.funnelStage.findMany({

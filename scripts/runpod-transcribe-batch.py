@@ -157,8 +157,16 @@ def process_one(
         if channels == 2 and split_channels(src, left, right):
             ls, ld, lang, prob = transcribe_one(model, left)
             rs, _, _, _ = transcribe_one(model, right)
-            text = merge_by_timestamp(ls, rs, "МЕНЕДЖЕР", "КЛИЕНТ")
-            mode = "stereo_split"
+            # Sipuni convention: LEFT=ANSWERER, RIGHT=CALLER.
+            # OUTGOING (manager calls client): manager=caller=RIGHT, client=answerer=LEFT
+            # INCOMING (client calls manager): manager=answerer=LEFT, client=caller=RIGHT
+            direction = (row.get("dir") or "").upper()
+            if direction == "INCOMING":
+                left_label, right_label = "МЕНЕДЖЕР", "КЛИЕНТ"
+            else:  # OUTGOING or unknown
+                left_label, right_label = "КЛИЕНТ", "МЕНЕДЖЕР"
+            text = merge_by_timestamp(ls, rs, left_label, right_label)
+            mode = f"stereo_split_{direction.lower() or 'unknown'}"
             duration = ld
         else:
             segs, duration, lang, prob = transcribe_one(model, src)

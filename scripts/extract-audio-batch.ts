@@ -43,7 +43,7 @@ async function main() {
       duration: { gte: minDuration, lte: maxDuration },
       transcript: null,
     },
-    select: { id: true, audioUrl: true, duration: true },
+    select: { id: true, audioUrl: true, duration: true, direction: true },
     orderBy: { duration: "desc" },
     take: limit,
   })
@@ -54,6 +54,7 @@ async function main() {
         id: c.id,
         url: c.audioUrl,
         dur: c.duration,
+        dir: c.direction,
         tenant: tenantName,
       }) + "\n"
     )

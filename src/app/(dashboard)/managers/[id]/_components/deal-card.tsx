@@ -62,7 +62,12 @@ export function DealCard({ deal, variant }: DealCardProps) {
       {quotes.length > 0 && (
         <div className="mb-3 space-y-1.5">
           {quotes.map((q, i) => (
-            <QuoteBlock key={i} text={q.text} dealCrmId={q.dealCrmId} />
+            <QuoteBlock
+              key={i}
+              text={q.text}
+              dealCrmId={q.dealCrmId}
+              source={q.source ?? null}
+            />
           ))}
         </div>
       )}

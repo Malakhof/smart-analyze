@@ -18,9 +18,15 @@ async function main() {
     take: 1,
     select: { crmId: true },
   })
-  const url = `https://reklamalift74.amocrm.ru/api/v4/events?filter[entity]=lead&filter[entity_id]=${deals[0].crmId}&limit=200`
+  const url = `https://reklamalift74.amocrm.ru/api/v4/events?filter[entity]=lead&filter[entity_id]=${deals[0].crmId}&with=value_after,value_before&limit=200`
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  const j = await r.json() as { _embedded?: { events?: { type: string; value_after?: unknown[]; value_before?: unknown[] }[] } }
+  console.log(`HTTP ${r.status}`)
+  const text = await r.text()
+  if (r.status !== 200) {
+    console.log("Body:", text.slice(0, 500))
+    return
+  }
+  const j = JSON.parse(text) as { _embedded?: { events?: { type: string; value_after?: unknown[]; value_before?: unknown[] }[] } }
   const events = j?._embedded?.events ?? []
   const counts: Record<string, number> = {}
   for (const e of events) counts[e.type] = (counts[e.type] ?? 0) + 1

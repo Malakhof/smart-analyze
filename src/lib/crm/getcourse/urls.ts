@@ -24,6 +24,12 @@ export const GC_WHITELIST_PREFIXES = [
   // Kanban / pipeline views (Wave 1 #15)
   "/pl/tasks/task/kanban",         // covers /kanban/deals + /kanban/tasks/{kanban,list}
   "/pl/tasks/kanban",              // AJAX endpoints: /index, /get-tasks, /get-counts, /get-stat (POST)
+  "/pl/crm/api/v1/funnel",         // REST: list funnels (POST, body empty)
+  "/pl/crm/api/v1/stage",          // REST: list stages of funnel (POST, body {funnel_id})
+  "/pl/crm/api/v1/cancel-reason",  // REST: cancel reasons
+  "/pl/crm/api/v1/preset",         // REST: filter presets
+  "/pl/crm/api/v1/tag",            // REST: tags catalog
+  "/pl/crm/api/v1/offer",          // REST: offers (products) per funnel
   "/pl/tasks/task/my",
   "/pl/tasks/task/stat",
   "/pl/tasks/resp",

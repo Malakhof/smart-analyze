@@ -150,6 +150,57 @@ export async function safeFetchJson(
 }
 
 /**
+ * POST variant of safeFetchJson — for GC REST API endpoints (kanban funnel/stage etc).
+ * Body is serialized as JSON. Same security: whitelist + auth detection.
+ * Read-only at semantic level: blacklist already blocks /save/, /create/, /delete/ etc.
+ */
+export async function safeFetchPostJson(
+  url: string,
+  cookie: string,
+  body: Record<string, unknown> = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<unknown> {
+  assertSafeUrl(url)
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+      "User-Agent": DEFAULT_UA,
+      Accept: "application/json",
+      "Content-Type": "json",                       // GC's quirky non-standard value
+      "X-Requested-With": "XMLHttpRequest",
+      Origin: new URL(url).origin,
+      Referer: new URL(url).origin + "/",
+    },
+    body: JSON.stringify(body),
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+
+  if (response.status === 401 || response.status === 403) {
+    throw new GetCourseAuthError(url)
+  }
+  if (response.status >= 500 || response.status === 429) {
+    throw new GetCourseHttpError(`HTTP ${response.status}`, response.status, url)
+  }
+
+  const text = await response.text()
+  if (text.startsWith("\n<!DOCTYPE") || text.startsWith("<!DOCTYPE")) {
+    throw new GetCourseAuthError(url)
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new GetCourseHttpError(
+      `Expected JSON from POST, got: ${text.slice(0, 100)}`,
+      response.status,
+      url
+    )
+  }
+}
+
+/**
  * Helper: extract data.html from GC AJAX wrapper { success, data: { html: ... } }
  */
 export function extractInnerHtml(json: unknown): string | null {

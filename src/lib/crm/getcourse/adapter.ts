@@ -13,7 +13,7 @@
  * src/lib/sync/gc-sync-v2.ts uses this class directly. After Phase 5 we will
  * unify by replacing the old class.
  */
-import { safeFetch, safeFetchJson, extractInnerHtml } from "./safe-fetch"
+import { safeFetch, safeFetchJson, safeFetchPostJson, extractInnerHtml } from "./safe-fetch"
 import {
   buildDateFilteredUrl,
   parseTotalRecords,
@@ -42,6 +42,12 @@ import {
   parseBotMessages,
   type ParsedBotMessage,
 } from "./parsers/bot-messages"
+import {
+  parseFunnels,
+  parseStages,
+  type ParsedFunnel,
+  type ParsedStage,
+} from "./parsers/funnels"
 
 const RATE_LIMIT_DELAY_MS = 1000 // 1 req/sec safe default
 
@@ -220,6 +226,29 @@ export class GetCourseAdapter {
       `?conversationId=${encodeURIComponent(conversationId)}`
     const json = await safeFetchJson(url, this.cookie)
     return parseBotMessages(json)
+  }
+
+  /**
+   * Fetch list of CRM funnels (sales pipelines).
+   * Verified diva 2026-04-19: 4 funnels (Доска продаж, ИИ-продажник, Обработка лида, 1 Линия).
+   */
+  async getFunnels(): Promise<ParsedFunnel[]> {
+    const url = `${this.accountUrl}/pl/crm/api/v1/funnel`
+    const json = await safeFetchPostJson(url, this.cookie, {})
+    return parseFunnels(json)
+  }
+
+  /**
+   * Fetch ordered list of stages for a funnel (kanban columns).
+   * Verified diva 2026-04-19: funnel 920 has 11 stages (active + Завершен/Отменен).
+   * `system` field indicates terminal columns: 1=cancelled (LOST), 2=completed (WON).
+   */
+  async getFunnelStages(funnelId: string | number): Promise<ParsedStage[]> {
+    const url = `${this.accountUrl}/pl/crm/api/v1/stage`
+    const json = await safeFetchPostJson(url, this.cookie, {
+      funnel_id: typeof funnelId === "string" ? Number(funnelId) : funnelId,
+    })
+    return parseStages(json, String(funnelId))
   }
 
   // ─── private ──────────────────────────────────────────────────────────────

@@ -38,6 +38,10 @@ import {
   parseConversationThread,
   type ParsedConversationMessage,
 } from "./parsers/conversation"
+import {
+  parseBotMessages,
+  type ParsedBotMessage,
+} from "./parsers/bot-messages"
 
 const RATE_LIMIT_DELAY_MS = 1000 // 1 req/sec safe default
 
@@ -202,6 +206,20 @@ export class GetCourseAdapter {
     const innerHtml = extractInnerHtml(json)
     if (!innerHtml) return []
     return parseConversationThread(innerHtml)
+  }
+
+  /**
+   * Fetch bot/auto-mailing messages for a conversationId. This is the SECOND
+   * parallel layer of messages alongside getResponseThread (manager + client).
+   * Bot messages = автоматические рассылки от ботов (DIVAonline_bot, etc).
+   * Returns empty array on no bot data — common for accounts not using mailing bots.
+   */
+  async getBotMessages(conversationId: string): Promise<ParsedBotMessage[]> {
+    const url =
+      `${this.accountUrl}/chtm/app/filebrainpro/~filebrain-get-bot-messages` +
+      `?conversationId=${encodeURIComponent(conversationId)}`
+    const json = await safeFetchJson(url, this.cookie)
+    return parseBotMessages(json)
   }
 
   // ─── private ──────────────────────────────────────────────────────────────

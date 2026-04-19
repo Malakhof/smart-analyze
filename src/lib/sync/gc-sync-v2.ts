@@ -286,7 +286,56 @@ async function writeResponseThread(
     }
   }
 
-  return { messagesCreated, messagesUpdated, managersCreated, fetchedCount }
+  // SECOND LAYER — bot/auto-mailing messages for the same conversation.
+  // Stored as sender=SYSTEM with channel prefixed by "bot:" so AI consumer
+  // can distinguish bot vs system events. Skipped if no conversationId.
+  let botFetched = 0
+  if (resp.conversationId) {
+    try {
+      const botMessages = await adapter.getBotMessages(resp.conversationId)
+      botFetched = botMessages.length
+      for (const bot of botMessages) {
+        if (!bot.text || bot.text.length === 0) continue
+        const botCrmId = bot.crmId
+          ? `bot-${bot.crmId}`
+          : `bot-${resp.crmId}-${bot.timestamp?.getTime() ?? Math.random()}`
+        const data = {
+          tenantId,
+          managerId: null,
+          crmId: botCrmId,
+          threadId: resp.crmId,
+          channel: bot.channel ? `bot:${bot.channel}` : "bot",
+          sender: "SYSTEM" as const,
+          content: bot.botName ? `[${bot.botName}] ${bot.text}` : bot.text,
+          timestamp: bot.timestamp ?? new Date(),
+          isAudio: false,
+        }
+        const existing = await db.message.findFirst({
+          where: { tenantId, crmId: botCrmId },
+        })
+        if (existing) {
+          await db.message.update({ where: { id: existing.id }, data })
+          messagesUpdated++
+        } else {
+          await db.message.create({ data })
+          messagesCreated++
+        }
+      }
+    } catch (e) {
+      // Bot endpoint failures are non-critical — log and continue.
+      console.warn(
+        `[GC_SYNC_V2] Bot messages fetch failed for conv ${resp.conversationId}:`,
+        e
+      )
+    }
+  }
+
+  return {
+    messagesCreated,
+    messagesUpdated,
+    managersCreated,
+    fetchedCount: fetchedCount + botFetched,
+  }
 }
 
 async function writeDealsPage(

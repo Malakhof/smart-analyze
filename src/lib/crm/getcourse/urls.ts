@@ -12,12 +12,18 @@ export const GC_WHITELIST_PREFIXES = [
   "/pl/user/contact/index",
   "/pl/sales/deal",
   "/pl/sales/product/index",
-  "/pl/sales/dealstat/index",
+  "/pl/sales/dealstat",            // /pl/sales/dealstat/index + tab AJAX (Wave 1 #16)
+  "/pl/sales/stat",                // cumulative + structure aggregations (Wave 2)
+  "/pl/sales/stream",              // streams / cohorts (Wave 2)
+  "/pl/crm/stat",                  // revenue-structure (Wave 2)
   "/sales/control/userProduct/my",
+  "/sales/control/participant",    // Партнёрская программа (Wave 2)
+  "/sales/default/deals",          // List redirect for /pl/sales/deal
+  "/pl/gcpay/client/payment",      // Платёжный модуль (Wave 2)
 
-  // Kanban / pipeline views
-  "/pl/tasks/task/kanban/deals",
-  "/pl/tasks/task/kanban/tasks",
+  // Kanban / pipeline views (Wave 1 #15)
+  "/pl/tasks/task/kanban",         // covers /kanban/deals + /kanban/tasks/{kanban,list}
+  "/pl/tasks/kanban",              // AJAX endpoints: /index, /get-tasks, /get-counts, /get-stat (POST)
   "/pl/tasks/task/my",
   "/pl/tasks/task/stat",
   "/pl/tasks/resp",
@@ -28,6 +34,25 @@ export const GC_WHITELIST_PREFIXES = [
   "/pl/tasks/mission/index",
   "/pl/logic/funnel",
   "/chtm/app/builder/v2",
+
+  // Bot messages (Wave 1 #18) — second layer of conversation messages
+  // Real path: /chtm/app/filebrainpro/~filebrain-get-bot-messages?conversationId=X
+  "/chtm/app/filebrainpro",
+
+  // Анкеты / forms (Wave 2 #17)
+  "/user/control/survey",
+  "/pl/user/survey-answer",
+
+  // Сообщения — рассылки и шаблоны (Wave 2 #19)
+  "/notifications/control/mailings",
+  "/pl/notifications/control",     // covers /mailings/active, /templates-list, /stat
+  "/pl/user/employers-stat",       // Отчёты сотрудников (Wave 2 #27)
+
+  // Обучение (Wave 3) — read-only feedback streams
+  "/teach/control/answers",        // Лента ответов учеников (Wave 3 #26)
+  "/teach/control/stat",           // userTrainingFeedback (Wave 3)
+  "/teach/control/stream",         // Тренинги
+  "/pl/teach",                     // /pl/teach/control/* + /pl/teach/questionary + /pl/teach/goal
 
   // Single-entity detail pages (read-only views, IDs are appended)
   "/user/control/contact/update/id/",

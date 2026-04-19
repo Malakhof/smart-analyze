@@ -101,6 +101,15 @@ export function Header() {
       <button className="cursor-pointer rounded-md border border-border-default bg-transparent px-2.5 py-[5px] font-sans text-xs text-text-tertiary transition-[border-color] duration-[0.18s] ease-in-out hover:border-border-hover">
         Организация
       </button>
+
+      {/* Logout */}
+      <a
+        href="/api/auth/signout"
+        className="cursor-pointer rounded-md border border-border-default bg-transparent px-2.5 py-[5px] font-sans text-xs text-text-tertiary no-underline transition-[border-color] duration-[0.18s] ease-in-out hover:border-border-hover hover:text-text-secondary"
+        title="Выйти"
+      >
+        Выйти
+      </a>
     </header>
   )
 }

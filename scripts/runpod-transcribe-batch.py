@@ -80,6 +80,29 @@ def probe_channels(path: Path) -> int:
         return 0
 
 
+def probe_duration(path: Path) -> float:
+    """Return audio duration in seconds (0.0 on error)."""
+    try:
+        r = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return float(r.stdout.strip() or "0")
+    except (subprocess.SubprocessError, ValueError):
+        return 0.0
+
+
 def split_channels(src: Path, left: Path, right: Path) -> bool:
     try:
         r = subprocess.run(
@@ -151,6 +174,21 @@ def process_one(
     if not download(url, src):
         return {"id": cid, "error": "download_failed", "url": url}
 
+    # Inline duration filter (essential for diva GC where DB duration is NULL)
+    min_dur = float(os.environ.get("MIN_DURATION", "180"))
+    max_dur = float(os.environ.get("MAX_DURATION", "1200"))
+    actual_dur = probe_duration(src)
+    if actual_dur < min_dur or actual_dur > max_dur:
+        try:
+            src.unlink()
+        except OSError:
+            pass
+        return {
+            "id": cid,
+            "skipped": "duration_out_of_range",
+            "actual_duration": round(actual_dur, 1),
+        }
+
     channels = probe_channels(src)
 
     try:
@@ -206,13 +244,15 @@ def main() -> None:
     print(f"[init] {MODEL_NAME} loaded in {time.time()-t_load:.1f}s", file=sys.stderr)
 
     out = open(out_path, "w") if out_path else sys.stdout
-    ok, fail = 0, 0
+    ok, fail, skip = 0, 0, 0
     started_at = time.time()
 
     for i, row in enumerate(rows, 1):
         result = process_one(model, row)
         if "error" in result:
             fail += 1
+        elif "skipped" in result:
+            skip += 1
         else:
             ok += 1
         json.dump(result, out, ensure_ascii=False)
@@ -226,9 +266,15 @@ def main() -> None:
                 f"[{i}/{len(rows)}] ERROR {result['id']}: {result['error']}",
                 file=sys.stderr,
             )
+        elif "skipped" in result:
+            print(
+                f"[{i}/{len(rows)}] SKIP {result['id']}: {result['skipped']} "
+                f"(actual_dur={result.get('actual_duration', 0)}s) ETA={eta_min:.1f}min",
+                file=sys.stderr,
+            )
         else:
             print(
-                f"[{i}/{len(rows)}] ok={ok} fail={fail} "
+                f"[{i}/{len(rows)}] ok={ok} fail={fail} skip={skip} "
                 f"mode={result['mode']} dur={result['duration']:.0f}s "
                 f"took={result['took_s']:.1f}s "
                 f"speedup={result['duration']/result['took_s']:.1f}x ETA={eta_min:.1f}min",
@@ -238,7 +284,7 @@ def main() -> None:
     if out_path:
         out.close()
     print(
-        f"[done] ok={ok} fail={fail} elapsed={(time.time()-started_at)/60:.1f}min",
+        f"[done] ok={ok} fail={fail} skip={skip} elapsed={(time.time()-started_at)/60:.1f}min",
         file=sys.stderr,
     )
 

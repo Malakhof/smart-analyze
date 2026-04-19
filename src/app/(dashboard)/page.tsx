@@ -111,6 +111,12 @@ export default async function DashboardPage({
       <Suspense>
         <AiInsights insights={insights} />
       </Suspense>
+
+      <div className="mt-6 border-t border-border-default pt-3 text-[11px] text-text-muted">
+        Аналитика ведётся с 01.01.2025. Сделки старше этой даты есть в базе, но
+        не показываются и не анализируются ИИ — экономим ресурсы на актуальной
+        работе.
+      </div>
     </div>
   )
 }

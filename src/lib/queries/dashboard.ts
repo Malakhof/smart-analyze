@@ -2,20 +2,40 @@ import { db } from "@/lib/db"
 
 export type Period = "day" | "week" | "month" | "quarter" | "all"
 
-/** Convert UI period code to a Date cutoff (Date or null = no filter). */
-export function periodToCutoff(period: Period | undefined | null): Date | null {
-  if (!period || period === "all") return null
+/**
+ * Global analytics floor — sales data older than this is never shown or analyzed.
+ * Old deals (2019-2024) sit in DB as historical record but are excluded from
+ * dashboards, AI analysis, and metrics. Override via env if needed for a tenant.
+ */
+export const ANALYTICS_FLOOR_DATE = new Date(
+  process.env.ANALYTICS_FLOOR_DATE || "2025-01-01T00:00:00Z"
+)
+
+/**
+ * Convert UI period code to an effective Date cutoff.
+ * Returns the LATER of (period cutoff, ANALYTICS_FLOOR_DATE) — never go below floor.
+ */
+export function periodToCutoff(period: Period | undefined | null): Date {
   const now = new Date()
   const days =
-    period === "day" ? 1 : period === "week" ? 7 : period === "month" ? 30 : 90
-  const cutoff = new Date(now)
-  cutoff.setDate(cutoff.getDate() - days)
-  return cutoff
+    !period || period === "all"
+      ? null
+      : period === "day"
+        ? 1
+        : period === "week"
+          ? 7
+          : period === "month"
+            ? 30
+            : 90
+  if (days === null) return ANALYTICS_FLOOR_DATE
+  const c = new Date(now)
+  c.setDate(c.getDate() - days)
+  return c.getTime() > ANALYTICS_FLOOR_DATE.getTime() ? c : ANALYTICS_FLOOR_DATE
 }
 
 export async function getDashboardStats(tenantId: string, period?: Period) {
   const cutoff = periodToCutoff(period)
-  const dateFilter = cutoff ? { createdAt: { gte: cutoff } } : {}
+  const dateFilter = { createdAt: { gte: cutoff } }
   const [totalDeals, wonDeals, lostDeals] = await Promise.all([
     db.deal.count({ where: { tenantId, ...dateFilter } }),
     db.deal.findMany({ where: { tenantId, status: "WON", ...dateFilter } }),
@@ -313,7 +333,7 @@ export async function getDailyConversion(
     where: {
       tenantId,
       status: { in: ["WON", "LOST"] },
-      closedAt: { not: null, ...(cutoff ? { gte: cutoff } : {}) },
+      closedAt: { gte: cutoff },
     },
     select: {
       status: true,

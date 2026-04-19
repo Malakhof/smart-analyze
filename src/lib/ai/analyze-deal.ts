@@ -2,6 +2,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { ai, AI_MODEL } from "./client"
 import { DEAL_ANALYSIS_PROMPT } from "./prompts"
+import { ANALYTICS_FLOOR_DATE } from "@/lib/queries/dashboard"
 import type { DealAnalysis } from "@/generated/prisma/client"
 
 const KeyQuoteSchema = z.object({
@@ -229,6 +230,9 @@ export async function analyzeDeals(
   const deals = await db.deal.findMany({
     where: {
       tenantId,
+      // Analytics floor: never analyze deals older than 2025-01-01.
+      // Saves $ + irrelevant insights from old data.
+      createdAt: { gte: ANALYTICS_FLOOR_DATE },
       ...(skipAnalyzed ? { isAnalyzed: false } : {}),
       ...(closedOnly ? { status: { in: ["WON", "LOST"] } } : {}),
       OR: [

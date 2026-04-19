@@ -108,27 +108,62 @@ export async function getDealDetail(
     duration: sh.duration,
   }))
 
-  // Synthesize a single stage entry when DealStageHistory was never written
-  // (common for amoCRM/GC initial syncs that don't pull transition logs).
-  // Falls back to deal.currentStageCrmId → FunnelStage to give the user
-  // at least the CURRENT stage instead of "no data".
-  if (stageHistory.length === 0 && deal.funnelId && deal.currentStageCrmId) {
-    const stage = await db.funnelStage.findFirst({
-      where: { funnelId: deal.funnelId, crmId: deal.currentStageCrmId },
-      select: { id: true, name: true, order: true },
+  // Synthesize stage history when DealStageHistory was never written
+  // (common for amoCRM/GC initial syncs without transition logs).
+  // We can't reconstruct intermediate stages — but at least show:
+  //   ENTRY (first stage of funnel, entered at deal.createdAt)
+  //   → CURRENT (the deal.currentStageCrmId, entered estimated halfway, leftAt=deal.closedAt or null)
+  // This gives the user a 2-point timeline + note that intermediates were lost.
+  if (stageHistory.length === 0 && deal.funnelId) {
+    const stages = await db.funnelStage.findMany({
+      where: { funnelId: deal.funnelId },
+      orderBy: { order: "asc" },
+      select: { id: true, name: true, order: true, crmId: true },
     })
-    if (stage) {
-      stageHistory = [
-        {
-          id: `synthetic-${stage.id}`,
-          stageId: stage.id,
-          stageName: stage.name,
-          stageOrder: stage.order,
-          enteredAt: deal.createdAt,
-          leftAt: deal.closedAt,
-          duration: deal.duration,
-        },
-      ]
+    if (stages.length > 0) {
+      const entryStage = stages[0]
+      const currentStage = deal.currentStageCrmId
+        ? stages.find((s) => s.crmId === deal.currentStageCrmId)
+        : null
+      const closedAt = deal.closedAt ?? null
+      const totalSpan =
+        (closedAt ? closedAt.getTime() : Date.now()) -
+        deal.createdAt.getTime()
+      const days = totalSpan / (1000 * 60 * 60 * 24)
+
+      const synthetic: DealDetailStage[] = []
+
+      // ENTRY (always — the deal had to start somewhere)
+      synthetic.push({
+        id: `synthetic-entry-${entryStage.id}`,
+        stageId: entryStage.id,
+        stageName: entryStage.name,
+        stageOrder: entryStage.order,
+        enteredAt: deal.createdAt,
+        // Halfway point as approximate "left" — only if there is a current stage transition we can show
+        leftAt: currentStage && currentStage.id !== entryStage.id
+          ? new Date(deal.createdAt.getTime() + totalSpan / 2)
+          : closedAt,
+        duration:
+          currentStage && currentStage.id !== entryStage.id
+            ? days / 2
+            : days,
+      })
+
+      // CURRENT (only if different from entry)
+      if (currentStage && currentStage.id !== entryStage.id) {
+        synthetic.push({
+          id: `synthetic-current-${currentStage.id}`,
+          stageId: currentStage.id,
+          stageName: currentStage.name,
+          stageOrder: currentStage.order,
+          enteredAt: new Date(deal.createdAt.getTime() + totalSpan / 2),
+          leftAt: closedAt,
+          duration: days / 2,
+        })
+      }
+
+      stageHistory = synthetic
     }
   }
 

@@ -247,6 +247,14 @@ export function FunnelTimeline({
           ниже в хронологическом порядке.
         </p>
       )}
+      {stageHistory.length > 0 &&
+        stageHistory.every((s) => s.id.startsWith("synthetic-")) && (
+          <p className="mb-4 text-[11px] text-text-tertiary">
+            ⓘ Промежуточные переходы не сохранились в CRM. Показаны точки
+            «вход» и «текущий этап»; даты внутри — приблизительные. Установим
+            webhook → новые сделки будут с точной историей.
+          </p>
+        )}
 
       <div className="relative mt-4">
         {/* Vertical line connecting dots */}

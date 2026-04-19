@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { AiBadge } from "@/components/ai-badge"
@@ -18,22 +19,36 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 flex h-[52px] items-center gap-8 border-b border-border-default bg-header-bg px-8 backdrop-blur-[20px]">
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.03em]">
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-lg"
-          style={{ background: "var(--ai-grad)" }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-4 w-4 fill-none stroke-white"
-            strokeWidth={2}
+      {/* Logo — Sales GURU (Чернобай) */}
+      <Link href="/" className="flex items-center gap-2.5 no-underline">
+        <span className="block h-9 w-9 overflow-hidden rounded-full bg-surface-2">
+          <Image
+            src="/sg-logo.png"
+            alt="Sales GURU"
+            width={36}
+            height={36}
+            className="h-full w-full object-cover"
+            priority
+          />
+        </span>
+        <span className="flex flex-col leading-none tracking-[0.04em]">
+          <span className="text-[14px] font-extrabold text-text-primary">
+            Sales
+          </span>
+          <span
+            className="text-[14px] font-extrabold"
+            style={{
+              backgroundImage:
+                "linear-gradient(135deg, #6366f1, #a855f7 50%, #ec4899)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}
           >
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-          </svg>
-        </div>
-        Smart Analyze
-      </div>
+            GURU
+          </span>
+        </span>
+      </Link>
 
       {/* Navigation */}
       <nav className="flex gap-0">

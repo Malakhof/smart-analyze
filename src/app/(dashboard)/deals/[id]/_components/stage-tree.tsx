@@ -59,10 +59,65 @@ export function StageTree({ stages, messages }: StageTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   if (!stages || stages.length === 0) {
+    // No stage history — fallback to flat chronological message list
+    if (!messages || messages.length === 0) {
+      return (
+        <div className="rounded-[10px] border border-border-default bg-surface-1 p-8 text-center">
+          <p className="text-text-tertiary">Нет данных по этапам сделки</p>
+          <p className="text-sm text-text-muted mt-1">
+            Сделка зафиксирована без истории переходов и сообщений
+          </p>
+        </div>
+      )
+    }
+    const sorted = [...messages].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
     return (
-      <div className="rounded-[10px] border border-border-default bg-surface-1 p-8 text-center">
-        <p className="text-text-tertiary">Нет данных по этапам сделки</p>
-        <p className="text-sm text-text-muted mt-1">Этапы появятся после синхронизации с CRM</p>
+      <div className="rounded-[10px] border border-border-default bg-surface-1 p-6 shadow-[var(--card-shadow)]">
+        <h3 className="mb-1 text-[15px] font-bold">Переписка и звонки</h3>
+        <p className="mb-4 text-[12px] text-text-tertiary">
+          История этапов не сохранилась — показано {sorted.length}{" "}
+          {sorted.length === 1 ? "событие" : "события"} в хронологическом порядке
+        </p>
+        <div className="space-y-2.5">
+          {sorted.map((msg) => {
+            const isManager = msg.sender === "MANAGER"
+            const isSystem = msg.sender === "SYSTEM"
+            return (
+              <div
+                key={msg.id}
+                className={`rounded-[6px] border-l-2 bg-surface-2 px-4 py-2.5 ${
+                  isManager
+                    ? "border-l-ai-1"
+                    : isSystem
+                      ? "border-l-text-tertiary"
+                      : "border-l-status-green"
+                }`}
+              >
+                <div className="mb-1 flex items-center gap-2 text-[11px]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-ai-1 to-ai-2 text-[8px] font-bold text-white">
+                    {isManager ? "М" : isSystem ? "S" : "К"}
+                  </span>
+                  <span className="font-semibold text-text-primary">
+                    {isManager ? "Менеджер" : isSystem ? "Система" : "Клиент"}
+                  </span>
+                  <span className="text-text-tertiary">
+                    {fmtShortDateTime(new Date(msg.timestamp))}
+                  </span>
+                  {msg.isAudio && (
+                    <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[9px] text-text-tertiary">
+                      Аудио {msg.duration ? `${Math.round(msg.duration / 60)}мин` : ""}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[12px] leading-relaxed text-text-secondary whitespace-pre-wrap">
+                  {msg.content || (msg.isAudio ? "(нет транскрипта)" : "(пусто)")}
+                </p>
+              </div>
+            )
+          })}
+        </div>
       </div>
     )
   }

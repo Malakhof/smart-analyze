@@ -8,13 +8,21 @@ export async function GET(request: Request) {
   const audioUrl = searchParams.get("url")
   if (!audioUrl) return new Response("Missing url param", { status: 400 })
 
-  // SSRF protection: only allow known audio sources
-  const allowedPrefixes = [
-    "http://80.76.60.130:8089/recordings/",
-    "https://dl.amocrm.ru/",
-    "https://amocrm.ru/",
+  // SSRF protection: only allow known audio sources used by our connected CRMs
+  // and call-recording vendors. Patterns include amoCRM tenants, GC fileservers,
+  // and the major Russian VOIP recording providers (Sipuni, Gravitel, AICall).
+  const allowedPatterns: RegExp[] = [
+    /^http:\/\/80\.76\.60\.130:8089\/recordings\//,        // legacy local recordings
+    /^https:\/\/dl\.amocrm\.ru\//,
+    /^https:\/\/[a-z0-9-]+\.amocrm\.ru\//,                  // any amoCRM tenant
+    /^https:\/\/sipuni\.com\//,                             // Sipuni VOIP (reklama)
+    /^https:\/\/records\.sipuni\.com\//,
+    /^https:\/\/records\.gravitel\.ru\//,                   // Gravitel (vastu)
+    /^https:\/\/records\.aicall\.ru\//,                     // AICall
+    /^https:\/\/fs\d+\.getcourse\.ru\//,                    // GC file servers (fs01..fs99)
+    /^https:\/\/fileservice\.getcourse\.ru\//,
   ]
-  const isAllowed = allowedPrefixes.some(prefix => audioUrl.startsWith(prefix))
+  const isAllowed = allowedPatterns.some((re) => re.test(audioUrl))
   if (!isAllowed || audioUrl.includes("..")) {
     return new Response("URL not allowed", { status: 403 })
   }

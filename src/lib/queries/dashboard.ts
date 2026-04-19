@@ -59,30 +59,51 @@ export async function getDashboardStats(tenantId: string) {
 }
 
 export async function getFunnelData(tenantId: string) {
-  const funnel = await db.funnel.findFirst({
+  // Pick the funnel that ACTUALLY has the most deals attached, not just first by id.
+  // Avoids showing a near-empty funnel when client has 8 funnels but only 1 active.
+  const funnels = await db.funnel.findMany({
     where: { tenantId },
     include: {
       stages: { orderBy: { order: "asc" } },
+      _count: { select: { deals: true } },
     },
+    orderBy: { name: "asc" },
   })
 
-  if (!funnel) return []
+  if (funnels.length === 0) return []
 
-  const totalDeals = await db.deal.count({ where: { tenantId } })
+  const funnel = [...funnels].sort(
+    (a, b) => b._count.deals - a._count.deals
+  )[0]
+
+  // For "conversion %" denominator we want deals THAT ENTERED THIS FUNNEL,
+  // not all deals across the tenant. Otherwise stages of small funnels look
+  // artificially low (e.g. 12% when in reality 100% of that funnel's deals).
+  const funnelDealsCount = funnel._count.deals
 
   const stagesWithData = await Promise.all(
     funnel.stages.map(async (stage) => {
+      // Histories for this stage
       const histories = await db.dealStageHistory.findMany({
         where: { stageId: stage.id },
       })
-      const dealCount = histories.length
+      // Deals currently sitting on this stage (uses Deal.currentStageCrmId, not history)
+      // — gives sane numbers even when transition history is incomplete.
+      const currentDealCount = await db.deal.count({
+        where: {
+          tenantId,
+          funnelId: funnel.id,
+          currentStageCrmId: stage.crmId,
+        },
+      })
+      const dealCount = Math.max(histories.length, currentDealCount)
       const avgTime =
         histories.length > 0
           ? histories.reduce((s, h) => s + (h.duration ?? 0), 0) /
             histories.length
           : 0
       const conversion =
-        totalDeals > 0 ? (dealCount / totalDeals) * 100 : 0
+        funnelDealsCount > 0 ? (dealCount / funnelDealsCount) * 100 : 0
 
       return {
         id: stage.id,

@@ -23,14 +23,17 @@ const DealAnalysisResponseSchema = z.object({
 function formatConversation(
   messages: { sender: string; content: string; timestamp: Date }[],
 ): string {
+  // Multi-line format with explicit separator so the model can never confuse
+  // the "header line" with the actual quote content.
   return messages
+    .filter((m) => m.content && m.content.trim().length > 0)
     .map((m) => {
       const role =
         m.sender === "MANAGER"
-          ? "Менеджер"
+          ? "МЕНЕДЖЕР"
           : m.sender === "CLIENT"
-            ? "Клиент"
-            : "Система"
+            ? "КЛИЕНТ"
+            : "СИСТЕМА"
       const ts = new Date(m.timestamp)
       const date = ts.toLocaleDateString("ru-RU", {
         day: "2-digit",
@@ -40,9 +43,9 @@ function formatConversation(
         hour: "2-digit",
         minute: "2-digit",
       })
-      return `[${role}] ${date} ${time}: ${m.content}`
+      return `--- ${role} (${date} ${time}) ---\n${m.content.trim()}`
     })
-    .join("\n")
+    .join("\n\n")
 }
 
 async function callDeepSeek(

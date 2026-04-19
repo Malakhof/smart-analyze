@@ -5,7 +5,7 @@ import { notFound } from "next/navigation"
 import { getDealDetail } from "@/lib/queries/deal-detail"
 import { DealHeader } from "./_components/deal-header"
 import { DealAiAnalysis } from "./_components/deal-ai-analysis"
-import { DealAudio } from "./_components/deal-audio"
+import { DealAudioList } from "./_components/deal-audio-list"
 import { DealMetrics } from "./_components/deal-metrics"
 import { StageTree } from "./_components/stage-tree"
 import { DealStatsSidebar } from "./_components/deal-stats-sidebar"
@@ -67,9 +67,9 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
-          {/* Audio calls — meaningful (≥60s OR has transcript), newest first */}
-          {(() => {
-            const audios = deal.messages
+          {/* Audio calls — newest first, default 5 visible */}
+          <DealAudioList
+            audios={deal.messages
               .filter(
                 (m) =>
                   m.isAudio &&
@@ -85,32 +85,8 @@ export default async function DealDetailPage({
                 (a, b) =>
                   new Date(b.timestamp).getTime() -
                   new Date(a.timestamp).getTime()
-              )
-            const transcripts = audios.filter(
-              (m) => (m.content?.trim().length ?? 0) > 50
-            ).length
-            return (
-              <>
-                {audios.length > 0 && (
-                  <div className="rounded-[10px] border border-status-amber/30 bg-status-amber-dim/10 px-4 py-2.5 text-[11px] text-status-amber">
-                    💡 Если запись не играет — провайдер CRM (Sipuni/Gravitel)
-                    ограничил доступ к аудио для этого аккаунта или срок хранения
-                    истёк. Транскрипты, расшифрованные нами раньше,
-                    остаются доступны ниже ({transcripts} из {audios.length}).
-                  </div>
-                )}
-                {audios.map((m) => (
-                  <DealAudio
-                    key={m.id}
-                    audioUrl={m.audioUrl!}
-                    transcript={m.content || undefined}
-                    duration={m.duration ?? undefined}
-                    recordedAt={new Date(m.timestamp)}
-                  />
-                ))}
-              </>
-            )
-          })()}
+              )}
+          />
 
           {/* Funnel timeline — full funnel structure + per-stage messages */}
           {deal.funnel ? (

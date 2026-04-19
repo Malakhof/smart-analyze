@@ -22,7 +22,25 @@ interface TranscriptLine {
 function parseTranscript(raw: string): TranscriptLine[] {
   const lines: TranscriptLine[] = []
 
-  // First try: if there are newlines with speaker prefixes, use the prefixed approach
+  // PRIORITY 1: Whisper stereo-split format — [МЕНЕДЖЕР MM:SS] text or [КЛИЕНТ MM:SS] text
+  // Markers can appear inline (not necessarily at line start), so we split by regex.
+  const whisperRegex = /\[(МЕНЕДЖЕР|КЛИЕНТ)\s+\d+:\d+\]\s*/g
+  if (whisperRegex.test(raw)) {
+    const parts = raw.split(/\[(МЕНЕДЖЕР|КЛИЕНТ)\s+\d+:\d+\]\s*/)
+    // parts is like ["", "МЕНЕДЖЕР", "first text", "КЛИЕНТ", "second text", ...]
+    for (let i = 1; i < parts.length; i += 2) {
+      const role = parts[i] as "МЕНЕДЖЕР" | "КЛИЕНТ"
+      const text = (parts[i + 1] ?? "").trim()
+      if (!text) continue
+      lines.push({
+        speaker: role === "МЕНЕДЖЕР" ? "operator" : "client",
+        text,
+      })
+    }
+    if (lines.length > 0) return lines
+  }
+
+  // PRIORITY 2: Legacy "Оператор: ... Клиент: ..." line-prefixed format
   const rawLines = raw.split("\n").filter((l) => l.trim())
   const hasPrefixes = rawLines.some((l) =>
     /^(?:Оператор|Менеджер|Operator|Manager|Клиент|Client|Customer)\s*[:]/i.test(l)

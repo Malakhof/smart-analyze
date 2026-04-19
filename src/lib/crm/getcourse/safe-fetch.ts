@@ -22,7 +22,46 @@ const DEFAULT_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-const DEFAULT_TIMEOUT_MS = 30_000
+const DEFAULT_TIMEOUT_MS = 90_000
+const DEFAULT_RETRIES = 2          // total attempts = 1 + DEFAULT_RETRIES = 3
+const RETRY_BACKOFF_MS = 5_000     // first retry after 5s, second after 10s
+
+/**
+ * Run an async fetcher with retry on transient errors:
+ *   - DOMException TimeoutError (AbortSignal.timeout fired)
+ *   - GetCourseHttpError 5xx / 429
+ *   - generic network errors (TypeError "fetch failed")
+ *
+ * Auth errors are NOT retried — we throw immediately so caller can re-login.
+ */
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  retries = DEFAULT_RETRIES
+): Promise<T> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (e) {
+      lastErr = e
+      if (e instanceof GetCourseAuthError) throw e
+      const isTimeout =
+        e instanceof DOMException && e.name === "TimeoutError"
+      const isHttp5xx =
+        e instanceof GetCourseHttpError && (e.status >= 500 || e.status === 429)
+      const isNetwork = e instanceof TypeError
+      if (!isTimeout && !isHttp5xx && !isNetwork) throw e
+      if (attempt === retries) break
+      const delay = RETRY_BACKOFF_MS * (attempt + 1)
+      console.warn(
+        `[safe-fetch] ${label}: ${(e as Error).message} — retry ${attempt + 1}/${retries} after ${delay}ms`
+      )
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
+}
 
 interface SafeFetchOptions {
   cookie: string
@@ -58,48 +97,50 @@ export async function safeFetch(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const userAgent = options.userAgent ?? DEFAULT_UA
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Cookie: options.cookie,
-      "User-Agent": userAgent,
-      Accept: "text/html,application/xhtml+xml",
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeoutMs),
+  return withRetry(`GET ${url.slice(-60)}`, async () => {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Cookie: options.cookie,
+        "User-Agent": userAgent,
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+
+    // Auth failures
+    if (response.status === 401 || response.status === 403) {
+      throw new GetCourseAuthError(url)
+    }
+
+    if (response.status >= 500 || response.status === 429) {
+      throw new GetCourseHttpError(
+        `HTTP ${response.status}`,
+        response.status,
+        url
+      )
+    }
+
+    const html = await response.text()
+
+    // GetCourse redirects expired sessions to login page (200 OK with login form).
+    // Detect by title or response URL containing /pl/user/login or /cms/login.
+    const finalUrl = response.url
+    if (
+      finalUrl.includes("/login") ||
+      /<title>[^<]*\b(?:Вход|Login)\b[^<]*<\/title>/i.test(html.slice(0, 2048))
+    ) {
+      throw new GetCourseAuthError(url)
+    }
+
+    return {
+      status: response.status,
+      html,
+      size: html.length,
+      url: finalUrl,
+    }
   })
-
-  // Auth failures
-  if (response.status === 401 || response.status === 403) {
-    throw new GetCourseAuthError(url)
-  }
-
-  if (response.status >= 500 || response.status === 429) {
-    throw new GetCourseHttpError(
-      `HTTP ${response.status}`,
-      response.status,
-      url
-    )
-  }
-
-  const html = await response.text()
-
-  // GetCourse redirects expired sessions to login page (200 OK with login form).
-  // Detect by title or response URL containing /pl/user/login or /cms/login.
-  const finalUrl = response.url
-  if (
-    finalUrl.includes("/login") ||
-    /<title>[^<]*\b(?:Вход|Login)\b[^<]*<\/title>/i.test(html.slice(0, 2048))
-  ) {
-    throw new GetCourseAuthError(url)
-  }
-
-  return {
-    status: response.status,
-    html,
-    size: html.length,
-    url: finalUrl,
-  }
 }
 
 /**

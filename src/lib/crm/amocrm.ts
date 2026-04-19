@@ -90,20 +90,44 @@ interface AmoNote {
 
 interface AmoEvent {
   id: string
-  type: string // "incoming_call", "outgoing_call", etc.
+  type: string // "incoming_call", "outgoing_call", "lead_status_changed", etc.
   entity_id: number
   created_at: number
-  value_after?: Array<{
-    note?: {
-      id?: number
-    }
+  value_before?: Array<{
+    note?: { id?: number }
     link?: string
     duration?: number
     call_recording?: string
     phone?: string
     call_result?: string
     call_status?: number
+    lead_value?: {
+      status_id?: number
+      pipeline_id?: number
+    }
   }>
+  value_after?: Array<{
+    note?: { id?: number }
+    link?: string
+    duration?: number
+    call_recording?: string
+    phone?: string
+    call_result?: string
+    call_status?: number
+    lead_value?: {
+      status_id?: number
+      pipeline_id?: number
+    }
+  }>
+}
+
+export interface CrmStageTransition {
+  dealCrmId: string
+  fromStageCrmId: string | null
+  toStageCrmId: string
+  /** From which pipeline (funnel) the deal was moved */
+  pipelineCrmId: string | null
+  changedAt: Date
 }
 
 interface AmoUser {
@@ -415,6 +439,46 @@ export class AmoCrmAdapter implements CrmAdapter {
     )
 
     return messages
+  }
+
+  /**
+   * Fetch stage-change events for a deal: amoCRM stores these as events of
+   * type "lead_status_changed". Each event has value_before/value_after with
+   * status_id (= our FunnelStage.crmId) and pipeline_id (= Funnel.crmId).
+   *
+   * Returns transitions ordered by changedAt asc — oldest transition first.
+   */
+  async fetchStageTransitions(
+    dealCrmId: string
+  ): Promise<CrmStageTransition[]> {
+    try {
+      const events = await this.fetchAll<AmoEvent>(
+        "/events",
+        "events",
+        {
+          "filter[entity]": "lead",
+          "filter[entity_id]": dealCrmId,
+          "filter[type]": "lead_status_changed",
+        }
+      )
+      const transitions: CrmStageTransition[] = []
+      for (const event of events) {
+        const after = event.value_after?.[0]?.lead_value
+        const before = event.value_before?.[0]?.lead_value
+        if (!after?.status_id) continue
+        transitions.push({
+          dealCrmId,
+          fromStageCrmId: before?.status_id ? String(before.status_id) : null,
+          toStageCrmId: String(after.status_id),
+          pipelineCrmId: after.pipeline_id ? String(after.pipeline_id) : null,
+          changedAt: new Date(event.created_at * 1000),
+        })
+      }
+      transitions.sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime())
+      return transitions
+    } catch {
+      return []
+    }
   }
 
   /**

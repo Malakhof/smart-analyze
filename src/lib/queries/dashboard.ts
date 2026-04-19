@@ -58,7 +58,7 @@ export async function getDashboardStats(tenantId: string) {
   }
 }
 
-export async function getFunnelData(tenantId: string) {
+export async function getFunnelData(tenantId: string, funnelId?: string) {
   // Pick the funnel that ACTUALLY has the most deals attached, not just first by id.
   // Avoids showing a near-empty funnel when client has 8 funnels but only 1 active.
   const funnels = await db.funnel.findMany({
@@ -72,38 +72,56 @@ export async function getFunnelData(tenantId: string) {
 
   if (funnels.length === 0) return []
 
-  const funnel = [...funnels].sort(
-    (a, b) => b._count.deals - a._count.deals
-  )[0]
+  // Allow caller to pin a specific funnel via ?funnel=<id>; otherwise pick busiest.
+  const funnel =
+    (funnelId && funnels.find((f) => f.id === funnelId)) ||
+    [...funnels].sort((a, b) => b._count.deals - a._count.deals)[0]
 
-  // For "conversion %" denominator we want deals THAT ENTERED THIS FUNNEL,
-  // not all deals across the tenant. Otherwise stages of small funnels look
-  // artificially low (e.g. 12% when in reality 100% of that funnel's deals).
-  const funnelDealsCount = funnel._count.deals
+  const orderedStages = [...funnel.stages].sort((a, b) => a.order - b.order)
+  const totalDeals = funnel._count.deals
 
   const stagesWithData = await Promise.all(
-    funnel.stages.map(async (stage) => {
-      // Histories for this stage
-      const histories = await db.dealStageHistory.findMany({
-        where: { stageId: stage.id },
-      })
-      // Deals currently sitting on this stage (uses Deal.currentStageCrmId, not history)
-      // — gives sane numbers even when transition history is incomplete.
-      const currentDealCount = await db.deal.count({
-        where: {
-          tenantId,
-          funnelId: funnel.id,
-          currentStageCrmId: stage.crmId,
-        },
-      })
-      const dealCount = Math.max(histories.length, currentDealCount)
+    orderedStages.map(async (stage) => {
+      // Progressive count: deals that EVER touched this stage (history)
+      // OR are currently sitting at THIS or any LATER stage (i.e. they passed through).
+      const futureStageCrmIds = orderedStages
+        .filter((s) => s.order >= stage.order)
+        .map((s) => s.crmId)
+        .filter((c): c is string => Boolean(c))
+
+      const [historyDealIdRows, currentDeals, histories] = await Promise.all([
+        db.dealStageHistory.findMany({
+          where: { stageId: stage.id },
+          select: { dealId: true },
+          distinct: ["dealId"],
+        }),
+        db.deal.findMany({
+          where: {
+            tenantId,
+            funnelId: funnel.id,
+            currentStageCrmId: { in: futureStageCrmIds },
+          },
+          select: { id: true },
+        }),
+        db.dealStageHistory.findMany({
+          where: { stageId: stage.id },
+          select: { duration: true },
+        }),
+      ])
+
+      const allDealIds = new Set<string>()
+      for (const h of historyDealIdRows) allDealIds.add(h.dealId)
+      for (const d of currentDeals) allDealIds.add(d.id)
+      const dealCount = allDealIds.size
+
       const avgTime =
         histories.length > 0
           ? histories.reduce((s, h) => s + (h.duration ?? 0), 0) /
             histories.length
           : 0
-      const conversion =
-        funnelDealsCount > 0 ? (dealCount / funnelDealsCount) * 100 : 0
+
+      // Progressive conversion: % of total funnel deals that reached this stage.
+      const conversion = totalDeals > 0 ? (dealCount / totalDeals) * 100 : 0
 
       return {
         id: stage.id,
@@ -117,6 +135,21 @@ export async function getFunnelData(tenantId: string) {
   )
 
   return stagesWithData
+}
+
+export async function getFunnelList(
+  tenantId: string
+): Promise<{ id: string; name: string; dealCount: number }[]> {
+  const funnels = await db.funnel.findMany({
+    where: { tenantId },
+    include: { _count: { select: { deals: true } } },
+    orderBy: { name: "asc" },
+  })
+  return funnels.map((f) => ({
+    id: f.id,
+    name: f.name,
+    dealCount: f._count.deals,
+  }))
 }
 
 export async function getManagerRanking(tenantId: string) {

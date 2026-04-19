@@ -70,9 +70,27 @@ export function StageTree({ stages, messages }: StageTreeProps) {
         </div>
       )
     }
-    const sorted = [...messages].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    )
+    // Filter out SYSTEM noise (amoCRM common notes, GC bot mailings, sms notifications)
+    // — only show actual MANAGER ↔ CLIENT communication
+    const sorted = [...messages]
+      .filter((m) => {
+        if (m.sender === "SYSTEM") return false
+        if (!m.content?.trim() && !m.isAudio) return false
+        return true
+      })
+      .sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      )
+    if (sorted.length === 0) {
+      return (
+        <div className="rounded-[10px] border border-border-default bg-surface-1 p-8 text-center">
+          <p className="text-text-tertiary">Нет переписки и звонков по сделке</p>
+          <p className="text-sm text-text-muted mt-1">
+            История этапов не сохранилась, а служебных сообщений мы не показываем
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="rounded-[10px] border border-border-default bg-surface-1 p-6 shadow-[var(--card-shadow)]">
         <h3 className="mb-1 text-[15px] font-bold">Переписка и звонки</h3>
@@ -136,11 +154,18 @@ export function StageTree({ stages, messages }: StageTreeProps) {
 
   function getStageMessages(stage: DealDetailStage): DealDetailMessage[] {
     const start = new Date(stage.enteredAt).getTime()
+    const stageIdx = stages.findIndex((s) => s.id === stage.id)
+    const next = stages[stageIdx + 1]
+    // If stage has no leftAt (current stage) — bound by next stage's enteredAt
     const end = stage.leftAt
       ? new Date(stage.leftAt).getTime()
-      : Infinity
+      : next
+        ? new Date(next.enteredAt).getTime()
+        : Infinity
 
     return messages.filter((m) => {
+      if (m.sender === "SYSTEM") return false
+      if (!m.content?.trim() && !m.isAudio) return false
       const t = new Date(m.timestamp).getTime()
       return t >= start && t < end
     })

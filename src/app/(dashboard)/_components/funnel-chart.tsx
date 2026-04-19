@@ -1,4 +1,5 @@
 import { fmtPercent, fmtDays } from "@/lib/format"
+import { FunnelSwitcher } from "./funnel-switcher"
 
 interface FunnelStageData {
   id: string
@@ -9,8 +10,16 @@ interface FunnelStageData {
   avgTime: number
 }
 
+interface FunnelOption {
+  id: string
+  name: string
+  dealCount: number
+}
+
 interface FunnelChartProps {
   stages: FunnelStageData[]
+  funnels?: FunnelOption[]
+  selectedFunnelId?: string
 }
 
 function getConversionColor(conversion: number) {
@@ -25,15 +34,33 @@ function getBarColor(conversion: number) {
   return "var(--status-red)"
 }
 
-export function FunnelChart({ stages }: FunnelChartProps) {
+export function FunnelChart({
+  stages,
+  funnels,
+  selectedFunnelId,
+}: FunnelChartProps) {
   const maxDeals = Math.max(...stages.map((s) => s.dealCount), 1)
+  const showSelector = (funnels?.length ?? 0) > 1
 
   return (
     <div className="mb-9">
-      <div className="mb-3.5 flex items-center gap-2 text-[13px] font-semibold text-text-secondary">
-        Воронка продаж
+      <div className="mb-3.5 flex items-center justify-between gap-2">
+        <div className="text-[13px] font-semibold text-text-secondary">
+          Воронка продаж
+        </div>
+        {showSelector && (
+          <FunnelSwitcher
+            funnels={funnels!}
+            selectedId={selectedFunnelId}
+          />
+        )}
       </div>
-      <div className="grid grid-cols-6 gap-2">
+      <div
+        className="grid gap-2"
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(0, 1fr))`,
+        }}
+      >
         {stages.map((stage) => {
           const barWidth =
             maxDeals > 0 ? (stage.dealCount / maxDeals) * 100 : 0

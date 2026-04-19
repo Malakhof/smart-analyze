@@ -5,6 +5,7 @@ import { Suspense } from "react"
 import {
   getDashboardStats,
   getFunnelData,
+  getFunnelList,
   getManagerRanking,
   getInsights,
   getDailyConversion,
@@ -20,13 +21,20 @@ import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
 import { DealStatSnapshotWidget } from "./_components/dealstat-snapshot"
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ funnel?: string }>
+}) {
   const tenantId = await requireTenantId()
+  const sp = (await searchParams) ?? {}
+  const selectedFunnelId = sp.funnel
 
-  const [stats, funnel, managers, insights, daily, dealStat] =
+  const [stats, funnels, funnel, managers, insights, daily, dealStat] =
     await Promise.all([
       getDashboardStats(tenantId),
-      getFunnelData(tenantId),
+      getFunnelList(tenantId),
+      getFunnelData(tenantId, selectedFunnelId),
       getManagerRanking(tenantId),
       getInsights(tenantId),
       getDailyConversion(tenantId),
@@ -73,7 +81,11 @@ export default async function DashboardPage() {
       </div>
 
       <Suspense>
-        <FunnelChart stages={funnel} />
+        <FunnelChart
+          stages={funnel}
+          funnels={funnels}
+          selectedFunnelId={selectedFunnelId}
+        />
       </Suspense>
 
       <Suspense>

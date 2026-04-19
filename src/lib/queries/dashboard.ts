@@ -252,3 +252,70 @@ export async function getDailyConversion(
     }
   })
 }
+
+export interface DealStatPoint {
+  month: string
+  value: number
+}
+
+export interface DealStatSeries {
+  name: string
+  points: DealStatPoint[]
+}
+
+export interface DealStatSnapshot {
+  capturedAt: Date
+  source: string
+  ordersCreatedCount: number | null
+  ordersCreatedAmount: number | null
+  ordersPaidCount: number | null
+  ordersPaidAmount: number | null
+  buyersCount: number | null
+  earnedAmount: number | null
+  series: DealStatSeries[]
+}
+
+// Returns the latest CRM-side aggregated stat snapshot (e.g. GC dealstat).
+// Returns null for tenants whose CRM doesn't expose pre-aggregated revenue (amoCRM).
+export async function getDealStatSnapshot(
+  tenantId: string
+): Promise<DealStatSnapshot | null> {
+  const snap = await db.dealStatSnapshot.findFirst({
+    where: { tenantId },
+    orderBy: { capturedAt: "desc" },
+  })
+  if (!snap) return null
+
+  const seriesRaw = (snap.seriesJson ?? null) as
+    | { name?: unknown; points?: unknown }[]
+    | null
+  const series: DealStatSeries[] = []
+  if (Array.isArray(seriesRaw)) {
+    for (const s of seriesRaw) {
+      if (!s || typeof s !== "object") continue
+      const name = typeof s.name === "string" ? s.name : ""
+      const ptsRaw = Array.isArray(s.points) ? s.points : []
+      const points: DealStatPoint[] = []
+      for (const p of ptsRaw as { month?: unknown; value?: unknown }[]) {
+        if (!p || typeof p !== "object") continue
+        if (typeof p.month !== "string") continue
+        const v = Number(p.value)
+        if (!Number.isFinite(v)) continue
+        points.push({ month: p.month, value: v })
+      }
+      if (name && points.length > 0) series.push({ name, points })
+    }
+  }
+
+  return {
+    capturedAt: snap.capturedAt,
+    source: snap.source,
+    ordersCreatedCount: snap.ordersCreatedCount,
+    ordersCreatedAmount: snap.ordersCreatedAmount,
+    ordersPaidCount: snap.ordersPaidCount,
+    ordersPaidAmount: snap.ordersPaidAmount,
+    buyersCount: snap.buyersCount,
+    earnedAmount: snap.earnedAmount,
+    series,
+  }
+}

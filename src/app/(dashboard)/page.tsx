@@ -8,6 +8,7 @@ import {
   getManagerRanking,
   getInsights,
   getDailyConversion,
+  getDealStatSnapshot,
 } from "@/lib/queries/dashboard"
 import { PeriodFilter } from "./_components/period-filter"
 import { FunnelChart } from "./_components/funnel-chart"
@@ -17,17 +18,20 @@ import { KeyMetrics } from "./_components/key-metrics"
 import { ConversionChart } from "./_components/conversion-chart"
 import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
+import { DealStatSnapshotWidget } from "./_components/dealstat-snapshot"
 
 export default async function DashboardPage() {
   const tenantId = await requireTenantId()
 
-  const [stats, funnel, managers, insights, daily] = await Promise.all([
-    getDashboardStats(tenantId),
-    getFunnelData(tenantId),
-    getManagerRanking(tenantId),
-    getInsights(tenantId),
-    getDailyConversion(tenantId),
-  ])
+  const [stats, funnel, managers, insights, daily, dealStat] =
+    await Promise.all([
+      getDashboardStats(tenantId),
+      getFunnelData(tenantId),
+      getManagerRanking(tenantId),
+      getInsights(tenantId),
+      getDailyConversion(tenantId),
+      getDealStatSnapshot(tenantId),
+    ])
 
   return (
     <div className="space-y-6 p-6">
@@ -41,6 +45,12 @@ export default async function DashboardPage() {
           avgTime={stats.avgTime}
         />
       </Suspense>
+
+      {dealStat && (
+        <Suspense>
+          <DealStatSnapshotWidget snapshot={dealStat} />
+        </Suspense>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Suspense>

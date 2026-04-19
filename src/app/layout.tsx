@@ -16,8 +16,9 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Smart Analyze — AI Sales Analytics",
+  title: "Sales GURU — AI Sales Analytics",
   description: "AI-powered sales analytics platform",
+  icons: { icon: "/sg-logo.png" },
 }
 
 export default function RootLayout({

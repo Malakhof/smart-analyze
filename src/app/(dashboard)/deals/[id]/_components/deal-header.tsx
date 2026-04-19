@@ -46,6 +46,12 @@ export function DealHeader({
   stageCount = 0,
   messageCount = 0,
 }: DealHeaderProps) {
+  // Sanity-check duration: if it's wildly larger than (now - createdAt) days,
+  // the field was inflated by the sync (Bitrix/amoCRM bug). Fallback to recomputed.
+  const realDays =
+    (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24)
+  const displayDuration =
+    duration && duration > realDays + 30 ? realDays : duration
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-2 text-[12px] text-text-tertiary">
@@ -65,10 +71,10 @@ export function DealHeader({
         )}
         <span className="text-text-muted">·</span>
         <span>Создана {fmtDate(createdAt)}</span>
-        {duration != null && duration > 0 && (
+        {displayDuration != null && displayDuration > 0 && (
           <>
             <span className="text-text-muted">·</span>
-            <span>{fmtDays(duration)}</span>
+            <span>{fmtDays(displayDuration)}</span>
           </>
         )}
         {stageCount > 0 && (

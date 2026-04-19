@@ -85,6 +85,7 @@ export default async function DealDetailPage({
                 audioUrl={m.audioUrl!}
                 transcript={m.content || undefined}
                 duration={m.duration ?? undefined}
+                recordedAt={new Date(m.timestamp)}
               />
             ))}
 

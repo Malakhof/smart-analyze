@@ -6,6 +6,8 @@ interface DealAudioProps {
   audioUrl: string
   transcript?: string
   duration?: number
+  /** When this call took place (timestamp from CRM), to show age */
+  recordedAt?: Date
 }
 
 function fmtDuration(seconds: number): string {
@@ -133,11 +135,31 @@ function parseTranscript(raw: string): TranscriptLine[] {
   return lines
 }
 
-export function DealAudio({ audioUrl, transcript, duration }: DealAudioProps) {
+function fmtCallDate(d: Date): string {
+  return d.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+}
+
+function callAgeYears(d: Date): number {
+  return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 365)
+}
+
+export function DealAudio({
+  audioUrl,
+  transcript,
+  duration,
+  recordedAt,
+}: DealAudioProps) {
   const [error, setError] = useState<string | null>(null)
+  const age = recordedAt ? callAgeYears(recordedAt) : 0
+  const isOld = age > 1
+
   return (
     <div className="rounded-[10px] border border-border-default bg-surface-1 p-6 shadow-[var(--card-shadow)]">
-      <div className="mb-3 flex items-center gap-2.5">
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-status-green-dim text-[11px] font-bold text-status-green">
           🎙
         </div>
@@ -145,6 +167,19 @@ export function DealAudio({ audioUrl, transcript, duration }: DealAudioProps) {
         {duration != null && (
           <span className="text-[12px] text-text-tertiary">
             {fmtDuration(duration)}
+          </span>
+        )}
+        {recordedAt && (
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] ${
+              isOld
+                ? "bg-status-amber-dim/30 text-status-amber"
+                : "bg-surface-2 text-text-tertiary"
+            }`}
+            title={isOld ? "Запись старше года — может быть недоступна" : ""}
+          >
+            {fmtCallDate(recordedAt)}
+            {isOld ? ` · ${age.toFixed(1)} года` : ""}
           </span>
         )}
       </div>

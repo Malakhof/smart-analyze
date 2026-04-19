@@ -42,10 +42,24 @@ async function main() {
       continue
     }
     try {
-      await db.callRecord.update({
+      // 1. Update CallRecord (canonical store)
+      const cr = await db.callRecord.update({
         where: { id: r.id },
         data: { transcript: r.transcript },
+        select: { audioUrl: true, dealId: true },
       })
+      // 2. Mirror to Message rows that share the same audioUrl in the same deal
+      //    so the deal page (which reads Message.content) shows the transcript.
+      if (cr.audioUrl && cr.dealId) {
+        await db.message.updateMany({
+          where: {
+            dealId: cr.dealId,
+            audioUrl: cr.audioUrl,
+            isAudio: true,
+          },
+          data: { content: r.transcript },
+        })
+      }
       applied++
     } catch (e) {
       console.error(`update failed for ${r.id}:`, (e as Error).message)

@@ -83,6 +83,10 @@ export async function getDealDetail(
           duration: true,
         },
       },
+      callRecords: {
+        where: { transcript: { not: null } },
+        select: { audioUrl: true, transcript: true },
+      },
       stageHistory: {
         orderBy: { enteredAt: "asc" },
         include: {
@@ -207,15 +211,25 @@ export async function getDealDetail(
     currentStageCrmId: deal.currentStageCrmId,
     manager: deal.manager,
     analysis: deal.analysis,
-    messages: deal.messages.map((m) => ({
-      id: m.id,
-      sender: m.sender as "MANAGER" | "CLIENT" | "SYSTEM",
-      content: m.content,
-      timestamp: m.timestamp,
-      isAudio: m.isAudio,
-      audioUrl: m.audioUrl ?? null,
-      duration: m.duration ?? null,
-    })),
+    messages: deal.messages.map((m) => {
+      // Overlay CallRecord.transcript onto Message.content when they share audioUrl.
+      // Whisper batch writes to CallRecord — this exposes those transcripts to the UI.
+      const matchingCall =
+        m.isAudio && m.audioUrl
+          ? deal.callRecords.find((c) => c.audioUrl === m.audioUrl)
+          : null
+      const effectiveContent =
+        matchingCall?.transcript || m.content || ""
+      return {
+        id: m.id,
+        sender: m.sender as "MANAGER" | "CLIENT" | "SYSTEM",
+        content: effectiveContent,
+        timestamp: m.timestamp,
+        isAudio: m.isAudio,
+        audioUrl: m.audioUrl ?? null,
+        duration: m.duration ?? null,
+      }
+    }),
     stageHistory,
     funnel,
   }

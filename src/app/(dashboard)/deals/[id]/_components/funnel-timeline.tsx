@@ -7,7 +7,6 @@ import type {
   DealDetailMessage,
   DealDetailStage,
 } from "@/lib/queries/deal-detail"
-import { fmtPercent } from "@/lib/format"
 
 interface FunnelTimelineProps {
   funnel: DealDetailFunnel
@@ -58,6 +57,11 @@ function getConvColor(c: number): string {
   if (c >= 60) return "text-status-green"
   if (c >= 40) return "text-status-amber"
   return "text-status-red"
+}
+
+function fmtConvOrDash(stage: DealDetailFunnelStage): string {
+  if (stage.totalDeals === 0) return "—"
+  return `${stage.conversion.toFixed(1)}%`
 }
 
 interface AnchoredMessage {
@@ -297,8 +301,14 @@ export function FunnelTimeline({
                       )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-[11px] text-text-tertiary">
-                      <span className={getConvColor(stage.conversion)}>
-                        {fmtPercent(stage.conversion)} конверсия
+                      <span
+                        className={
+                          stage.totalDeals === 0
+                            ? "text-text-muted"
+                            : getConvColor(stage.conversion)
+                        }
+                      >
+                        {fmtConvOrDash(stage)} конверсия
                       </span>
                       <span>·</span>
                       <span>{stage.totalDeals} сделок в этапе</span>
@@ -351,16 +361,23 @@ export function FunnelTimeline({
         </div>
       </div>
 
-      {unanchored.length > 0 && (
+      {filteredMessages.length > 0 && (
         <div className="mt-6 border-t border-border-default pt-4">
-          <h4 className="mb-3 text-[13px] font-semibold text-text-primary">
-            Хронология событий ({unanchored.length})
+          <h4 className="mb-1 text-[13px] font-semibold text-text-primary">
+            Хронология сделки ({filteredMessages.length}{" "}
+            {filteredMessages.length === 1
+              ? "событие"
+              : filteredMessages.length < 5
+                ? "события"
+                : "событий"}
+            )
           </h4>
           <p className="mb-3 text-[11px] text-text-tertiary">
-            События не привязаны к этапам — показаны в хронологическом порядке
+            Все сообщения менеджера и клиента + звонки в хронологическом порядке
+            (системные пометки и короткие звонки без транскрипта скрыты)
           </p>
           <div className="space-y-2">
-            {[...unanchored]
+            {[...filteredMessages]
               .sort(
                 (a, b) =>
                   new Date(a.timestamp).getTime() -

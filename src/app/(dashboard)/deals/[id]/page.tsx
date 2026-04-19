@@ -9,8 +9,7 @@ import { DealAudio } from "./_components/deal-audio"
 import { DealMetrics } from "./_components/deal-metrics"
 import { StageTree } from "./_components/stage-tree"
 import { DealStatsSidebar } from "./_components/deal-stats-sidebar"
-import { StageNavigation } from "./_components/stage-navigation"
-import { DealFunnelMini } from "./_components/deal-funnel-mini"
+import { FunnelTimeline } from "./_components/funnel-timeline"
 
 export default async function DealDetailPage({
   params,
@@ -56,9 +55,6 @@ export default async function DealDetailPage({
       <div className="grid grid-cols-[1fr_320px] gap-6">
         {/* LEFT COLUMN */}
         <div className="min-w-0 space-y-5">
-          {/* Funnel context (mini-funnel as accordion) */}
-          {deal.funnel && <DealFunnelMini funnel={deal.funnel} />}
-
           {/* AI Analysis */}
           {deal.analysis && (
             <DealAiAnalysis summary={deal.analysis.summary} />
@@ -71,10 +67,18 @@ export default async function DealDetailPage({
             messages={deal.messages}
           />
 
-          {/* Audio calls (deduplicated by audioUrl) */}
+          {/* Audio calls — only meaningful (≥60s OR has transcript) */}
           {deal.messages
-            .filter((m) => m.isAudio && m.audioUrl)
-            .filter((m, i, arr) => arr.findIndex((x) => x.audioUrl === m.audioUrl) === i)
+            .filter(
+              (m) =>
+                m.isAudio &&
+                m.audioUrl &&
+                ((m.duration ?? 0) >= 60 || (m.content?.trim().length ?? 0) > 0)
+            )
+            .filter(
+              (m, i, arr) =>
+                arr.findIndex((x) => x.audioUrl === m.audioUrl) === i
+            )
             .map((m) => (
               <DealAudio
                 key={m.id}
@@ -84,27 +88,31 @@ export default async function DealDetailPage({
               />
             ))}
 
-          {/* Stage tree */}
-          <StageTree
-            stages={deal.stageHistory}
-            messages={deal.messages}
-          />
+          {/* Funnel timeline — full funnel structure + per-stage messages */}
+          {deal.funnel ? (
+            <FunnelTimeline
+              funnel={deal.funnel}
+              stageHistory={deal.stageHistory}
+              messages={deal.messages}
+              dealCreatedAt={deal.createdAt}
+              dealClosedAt={deal.closedAt ?? null}
+            />
+          ) : (
+            <StageTree
+              stages={deal.stageHistory}
+              messages={deal.messages}
+            />
+          )}
         </div>
 
         {/* RIGHT COLUMN (sidebar) */}
         <div className="space-y-5">
           <div className="sticky top-20 space-y-5">
-            {/* Deal stats */}
             <DealStatsSidebar
               messages={deal.messages}
               avgResponseTime={deal.analysis?.avgResponseTime ?? null}
               stages={deal.stageHistory}
             />
-
-            {/* Quick navigation */}
-            {deal.stageHistory.length > 0 && (
-              <StageNavigation stages={deal.stageHistory} />
-            )}
           </div>
         </div>
       </div>

@@ -44,6 +44,7 @@ export interface DealDetailData {
   status: string
   duration: number | null
   createdAt: Date
+  closedAt: Date | null
   currentStageCrmId: string | null
   manager: { id: string; name: string } | null
   analysis: {
@@ -202,6 +203,7 @@ export async function getDealDetail(
     status: deal.status,
     duration: deal.duration,
     createdAt: deal.createdAt,
+    closedAt: deal.closedAt,
     currentStageCrmId: deal.currentStageCrmId,
     manager: deal.manager,
     analysis: deal.analysis,

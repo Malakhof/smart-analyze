@@ -65,6 +65,23 @@ interface TranscriptMessage {
 function parseTranscript(raw: string): TranscriptMessage[] {
   const messages: TranscriptMessage[] = []
 
+  // PRIORITY 1: Whisper stereo-split format — [МЕНЕДЖЕР MM:SS] text or [КЛИЕНТ MM:SS] text
+  // Markers may appear inline (not necessarily at line start).
+  const whisperRe = /\[(МЕНЕДЖЕР|КЛИЕНТ)\s+\d+:\d+\]\s*/g
+  if (whisperRe.test(raw)) {
+    const parts = raw.split(/\[(МЕНЕДЖЕР|КЛИЕНТ)\s+\d+:\d+\]\s*/)
+    for (let i = 1; i < parts.length; i += 2) {
+      const role = parts[i] as "МЕНЕДЖЕР" | "КЛИЕНТ"
+      const text = (parts[i + 1] ?? "").trim()
+      if (!text) continue
+      messages.push({
+        speaker: role === "МЕНЕДЖЕР" ? "operator" : "client",
+        text,
+      })
+    }
+    if (messages.length > 0) return messages
+  }
+
   // First try line-based parsing (if transcript has newlines with speaker prefixes)
   const lines = raw.split("\n").filter((l) => l.trim())
   const hasLabels = lines.some((l) =>

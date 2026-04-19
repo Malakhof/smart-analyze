@@ -13,7 +13,7 @@
  * src/lib/sync/gc-sync-v2.ts uses this class directly. After Phase 5 we will
  * unify by replacing the old class.
  */
-import { safeFetch, safeFetchJson, safeFetchPostJson, extractInnerHtml } from "./safe-fetch"
+import { safeFetch, safeFetchJson, safeFetchPostJson, safeFetchPostForm, extractInnerHtml } from "./safe-fetch"
 import {
   buildDateFilteredUrl,
   parseTotalRecords,
@@ -48,6 +48,10 @@ import {
   type ParsedFunnel,
   type ParsedStage,
 } from "./parsers/funnels"
+import {
+  parseDealStat,
+  type ParsedDealStat,
+} from "./parsers/dealstat"
 
 const RATE_LIMIT_DELAY_MS = 1000 // 1 req/sec safe default
 
@@ -249,6 +253,28 @@ export class GetCourseAdapter {
       funnel_id: typeof funnelId === "string" ? Number(funnelId) : funnelId,
     })
     return parseStages(json, String(funnelId))
+  }
+
+  /**
+   * Fetch READY-MADE sales statistics from /pl/sales/dealstat/chartdata.
+   * Returns both totals (table block) and monthly chart series in ONE call.
+   *
+   * Filters via Krajee `ruleString` (same syntax used by buildDateFilteredUrl)
+   * — pass empty string for "all-time, all managers, all products".
+   * locationId selects site/account scope (0 = default).
+   *
+   * Verified diva all-time: 24,675 orders / 277.7M₽ earned, 71 monthly points.
+   * Wave 1 #16 — gold for РОПовский dashboard, no need to recompute from raw deals.
+   */
+  async getDealStat(
+    options: { ruleString?: string; locationId?: number } = {}
+  ): Promise<ParsedDealStat> {
+    const url = `${this.accountUrl}/pl/sales/dealstat/chartdata`
+    const json = await safeFetchPostForm(url, this.cookie, {
+      rule_string: options.ruleString ?? "",
+      locationId: String(options.locationId ?? 0),
+    })
+    return parseDealStat(json)
   }
 
   // ─── private ──────────────────────────────────────────────────────────────

@@ -201,6 +201,58 @@ export async function safeFetchPostJson(
 }
 
 /**
+ * POST variant for legacy GC endpoints that accept form-urlencoded body
+ * (e.g. /pl/sales/dealstat/chartdata). Returns parsed JSON.
+ */
+export async function safeFetchPostForm(
+  url: string,
+  cookie: string,
+  body: Record<string, string> = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<unknown> {
+  assertSafeUrl(url)
+
+  const params = new URLSearchParams(body)
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+      "User-Agent": DEFAULT_UA,
+      Accept: "application/json, text/javascript, */*; q=0.01",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-Requested-With": "XMLHttpRequest",
+      Origin: new URL(url).origin,
+      Referer: new URL(url).origin + "/",
+    },
+    body: params.toString(),
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+
+  if (response.status === 401 || response.status === 403) {
+    throw new GetCourseAuthError(url)
+  }
+  if (response.status >= 500 || response.status === 429) {
+    throw new GetCourseHttpError(`HTTP ${response.status}`, response.status, url)
+  }
+
+  const text = await response.text()
+  if (text.startsWith("\n<!DOCTYPE") || text.startsWith("<!DOCTYPE")) {
+    throw new GetCourseAuthError(url)
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new GetCourseHttpError(
+      `Expected JSON from form POST, got: ${text.slice(0, 100)}`,
+      response.status,
+      url
+    )
+  }
+}
+
+/**
  * Helper: extract data.html from GC AJAX wrapper { success, data: { html: ... } }
  */
 export function extractInnerHtml(json: unknown): string | null {

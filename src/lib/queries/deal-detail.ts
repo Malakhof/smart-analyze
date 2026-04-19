@@ -74,6 +74,40 @@ export async function getDealDetail(
 
   if (!deal) return null
 
+  let stageHistory: DealDetailStage[] = deal.stageHistory.map((sh) => ({
+    id: sh.id,
+    stageId: sh.stageId,
+    stageName: sh.stage.name,
+    stageOrder: sh.stage.order,
+    enteredAt: sh.enteredAt,
+    leftAt: sh.leftAt,
+    duration: sh.duration,
+  }))
+
+  // Synthesize a single stage entry when DealStageHistory was never written
+  // (common for amoCRM/GC initial syncs that don't pull transition logs).
+  // Falls back to deal.currentStageCrmId → FunnelStage to give the user
+  // at least the CURRENT stage instead of "no data".
+  if (stageHistory.length === 0 && deal.funnelId && deal.currentStageCrmId) {
+    const stage = await db.funnelStage.findFirst({
+      where: { funnelId: deal.funnelId, crmId: deal.currentStageCrmId },
+      select: { id: true, name: true, order: true },
+    })
+    if (stage) {
+      stageHistory = [
+        {
+          id: `synthetic-${stage.id}`,
+          stageId: stage.id,
+          stageName: stage.name,
+          stageOrder: stage.order,
+          enteredAt: deal.createdAt,
+          leftAt: deal.closedAt,
+          duration: deal.duration,
+        },
+      ]
+    }
+  }
+
   return {
     id: deal.id,
     title: deal.title,
@@ -92,14 +126,6 @@ export async function getDealDetail(
       audioUrl: m.audioUrl ?? null,
       duration: m.duration ?? null,
     })),
-    stageHistory: deal.stageHistory.map((sh) => ({
-      id: sh.id,
-      stageId: sh.stageId,
-      stageName: sh.stage.name,
-      stageOrder: sh.stage.order,
-      enteredAt: sh.enteredAt,
-      leftAt: sh.leftAt,
-      duration: sh.duration,
-    })),
+    stageHistory,
   }
 }

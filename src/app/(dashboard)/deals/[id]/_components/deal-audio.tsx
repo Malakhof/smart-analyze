@@ -1,3 +1,7 @@
+"use client"
+
+import { useState } from "react"
+
 interface DealAudioProps {
   audioUrl: string
   transcript?: string
@@ -112,6 +116,7 @@ function parseTranscript(raw: string): TranscriptLine[] {
 }
 
 export function DealAudio({ audioUrl, transcript, duration }: DealAudioProps) {
+  const [error, setError] = useState<string | null>(null)
   return (
     <div className="rounded-[10px] border border-border-default bg-surface-1 p-6 shadow-[var(--card-shadow)]">
       <div className="mb-3 flex items-center gap-2.5">
@@ -126,10 +131,31 @@ export function DealAudio({ audioUrl, transcript, duration }: DealAudioProps) {
         )}
       </div>
 
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio controls className="w-full" preload="metadata">
-        <source src={`/api/audio?url=${encodeURIComponent(audioUrl)}`} />
-      </audio>
+      {error ? (
+        <div className="rounded-[6px] border border-status-amber/40 bg-status-amber-dim/20 px-3 py-2 text-[12px] text-status-amber">
+          ⚠ Не удалось загрузить запись: {error}
+        </div>
+      ) : (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <audio
+          controls
+          className="w-full"
+          preload="metadata"
+          onError={(e) => {
+            const a = e.currentTarget
+            const code = a.error?.code
+            const map: Record<number, string> = {
+              1: "Загрузка прервана",
+              2: "Сетевая ошибка",
+              3: "Ошибка декодирования",
+              4: "Источник недоступен (URL заблокирован или формат не поддерживается)",
+            }
+            setError(code ? map[code] ?? `code=${code}` : "неизвестная ошибка")
+          }}
+        >
+          <source src={`/api/audio?url=${encodeURIComponent(audioUrl)}`} />
+        </audio>
+      )}
 
       {transcript && (
         <div className="mt-4">

@@ -41,9 +41,14 @@ export default async function DealDetailPage({
       {/* Deal header row */}
       <DealHeader
         managerName={deal.manager?.name ?? null}
+        managerId={deal.manager?.id ?? null}
         amount={deal.amount}
         createdAt={deal.createdAt}
         duration={deal.duration}
+        stageCount={deal.stageHistory.length}
+        messageCount={
+          deal.messages.filter((m) => m.sender !== "SYSTEM").length
+        }
       />
 
       {/* 2-column layout */}

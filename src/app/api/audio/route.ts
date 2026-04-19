@@ -39,6 +39,12 @@ export async function GET(request: Request) {
       return new Response("Audio not found", { status: 404 })
 
     const contentType = res.headers.get("Content-Type") || "audio/wav"
+    // Some providers (Sipuni) return HTTP 200 with text/html for expired/unlicensed
+    // recordings (body is "User is not licensed" or "Session expired"). Detect and
+    // surface a real 404 so the <audio> element fires onError.
+    if (contentType.startsWith("text/")) {
+      return new Response("Audio expired or unavailable", { status: 410 })
+    }
     const contentLength = res.headers.get("Content-Length") || ""
     const contentRange = res.headers.get("Content-Range") || ""
 

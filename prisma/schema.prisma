@@ -195,6 +195,9 @@ model Deal {
   status       DealStatus
   duration     Float?
   currentStageCrmId String?
+  /// External user id of the client (GC user_id from data-user-id; amoCRM contact id)
+  /// Used to link orphan conversation messages to deals.
+  clientCrmId  String?
 
   createdAt    DateTime           @default(now())
   closedAt     DateTime?
@@ -237,6 +240,8 @@ model Message {
   // GC conversation reference (ResponseId / convId from "Обращения")
   crmId       String?
   threadId    String?       // GC respId — multiple messages share the same thread
+  /// External client user id (GC) — used to backfill dealId via Deal.clientCrmId match
+  clientCrmId String?
   channel     String?       // "telegram", "whatsapp", "vk", "сайт", etc
 
   sender    MessageSender

@@ -24,10 +24,11 @@ async function main() {
   })
   if (!cfg.subdomain || !cfg.gcCookie) throw new Error("missing subdomain/cookie")
 
-  const adapter = new GetCourseAdapter(
-    `https://${cfg.subdomain}.getcourse.ru`,
-    cfg.gcCookie
-  )
+  // Resolve URL — if subdomain has dot, it's a vanity domain (web.diva.school)
+  const accountUrl = cfg.subdomain.includes(".")
+    ? `https://${cfg.subdomain}`
+    : `https://${cfg.subdomain}.getcourse.ru`
+  const adapter = new GetCourseAdapter(accountUrl, cfg.gcCookie)
   const tenantId = cfg.tenantId
   console.log(`Starting responses-only sync for diva (maxPages=${maxPages})`)
 

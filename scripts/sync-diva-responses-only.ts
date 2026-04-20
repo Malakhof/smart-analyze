@@ -11,6 +11,7 @@
 import { PrismaClient } from "../src/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { GetCourseAdapter } from "../src/lib/crm/getcourse/adapter"
+import { decrypt } from "../src/lib/crypto"
 
 const maxPages = Number(process.argv[2] ?? 30)
 
@@ -24,11 +25,16 @@ async function main() {
   })
   if (!cfg.subdomain || !cfg.gcCookie) throw new Error("missing subdomain/cookie")
 
-  // Resolve URL — if subdomain has dot, it's a vanity domain (web.diva.school)
   const accountUrl = cfg.subdomain.includes(".")
     ? `https://${cfg.subdomain}`
     : `https://${cfg.subdomain}.getcourse.ru`
-  const adapter = new GetCourseAdapter(accountUrl, cfg.gcCookie)
+  let cookie: string
+  try {
+    cookie = decrypt(cfg.gcCookie)
+  } catch {
+    cookie = cfg.gcCookie // already plain
+  }
+  const adapter = new GetCourseAdapter(accountUrl, cookie)
   const tenantId = cfg.tenantId
   console.log(`Starting responses-only sync for diva (maxPages=${maxPages})`)
 

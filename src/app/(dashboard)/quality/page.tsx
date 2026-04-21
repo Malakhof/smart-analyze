@@ -74,12 +74,21 @@ export default async function QualityPage(props: {
         </div>
       </header>
 
+      <QcFilters
+        categories={filters.categories}
+        tags={filters.tags}
+        managers={filters.managers}
+        scriptItems={filters.scriptItems}
+      />
+
       {dashboard.totalCalls === 0 ? (
         <div className="rounded-md border border-border-default p-8 text-center text-text-tertiary">
-          <div className="text-[14px]">Звонки ещё не проанализированы</div>
+          <div className="text-[14px]">
+            За выбранный период звонков не найдено
+          </div>
           <div className="mt-1 text-[12px]">
-            После транскрипции и AI-оценки звонков здесь появятся: соответствие
-            скрипту, рейтинг менеджеров, проблемы и сильные стороны.
+            Смените период фильтра слева или сбросьте его, чтобы увидеть
+            все проанализированные звонки.
           </div>
         </div>
       ) : (
@@ -91,13 +100,6 @@ export default async function QualityPage(props: {
             avgScoreChange={charts.avgScoreChange}
             bestManager={charts.bestManager}
             worstManager={charts.worstManager}
-          />
-
-          <QcFilters
-            categories={filters.categories}
-            tags={filters.tags}
-            managers={filters.managers}
-            scriptItems={filters.scriptItems}
           />
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

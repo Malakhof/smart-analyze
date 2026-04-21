@@ -42,10 +42,17 @@ async function main() {
       continue
     }
     try {
-      // 1. Update CallRecord (canonical store)
+      // 1. Update CallRecord (canonical store). Also persist RunPod-reported
+      //    audio duration (from ffprobe) — list-page HTML doesn't include it,
+      //    so without this CallRecord.duration stays NULL forever.
       const cr = await db.callRecord.update({
         where: { id: r.id },
-        data: { transcript: r.transcript },
+        data: {
+          transcript: r.transcript,
+          ...(typeof r.duration === "number" && r.duration > 0
+            ? { duration: Math.round(r.duration) }
+            : {}),
+        },
         select: { audioUrl: true, dealId: true },
       })
       // 2. Mirror to Message rows that share the same audioUrl in the same deal

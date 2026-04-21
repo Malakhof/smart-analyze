@@ -21,14 +21,14 @@ import { decrypt } from "../src/lib/crypto"
 const CONCURRENCY = 3 // be gentle with GC — each fetch ~100KB
 
 function parseDuration(html: string): number | null {
-  // "Продолжительность разговора: 1 минуту 52 секунды"
-  // "Продолжительность разговора: 2 минуты 6 секунд"
-  // Also fallbacks: "Продолжительность записи: ..." (weaker signal)
+  // GC uses &nbsp; between "разговора:" and the number — normalize to plain space
+  // before matching. Also word endings vary: "1 секунду", "2 секунды", "5 секунд".
+  const norm = html.replace(/&nbsp;/g, " ")
   const talk =
-    html.match(
+    norm.match(
       /Продолжительность разговора\s*:?\s*(?:(\d+)\s*час[а-я]*\s*)?(?:(\d+)\s*минут[а-я]*\s*)?(?:(\d+)\s*секунд[а-я]*)?/i
     ) ||
-    html.match(
+    norm.match(
       /Продолжительность записи\s*:?\s*(?:(\d+)\s*час[а-я]*\s*)?(?:(\d+)\s*минут[а-я]*\s*)?(?:(\d+)\s*секунд[а-я]*)?/i
     )
   if (!talk) return null

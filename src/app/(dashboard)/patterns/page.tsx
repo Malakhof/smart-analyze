@@ -19,7 +19,9 @@ export default async function PatternsPage({
     : undefined
   const [patterns, analysesCount, lastPattern] = await Promise.all([
     getPatterns(tenantId, filter),
-    db.dealAnalysis.count({ where: { deal: { tenantId } } }),
+    db.dealAnalysis.count({
+      where: { deal: { tenantId, clientCrmId: { not: null } } },
+    }),
     db.pattern.findFirst({
       where: { tenantId },
       orderBy: { createdAt: "desc" },

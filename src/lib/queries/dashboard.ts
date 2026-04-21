@@ -42,10 +42,16 @@ export async function getDashboardStats(
 ) {
   // In LIVE mode: skip Deal.createdAt cutoff (broken for diva — equals sync date)
   // and instead require recent Message OR CallRecord activity in the window.
+  // Anonymous filter: diva has 134K anonymous webinar carts with no contact;
+  // requiring clientCrmId gives an honest "real deals" count across all tenants.
   const baseWhere =
     mode === "live"
-      ? { tenantId, ...dealActivityWhere() }
-      : { tenantId, createdAt: { gte: periodToCutoff(period) } }
+      ? { tenantId, clientCrmId: { not: null }, ...dealActivityWhere() }
+      : {
+          tenantId,
+          clientCrmId: { not: null },
+          createdAt: { gte: periodToCutoff(period) },
+        }
 
   const [totalDeals, wonDeals, lostDeals] = await Promise.all([
     db.deal.count({ where: baseWhere }),

@@ -99,7 +99,7 @@ async function main() {
 
         let deal = await db.deal.findFirst({
           where: { tenantId, crmId: row.linkedDealId },
-          select: { id: true },
+          select: { id: true, clientCrmId: true },
         })
         if (!deal) {
           deal = await db.deal.create({
@@ -108,11 +108,20 @@ async function main() {
               crmId: row.linkedDealId,
               title: `Deal ${row.linkedDealId}`,
               status: gcOutcomeToStatus(row.outcomeLabel),
+              clientCrmId: row.clientUserId || null,
               createdAt: row.callDate ?? new Date(),
             },
-            select: { id: true },
+            select: { id: true, clientCrmId: true },
           })
           createdStubDeals++
+        } else if (!deal.clientCrmId && row.clientUserId) {
+          // Heal stubs from a previous run that lacked clientCrmId —
+          // without it the anonymous-deal filter would exclude them
+          // from metrics even though they represent real conversations.
+          await db.deal.update({
+            where: { id: deal.id },
+            data: { clientCrmId: row.clientUserId },
+          })
         }
         await db.callRecord.update({
           where: { id: call.id },

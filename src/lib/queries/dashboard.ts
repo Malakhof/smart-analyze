@@ -128,10 +128,34 @@ export async function getFunnelData(
 
   if (funnels.length === 0) return []
 
-  // Allow caller to pin a specific funnel via ?funnel=<id>; otherwise pick busiest.
-  const funnel =
-    (funnelId && funnels.find((f) => f.id === funnelId)) ||
-    [...funnels].sort((a, b) => b._count.deals - a._count.deals)[0]
+  // Allow caller to pin a specific funnel via ?funnel=<id>; otherwise pick the
+  // one with most deals ATTACHED to its stages (not just funnel.deals raw count —
+  // a funnel like "Отказ" can have many deals where currentStageCrmId is NULL,
+  // meaning chart will be 0% everywhere). Prefer funnel where deals actually
+  // sit in stages.
+  let funnel = funnelId ? funnels.find((f) => f.id === funnelId) : undefined
+  if (!funnel) {
+    const stageCrmIds = funnels.flatMap((f) => f.stages.map((s) => s.crmId).filter(Boolean) as string[])
+    const stageDealCounts = stageCrmIds.length
+      ? await db.deal.groupBy({
+          by: ["currentStageCrmId"],
+          where: { tenantId, currentStageCrmId: { in: stageCrmIds } },
+          _count: true,
+        })
+      : []
+    const stageToCount = new Map(stageDealCounts.map((r) => [r.currentStageCrmId!, r._count]))
+    const funnelsRanked = funnels.map((f) => ({
+      f,
+      stageDeals: f.stages.reduce((sum, s) => sum + (stageToCount.get(s.crmId ?? "") ?? 0), 0),
+    }))
+    funnelsRanked.sort((a, b) => {
+      // 1) prefer funnels where deals sit in stages
+      if (b.stageDeals !== a.stageDeals) return b.stageDeals - a.stageDeals
+      // 2) fallback to raw deal count
+      return b.f._count.deals - a.f._count.deals
+    })
+    funnel = funnelsRanked[0]?.f ?? funnels[0]
+  }
 
   const orderedStages = [...funnel.stages].sort((a, b) => a.order - b.order)
   // For period-aware totalDeals: count only deals matching the scope (period or live activity)
@@ -281,13 +305,25 @@ export async function getManagerRanking(
     },
   })
 
+  // Hide:
+  // 1) managers with no deals at all (system accounts, dormant users)
+  // 2) managers with sample <3 closed (WON+LOST <3) — "100% from 1 deal" is noise
+  const filtered = managers.filter((m) => {
+    const total = m.totalDeals ?? 0
+    const success = m.successDeals ?? 0
+    const closed = success + Math.max(0, total - success)
+    if (total === 0) return false
+    if (closed < 3 && (m.conversionRate ?? 0) === 100) return false
+    return true
+  })
+
   if (mode === "live") {
     const { getActiveManagerIds } = await import("@/lib/queries/active-window")
     const activeIds = await getActiveManagerIds(tenantId)
-    return managers.filter((m) => activeIds.has(m.id))
+    return filtered.filter((m) => activeIds.has(m.id))
   }
 
-  return managers
+  return filtered
 }
 
 interface InsightQuote {

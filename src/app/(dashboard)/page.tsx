@@ -148,7 +148,9 @@ export default async function DashboardPage({
       </Suspense>
 
       <Suspense>
-        <AiInsights insights={insights} />
+        <AiInsights
+          insights={insights.filter((i) => !i.title.startsWith("🔥RETRO_AUDIT"))}
+        />
       </Suspense>
 
       {mode === "live" && (

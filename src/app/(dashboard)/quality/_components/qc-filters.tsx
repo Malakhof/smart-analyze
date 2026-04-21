@@ -263,7 +263,7 @@ export function QcFilters({ categories, tags, managers, scriptItems, hideManager
         <label className="mb-2 block text-[13px] font-semibold text-text-primary">
           Период
         </label>
-        <div className="inline-flex gap-0.5 rounded-[10px] bg-surface-2 p-[3px]">
+        <div className="flex w-full gap-0.5 rounded-[10px] bg-surface-2 p-[3px]">
           {PERIODS.map((p) => (
             <button
               key={p.value}
@@ -278,7 +278,7 @@ export function QcFilters({ categories, tags, managers, scriptItems, hideManager
                   }
                 })
               }
-              className={`cursor-pointer rounded-[6px] border-none px-3 py-[5px] text-[12px] font-medium transition-all duration-[0.18s] ${
+              className={`flex-1 cursor-pointer rounded-[6px] border-none px-1.5 py-[5px] text-[11.5px] font-medium transition-all duration-[0.18s] ${
                 period === p.value
                   ? "bg-surface-4 text-text-primary shadow-[0_1px_2px_rgba(0,0,0,0.06)] dark:shadow-none"
                   : "bg-transparent text-text-tertiary hover:text-text-secondary"

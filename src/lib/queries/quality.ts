@@ -1106,7 +1106,7 @@ async function buildCrmDealUrl(
       const host = config.subdomain.includes(".")
         ? config.subdomain
         : `${config.subdomain}.getcourse.ru`
-      return `https://${host}/pl/sales/control/deal/update/id/${crmId}`
+      return `https://${host}/sales/control/deal/update/id/${crmId}`
     }
     default:
       return null

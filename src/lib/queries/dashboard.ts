@@ -1,6 +1,8 @@
 import { db } from "@/lib/db"
+import { dealActivityWhere, liveWindowStart } from "@/lib/queries/active-window"
 
 export type Period = "day" | "week" | "month" | "quarter" | "all"
+export type QueryMode = "live" | "all"
 
 /**
  * Global analytics floor — sales data older than this is never shown or analyzed.
@@ -33,13 +35,22 @@ export function periodToCutoff(period: Period | undefined | null): Date {
   return c.getTime() > ANALYTICS_FLOOR_DATE.getTime() ? c : ANALYTICS_FLOOR_DATE
 }
 
-export async function getDashboardStats(tenantId: string, period?: Period) {
-  const cutoff = periodToCutoff(period)
-  const dateFilter = { createdAt: { gte: cutoff } }
+export async function getDashboardStats(
+  tenantId: string,
+  period?: Period,
+  mode: QueryMode = "all"
+) {
+  // In LIVE mode: skip Deal.createdAt cutoff (broken for diva — equals sync date)
+  // and instead require recent Message OR CallRecord activity in the window.
+  const baseWhere =
+    mode === "live"
+      ? { tenantId, ...dealActivityWhere() }
+      : { tenantId, createdAt: { gte: periodToCutoff(period) } }
+
   const [totalDeals, wonDeals, lostDeals] = await Promise.all([
-    db.deal.count({ where: { tenantId, ...dateFilter } }),
-    db.deal.findMany({ where: { tenantId, status: "WON", ...dateFilter } }),
-    db.deal.findMany({ where: { tenantId, status: "LOST", ...dateFilter } }),
+    db.deal.count({ where: baseWhere }),
+    db.deal.findMany({ where: { ...baseWhere, status: "WON" } }),
+    db.deal.findMany({ where: { ...baseWhere, status: "LOST" } }),
   ])
 
   const wonCount = wonDeals.length
@@ -96,9 +107,14 @@ export async function getDashboardStats(tenantId: string, period?: Period) {
 export async function getFunnelData(
   tenantId: string,
   funnelId?: string,
-  period?: Period
+  period?: Period,
+  mode: QueryMode = "all"
 ) {
-  const cutoff = periodToCutoff(period)
+  // In LIVE mode: replace Deal.createdAt cutoff with "had Message OR CallRecord activity in window".
+  const dealScopeWhere =
+    mode === "live"
+      ? dealActivityWhere()
+      : { createdAt: { gte: periodToCutoff(period) } }
   // Pick the funnel that ACTUALLY has the most deals attached, not just first by id.
   // Avoids showing a near-empty funnel when client has 8 funnels but only 1 active.
   const funnels = await db.funnel.findMany({
@@ -118,9 +134,9 @@ export async function getFunnelData(
     [...funnels].sort((a, b) => b._count.deals - a._count.deals)[0]
 
   const orderedStages = [...funnel.stages].sort((a, b) => a.order - b.order)
-  // For period-aware totalDeals: count only deals created within cutoff
+  // For period-aware totalDeals: count only deals matching the scope (period or live activity)
   const totalDeals = await db.deal.count({
-    where: { tenantId, funnelId: funnel.id, createdAt: { gte: cutoff } },
+    where: { tenantId, funnelId: funnel.id, ...dealScopeWhere },
   })
 
   const stagesWithData = await Promise.all(
@@ -136,7 +152,7 @@ export async function getFunnelData(
         db.dealStageHistory.findMany({
           where: {
             stageId: stage.id,
-            deal: { createdAt: { gte: cutoff } },
+            deal: dealScopeWhere,
           },
           select: { dealId: true },
           distinct: ["dealId"],
@@ -146,7 +162,7 @@ export async function getFunnelData(
             tenantId,
             funnelId: funnel.id,
             currentStageCrmId: { in: futureStageCrmIds },
-            createdAt: { gte: cutoff },
+            ...dealScopeWhere,
           },
           select: { id: true },
         }),
@@ -245,7 +261,10 @@ export async function getFunnelList(
   }))
 }
 
-export async function getManagerRanking(tenantId: string) {
+export async function getManagerRanking(
+  tenantId: string,
+  mode: QueryMode = "all"
+) {
   const managers = await db.manager.findMany({
     where: { tenantId },
     orderBy: { conversionRate: "desc" },
@@ -261,6 +280,12 @@ export async function getManagerRanking(tenantId: string) {
       status: true,
     },
   })
+
+  if (mode === "live") {
+    const { getActiveManagerIds } = await import("@/lib/queries/active-window")
+    const activeIds = await getActiveManagerIds(tenantId)
+    return managers.filter((m) => activeIds.has(m.id))
+  }
 
   return managers
 }
@@ -285,10 +310,17 @@ export interface InsightWithDetails {
 }
 
 export async function getInsights(
-  tenantId: string
+  tenantId: string,
+  mode: QueryMode = "all"
 ): Promise<InsightWithDetails[]> {
+  // Insights themselves don't have activity timestamps — in LIVE mode we restrict
+  // to insights created in the last window (proxy for "fresh insights").
+  const insightWhere =
+    mode === "live"
+      ? { tenantId, createdAt: { gte: liveWindowStart() } }
+      : { tenantId }
   const insights = await db.insight.findMany({
-    where: { tenantId },
+    where: insightWhere,
     orderBy: { createdAt: "desc" },
   })
 
@@ -373,15 +405,29 @@ export interface DailyConversion {
 
 export async function getDailyConversion(
   tenantId: string,
-  period?: Period
+  period?: Period,
+  mode: QueryMode = "all"
 ): Promise<DailyConversion[]> {
-  const cutoff = periodToCutoff(period)
+  // closedAt is filled by sync at close time and is reliable, but for LIVE mode
+  // we narrow to the live window AND require deal-level activity in window.
+  const closedAtCutoff =
+    mode === "live" ? liveWindowStart() : periodToCutoff(period)
+  const closedStatuses: ("WON" | "LOST")[] = ["WON", "LOST"]
+  const dealWhere =
+    mode === "live"
+      ? {
+          tenantId,
+          status: { in: closedStatuses },
+          closedAt: { gte: closedAtCutoff },
+          ...dealActivityWhere(),
+        }
+      : {
+          tenantId,
+          status: { in: closedStatuses },
+          closedAt: { gte: closedAtCutoff },
+        }
   const deals = await db.deal.findMany({
-    where: {
-      tenantId,
-      status: { in: ["WON", "LOST"] },
-      closedAt: { gte: cutoff },
-    },
+    where: dealWhere,
     select: {
       status: true,
       closedAt: true,

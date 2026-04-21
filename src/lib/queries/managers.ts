@@ -1,4 +1,7 @@
 import { db } from "@/lib/db"
+import { getActiveManagerIds } from "@/lib/queries/active-window"
+
+export type ManagersQueryMode = "live" | "all"
 
 export interface ManagerListItem {
   id: string
@@ -19,11 +22,14 @@ export interface ManagersSummary {
   critical: number
 }
 
-export async function getManagersList(tenantId: string): Promise<{
+export async function getManagersList(
+  tenantId: string,
+  mode: ManagersQueryMode = "all"
+): Promise<{
   managers: ManagerListItem[]
   summary: ManagersSummary
 }> {
-  const managers = await db.manager.findMany({
+  const allManagers = await db.manager.findMany({
     where: { tenantId },
     orderBy: { conversionRate: "desc" },
     select: {
@@ -38,6 +44,16 @@ export async function getManagersList(tenantId: string): Promise<{
       status: true,
     },
   })
+
+  // In LIVE mode: keep only managers with calls/messages activity in window.
+  // Summary counts always reflect the post-filter list shown to the user.
+  const managers =
+    mode === "live"
+      ? await (async () => {
+          const activeIds = await getActiveManagerIds(tenantId)
+          return allManagers.filter((m) => activeIds.has(m.id))
+        })()
+      : allManagers
 
   const summary: ManagersSummary = {
     total: managers.length,

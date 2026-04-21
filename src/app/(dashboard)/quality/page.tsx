@@ -20,11 +20,11 @@ import { QcFilters } from "./_components/qc-filters"
 export default async function QualityPage() {
   const tenantId = await requireTenantId()
   const [dashboard, filters, charts, graphs, recent] = await Promise.all([
-    getQualityDashboard(tenantId),
+    getQualityDashboard(tenantId, "live"),
     getQcFilterOptions(tenantId),
-    getQcChartData(tenantId),
-    getQcGraphData(tenantId),
-    getRecentCallsEnhanced(tenantId, 20),
+    getQcChartData(tenantId, "live"),
+    getQcGraphData(tenantId, "live"),
+    getRecentCallsEnhanced(tenantId, 20, "live"),
   ])
 
   return (
@@ -35,7 +35,9 @@ export default async function QualityPage() {
             Контроль качества
           </h1>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            {dashboard.totalCalls} {callsWord(dashboard.totalCalls)} проанализировано
+            Только звонки с расшифровкой за последние 7 дней —{" "}
+            {dashboard.totalCalls} {callsWord(dashboard.totalCalls)}{" "}
+            проанализировано
           </p>
         </div>
         <AiBadge text="AI оценка" />

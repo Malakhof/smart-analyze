@@ -9,10 +9,8 @@ import {
   getManagerRanking,
   getInsights,
   getDailyConversion,
-  getDealStatSnapshot,
   getDuplicateStats,
 } from "@/lib/queries/dashboard"
-import { PeriodFilter } from "./_components/period-filter"
 import { FunnelChart } from "./_components/funnel-chart"
 import { SuccessFailCards } from "./_components/success-fail-cards"
 import { RevenuePotential } from "./_components/revenue-potential"
@@ -20,42 +18,49 @@ import { KeyMetrics } from "./_components/key-metrics"
 import { ConversionChart } from "./_components/conversion-chart"
 import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
-import { DealStatSnapshotWidget } from "./_components/dealstat-snapshot"
 import { DuplicateBadge } from "./_components/duplicate-badge"
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ funnel?: string; period?: string }>
+  searchParams?: Promise<{ funnel?: string }>
 }) {
   const tenantId = await requireTenantId()
   const sp = (await searchParams) ?? {}
   const selectedFunnelId = sp.funnel
-  const period = (sp.period ?? "all") as
-    | "day"
-    | "week"
-    | "month"
-    | "quarter"
-    | "all"
 
-  const [stats, funnels, funnel, managers, insights, daily, dealStat, dupes] =
+  const [stats, funnels, funnel, managers, insights, daily, dupes] =
     await Promise.all([
-      getDashboardStats(tenantId, period),
+      getDashboardStats(tenantId, undefined, "live"),
       getFunnelList(tenantId),
-      getFunnelData(tenantId, selectedFunnelId, period),
-      getManagerRanking(tenantId),
-      getInsights(tenantId),
-      getDailyConversion(tenantId, period),
-      getDealStatSnapshot(tenantId),
+      getFunnelData(tenantId, selectedFunnelId, undefined, "live"),
+      getManagerRanking(tenantId, "live"),
+      getInsights(tenantId, "live"),
+      getDailyConversion(tenantId, undefined, "live"),
       getDuplicateStats(tenantId),
     ])
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodFilter totalDeals={stats.totalDeals} />
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
+            Оперативный режим
+          </h1>
+          <p className="mt-1 text-[13px] text-text-tertiary">
+            Последние 7 дней по реальной активности менеджеров (звонки и
+            сообщения). Историческую картину смотри в{" "}
+            <a
+              href="/retro"
+              className="underline decoration-border-default underline-offset-2 hover:text-text-secondary"
+            >
+              Ретро аудите
+            </a>
+            .
+          </p>
+        </div>
         <DuplicateBadge stats={dupes} />
-      </div>
+      </header>
 
       <Suspense>
         <KeyMetrics
@@ -65,12 +70,6 @@ export default async function DashboardPage({
           avgTime={stats.avgTime}
         />
       </Suspense>
-
-      {dealStat && (
-        <Suspense>
-          <DealStatSnapshotWidget snapshot={dealStat} />
-        </Suspense>
-      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Suspense>
@@ -113,16 +112,10 @@ export default async function DashboardPage({
       </Suspense>
 
       <div className="mt-6 border-t border-border-default pt-3 text-[11px] text-text-muted">
-        Аналитика ведётся с 01.01.2025. Сделки старше этой даты есть в базе, но
-        не показываются и не анализируются ИИ — экономим ресурсы на актуальной
-        работе.
-        {dealStat?.source === "getcourse:dealstat" && (
-          <span className="mt-1 block text-status-amber/70">
-            ⚠ Для GetCourse: фильтр периода пока работает приблизительно (даты
-            создания сделок берём из времени синхронизации, не из CRM —
-            доработаем). Используйте «Все время» для полной картины.
-          </span>
-        )}
+        В оперативном режиме показываются только сделки с активностью (звонок
+        или сообщение) за последние 7 дней — это исключает «шум» исторических
+        данных. Полную картину за 90 дней с накопленной аналитикой смотри на
+        странице «Ретро аудит».
       </div>
     </div>
   )

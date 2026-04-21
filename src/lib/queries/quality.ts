@@ -1,5 +1,7 @@
 import { db } from "@/lib/db"
+import { liveWindowStart } from "@/lib/queries/active-window"
 
+export type QcQueryMode = "live" | "all"
 
 export interface QcManagerRow {
   id: string
@@ -37,11 +39,24 @@ const QC_FILTER = {
   transcript: { not: null },
 }
 
+/** Build call-record where clause respecting LIVE window. Keeps QC_FILTER intact. */
+function qcCallWhere(tenantId: string, mode: QcQueryMode) {
+  if (mode === "live") {
+    return {
+      tenantId,
+      ...QC_FILTER,
+      createdAt: { gte: liveWindowStart() },
+    }
+  }
+  return { tenantId, ...QC_FILTER }
+}
+
 export async function getQualityDashboard(
-  tenantId: string
+  tenantId: string,
+  mode: QcQueryMode = "all"
 ): Promise<QcDashboardData> {
   const calls = await db.callRecord.findMany({
-    where: { tenantId, ...QC_FILTER },
+    where: qcCallWhere(tenantId, mode),
     include: {
       manager: { select: { id: true, name: true } },
       score: {
@@ -341,10 +356,11 @@ const CATEGORY_COLORS = ["#3B82F6", "#F59E0B", "#10B981", "#8B5CF6", "#EC4899"]
 const TAG_COLORS = ["#EF4444", "#DC2626", "#B91C1C", "#991B1B", "#7F1D1D"]
 
 export async function getQcChartData(
-  tenantId: string
+  tenantId: string,
+  mode: QcQueryMode = "all"
 ): Promise<QcChartData> {
   const calls = await db.callRecord.findMany({
-    where: { tenantId, ...QC_FILTER },
+    where: qcCallWhere(tenantId, mode),
     include: {
       manager: { select: { id: true, name: true } },
       score: true,
@@ -495,8 +511,11 @@ export interface QcGraphData {
 }
 
 export async function getQcGraphData(
-  tenantId: string
+  tenantId: string,
+  mode: QcQueryMode = "all"
 ): Promise<QcGraphData> {
+  // In LIVE mode: only include score items belonging to calls created in the window.
+  const since = mode === "live" ? liveWindowStart() : null
   // Get all script items for this tenant (active script)
   const scriptItems = await db.scriptItem.findMany({
     where: { script: { tenantId, isActive: true } },
@@ -505,7 +524,7 @@ export async function getQcGraphData(
         include: {
           callScore: {
             include: {
-              callRecord: { select: { tenantId: true } },
+              callRecord: { select: { tenantId: true, createdAt: true } },
             },
           },
         },
@@ -516,9 +535,11 @@ export async function getQcGraphData(
 
   // Compliance by step: % of calls where isDone=true for each script item
   const complianceByStep: QcComplianceStep[] = scriptItems.map((si) => {
-    const relevantItems = si.scoreItems.filter(
-      (item) => item.callScore.callRecord.tenantId === tenantId
-    )
+    const relevantItems = si.scoreItems.filter((item) => {
+      if (item.callScore.callRecord.tenantId !== tenantId) return false
+      if (since && item.callScore.callRecord.createdAt < since) return false
+      return true
+    })
     const total = relevantItems.length
     const done = relevantItems.filter((item) => item.isDone).length
     const current = total > 0 ? Math.round((done / total) * 100) : 0
@@ -535,7 +556,12 @@ export async function getQcGraphData(
 
   // Score distribution: group totalScore into 10 buckets (0-10, 10-20, ..., 90-100)
   const callScores = await db.callScore.findMany({
-    where: { callRecord: { tenantId } },
+    where: {
+      callRecord:
+        mode === "live"
+          ? { tenantId, createdAt: { gte: liveWindowStart() } }
+          : { tenantId },
+    },
     select: { totalScore: true },
   })
 
@@ -581,10 +607,11 @@ export interface QcRecentCallEnhanced {
 
 export async function getRecentCallsEnhanced(
   tenantId: string,
-  limit = 20
+  limit = 20,
+  mode: QcQueryMode = "all"
 ): Promise<QcRecentCallEnhanced[]> {
   const calls = await db.callRecord.findMany({
-    where: { tenantId, ...QC_FILTER },
+    where: qcCallWhere(tenantId, mode),
     include: {
       manager: { select: { name: true } },
       score: {

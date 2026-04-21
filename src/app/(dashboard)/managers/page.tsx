@@ -6,7 +6,7 @@ import { ManagerCards } from "./_components/manager-cards"
 
 export default async function ManagersPage() {
   const tenantId = await requireTenantId()
-  const { managers, summary } = await getManagersList(tenantId)
+  const { managers, summary } = await getManagersList(tenantId, "live")
 
   return (
     <div className="space-y-6 p-6">
@@ -16,9 +16,9 @@ export default async function ManagersPage() {
             Менеджеры
           </h1>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            {summary.total} {managersWord(summary.total)} · отлично:{" "}
-            {summary.excellent} · наблюдение: {summary.watch} · критично:{" "}
-            {summary.critical}
+            {summary.total} {activeManagersWord(summary.total)} за 7 дней ·
+            отлично: {summary.excellent} · наблюдение: {summary.watch} ·
+            критично: {summary.critical}
           </p>
         </div>
       </header>
@@ -37,11 +37,11 @@ export default async function ManagersPage() {
   )
 }
 
-function managersWord(n: number): string {
+function activeManagersWord(n: number): string {
   const lastTwo = n % 100
   const lastOne = n % 10
-  if (lastTwo >= 11 && lastTwo <= 14) return "менеджеров"
-  if (lastOne === 1) return "менеджер"
-  if (lastOne >= 2 && lastOne <= 4) return "менеджера"
-  return "менеджеров"
+  if (lastTwo >= 11 && lastTwo <= 14) return "активных менеджеров"
+  if (lastOne === 1) return "активный менеджер"
+  if (lastOne >= 2 && lastOne <= 4) return "активных менеджера"
+  return "активных менеджеров"
 }

@@ -7,6 +7,7 @@ import { AiBadge } from "@/components/ai-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 const NAV_ITEMS = [
+  { label: "Ретро аудит", href: "/retro" },
   { label: "Главная", href: "/" },
   { label: "Менеджеры", href: "/managers" },
   { label: "Паттерны", href: "/patterns" },

@@ -127,17 +127,21 @@ export default async function DashboardPage({
         </Suspense>
       </div>
 
-      <Suspense>
-        <FunnelChart
-          stages={funnel}
-          funnels={funnels}
-          selectedFunnelId={selectedFunnelId}
-        />
-      </Suspense>
+      {mode !== "live" && (
+        <Suspense>
+          <FunnelChart
+            stages={funnel}
+            funnels={funnels}
+            selectedFunnelId={selectedFunnelId}
+          />
+        </Suspense>
+      )}
 
-      <Suspense>
-        <ConversionChart data={daily} />
-      </Suspense>
+      {mode !== "live" && (
+        <Suspense>
+          <ConversionChart data={daily} />
+        </Suspense>
+      )}
 
       <Suspense>
         <ManagerRatingTable managers={managers} />

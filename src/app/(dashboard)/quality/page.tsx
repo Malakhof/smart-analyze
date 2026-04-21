@@ -38,18 +38,44 @@ export default async function QualityPage(props: {
 
   return (
     <div className="space-y-6 p-6">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
-            Контроль качества
-          </h1>
-          <p className="mt-1 text-[13px] text-text-tertiary">
-            {mode === "live"
-              ? `Только звонки с расшифровкой за последние 7 дней — ${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`
-              : `${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`}
-          </p>
+      <header className="space-y-3">
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
+              Контроль качества
+            </h1>
+            <p className="mt-1 text-[13px] text-text-tertiary">
+              {mode === "live"
+                ? `Только звонки с расшифровкой за последние 7 дней — ${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`
+                : `${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`}
+            </p>
+          </div>
+          <AiBadge text="AI оценка" />
         </div>
-        <AiBadge text="AI оценка" />
+        <div className="rounded-[10px] border border-border-default bg-surface-1 p-4 text-[12.5px] leading-[1.65] text-text-secondary">
+          <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-text-primary">
+            Какие звонки попадают в анализ
+          </div>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              Тянем звонки из CRM-интеграции с телефонией (через amoCRM / GetCourse).
+              Синхронизация — ручная при запросе, auto-cron в разработке.
+            </li>
+            <li>
+              В анализ берутся только звонки с <strong>длительностью от 90 секунд</strong> —
+              служебные/недозвоны/автоответчики отфильтровываются.
+            </li>
+            <li>
+              Каждый звонок расшифровывается Whisper (ru, large-v3) со стерео-разделением
+              ролей «менеджер / клиент».
+            </li>
+            <li>
+              ИИ-агент оценивает каждый звонок по 8 критериям продаж (100-балльная шкала),
+              выставляет категорию, теги, рекомендацию. Все оценки кликабельны —
+              можно провалиться в конкретный звонок и проверить.
+            </li>
+          </ul>
+        </div>
       </header>
 
       {dashboard.totalCalls === 0 ? (

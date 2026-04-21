@@ -267,18 +267,20 @@ export async function getQualityDashboard(
     }
   }
 
-  const managers: QcManagerRow[] = Array.from(managerMap.values()).map((m) => ({
-    id: m.id,
-    name: m.name,
-    callCount: m.callCount,
-    avgScore:
-      m.scores.length > 0
-        ? m.scores.reduce((a, b) => a + b, 0) / m.scores.length
-        : 0,
-    bestScore: m.scores.length > 0 ? Math.max(...m.scores) : 0,
-    worstScore: m.scores.length > 0 ? Math.min(...m.scores) : 0,
-    criticalMisses: m.criticalMisses,
-  }))
+  const managers: QcManagerRow[] = Array.from(managerMap.values())
+    .filter((m) => m.callCount > 0) // hide managers with no calls in current window
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      callCount: m.callCount,
+      avgScore:
+        m.scores.length > 0
+          ? m.scores.reduce((a, b) => a + b, 0) / m.scores.length
+          : 0,
+      bestScore: m.scores.length > 0 ? Math.max(...m.scores) : 0,
+      worstScore: m.scores.length > 0 ? Math.min(...m.scores) : 0,
+      criticalMisses: m.criticalMisses,
+    }))
 
   managers.sort((a, b) => b.avgScore - a.avgScore)
 

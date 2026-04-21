@@ -45,9 +45,7 @@ export default async function QualityPage(props: {
               Контроль качества
             </h1>
             <p className="mt-1 text-[13px] text-text-tertiary">
-              {mode === "live"
-                ? `Только звонки с расшифровкой за последние 7 дней — ${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`
-                : `${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`}
+              {dashboard.totalCalls} {callsWord(dashboard.totalCalls)} проанализировано
             </p>
           </div>
           <AiBadge text="AI оценка" />

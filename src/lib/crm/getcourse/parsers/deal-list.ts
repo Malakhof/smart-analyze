@@ -18,9 +18,10 @@
  */
 
 export interface ParsedDeal {
-  crmId: string                  // data-deal-id (e.g. "829656601")
+  crmId: string                  // URL id from cell[0] href /sales/control/deal/update/id/{X} — this is what the deal page actually uses
+  gridKey: string | null         // data-deal-id attribute (Yii2 grid row key) — kept for legacy match during backfill
   clientUserId: string           // data-user-id (the buyer)
-  displayNumber: string | null   // human-friendly number (e.g. "2673743")
+  displayNumber: string | null   // human-friendly number (e.g. "2673743") — text inside cell[0] anchor
   title: string                  // "[Пришел] Вебинар "ПРЕО"..."
   amount: number | null          // 0, 1234.56
   amountCurrency: "RUB"          // GetCourse always RUB by default
@@ -79,16 +80,23 @@ export function parseDealList(html: string): ParsedDeal[] {
 
   let match: RegExpExecArray | null
   while ((match = rowRegex.exec(html)) !== null) {
-    const dealId = match[1]
+    const gridKey = match[1]
     const fullTagAndBody = html.slice(match.index, match.index + match[0].length)
     const userIdMatch = fullTagAndBody.match(/<tr\b[^>]*\bdata-user-id="(\d+)"/)
     const userId = userIdMatch ? userIdMatch[1] : ""
     const rowHtml = match[2]
 
     const cells = extractCells(rowHtml)
+    // The URL id is embedded in cell[0]'s anchor href:
+    //   <a href="/sales/control/deal/update/id/828629509">25428</a>
+    // That 828629509 is the real deal id used by GC; `data-deal-id` is a grid
+    // row key that happens to be a different number entirely.
+    const urlDealId = extractUrlDealId(cells[0] ?? "")
+    if (!urlDealId) continue
 
     deals.push({
-      crmId: dealId,
+      crmId: urlDealId,
+      gridKey,
       clientUserId: userId,
       displayNumber: parseDisplayNumber(cells[0] ?? ""),
       title: extractTitle(cells[3] ?? ""),
@@ -117,6 +125,11 @@ function extractCells(rowHtml: string): string[] {
 
 function parseDisplayNumber(cellHtml: string): string | null {
   const match = cellHtml.match(/>([\d]+)</)
+  return match ? match[1] : null
+}
+
+function extractUrlDealId(cellHtml: string): string | null {
+  const match = cellHtml.match(/\/sales\/control\/deal\/update\/id\/(\d+)/)
   return match ? match[1] : null
 }
 

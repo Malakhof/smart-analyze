@@ -111,7 +111,15 @@ export async function getManagerDetail(
       avgResponseTime: true,
       status: true,
       deals: {
-        where: { status: { in: ["WON", "LOST"] } },
+        where: {
+          status: { in: ["WON", "LOST"] },
+          // Exclude empty deals: amount=0 AND no messages AND no transcribed calls
+          OR: [
+            { amount: { gt: 0 } },
+            { messages: { some: {} } },
+            { callRecords: { some: { transcript: { not: null } } } },
+          ],
+        },
         include: {
           analysis: true,
           messages: { select: { id: true, content: true } },

@@ -3,6 +3,63 @@ import { getInsights, type InsightWithDetails } from "@/lib/queries/dashboard"
 import { getPatterns, type PatternData } from "@/lib/queries/patterns"
 import type { ManagerListItem } from "@/lib/queries/managers"
 
+const RETRO_TAG = "🔥RETRO_AUDIT"
+
+export interface RetroSectionInsights {
+  master: InsightWithDetails | null
+  duplicates: InsightWithDetails | null
+  deals: InsightWithDetails | null
+  calls: InsightWithDetails | null
+  messages: InsightWithDetails | null
+  transcripts: InsightWithDetails | null
+  callscores: InsightWithDetails | null
+}
+
+/**
+ * Extract per-section AI summaries that diva-retro-deep.ts wrote into Insight
+ * table prefixed with TAG="🔥RETRO_AUDIT". Returns one insight per section
+ * matched by emoji prefix in title.
+ */
+export async function getRetroSectionInsights(
+  tenantId: string
+): Promise<RetroSectionInsights> {
+  const all = await getInsights(tenantId)
+  const tagged = all.filter((i) => i.title.startsWith(RETRO_TAG))
+  const findByEmoji = (emoji: string): InsightWithDetails | null =>
+    tagged.find((i) => i.title.includes(emoji)) ?? null
+
+  return {
+    master: findByEmoji("📋"),
+    duplicates: findByEmoji("🔁"),
+    deals: findByEmoji("📊"),
+    calls: findByEmoji("📞"),
+    messages: findByEmoji("💬 Сообщения"),
+    transcripts: findByEmoji("🎯"),
+    callscores: findByEmoji("⭐"),
+  }
+}
+
+/** Top insights EXCLUDING the retro-tagged ones (those are shown separately). */
+export async function getRetroNonTaggedInsights(
+  tenantId: string,
+  limit = 6
+): Promise<InsightWithDetails[]> {
+  const all = await getInsights(tenantId)
+  const untagged = all.filter((i) => !i.title.startsWith(RETRO_TAG))
+  const ranked = [...untagged].sort((a, b) => {
+    const aScore =
+      a.deals.length * 10 +
+      a.quotes.length * 3 +
+      (a.type === "SUCCESS_INSIGHT" ? 1 : 0)
+    const bScore =
+      b.deals.length * 10 +
+      b.quotes.length * 3 +
+      (b.type === "SUCCESS_INSIGHT" ? 1 : 0)
+    return bScore - aScore
+  })
+  return ranked.slice(0, limit)
+}
+
 /**
  * /retro endpoint = "wow audit" of everything we've ever ingested for this tenant.
  * No period filter — always all-time. Pages that need live 7-day windows live

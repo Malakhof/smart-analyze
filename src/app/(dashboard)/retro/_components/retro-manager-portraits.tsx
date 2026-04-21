@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { fmtMoney, fmtPercent, fmtDays } from "@/lib/format"
 import type { RetroManagerPortrait } from "@/lib/queries/retro"
 
@@ -143,20 +144,16 @@ function PortraitCard({ m }: { m: RetroManagerPortrait }) {
         <Metric label="Ср. чек" value={fmtMoney(avgVal)} />
       </div>
 
-      <p className="text-[12px] leading-[1.6] text-text-secondary">
-        <span className="font-semibold text-text-primary">{m.name}</span> закрыл{" "}
-        <span className="font-semibold text-text-primary">{success}</span> из{" "}
-        <span className="font-semibold text-text-primary">{total}</span> сделок.
-        Средний чек{" "}
-        <span className="font-semibold text-text-primary">
-          {fmtMoney(avgVal)}
-        </span>
-        . Время цикла{" "}
-        <span className="font-semibold text-text-primary">
-          {fmtDays(avgTime)}
-        </span>
-        .
+      <p className="text-[12.5px] leading-[1.6] text-text-secondary">
+        {m.reason}
       </p>
+
+      <Link
+        href={`/managers/${m.id}`}
+        className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-status-purple hover:underline"
+      >
+        Открыть полный портрет →
+      </Link>
     </div>
   )
 }

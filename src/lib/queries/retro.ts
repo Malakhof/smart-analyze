@@ -171,12 +171,15 @@ export async function getRetroTopInsights(
 
 export interface RetroManagerPortrait extends ManagerListItem {
   bucket: "best" | "middle" | "worst"
+  reason: string
 }
 
 /**
- * Pick a 6-portrait spread: 2 best, 2 middle, 2 worst by conversionRate.
- * If we have <=6 managers with deals, return all of them as-is bucketed
- * crudely (top third best, middle third middle, bottom third worst).
+ * Return ALL managers with deals, bucketed by performance:
+ * - best: top tercile by conversionRate
+ * - middle: middle tercile
+ * - worst: bottom tercile
+ * Each gets a `reason` string explaining why they fall there based on metrics.
  */
 export async function getRetroManagerPortraits(
   tenantId: string
@@ -199,36 +202,98 @@ export async function getRetroManagerPortraits(
 
   if (managers.length === 0) return []
 
-  if (managers.length <= 6) {
-    // Few enough that we just show them all; bucket by terciles.
-    const third = Math.max(1, Math.ceil(managers.length / 3))
-    return managers.map((m, i) => ({
+  const total = managers.length
+  const third = Math.max(1, Math.ceil(total / 3))
+
+  // compute team averages for context
+  const teamAvgConv =
+    managers.reduce((s, m) => s + (m.conversionRate ?? 0), 0) / total
+  const teamAvgCheck =
+    managers.reduce((s, m) => s + (m.avgDealValue ?? 0), 0) / total
+
+  return managers.map((m, i) => {
+    const bucket =
+      i < third
+        ? ("best" as const)
+        : i < third * 2
+          ? ("middle" as const)
+          : ("worst" as const)
+    return {
       ...m,
-      bucket:
-        i < third
-          ? ("best" as const)
-          : i < third * 2
-            ? ("middle" as const)
-            : ("worst" as const),
-    }))
+      bucket,
+      reason: buildManagerReason(m, bucket, teamAvgConv, teamAvgCheck),
+    }
+  })
+}
+
+function buildManagerReason(
+  m: {
+    conversionRate: number | null
+    totalDeals: number | null
+    successDeals: number | null
+    avgDealValue: number | null
+    avgDealTime: number | null
+  },
+  bucket: "best" | "middle" | "worst",
+  teamAvgConv: number,
+  teamAvgCheck: number
+): string {
+  const conv = m.conversionRate ?? 0
+  const total = m.totalDeals ?? 0
+  const success = m.successDeals ?? 0
+  const lost = Math.max(0, total - success)
+  const avgVal = m.avgDealValue ?? 0
+  const avgTime = m.avgDealTime ?? 0
+
+  const reasons: string[] = []
+
+  if (bucket === "best") {
+    if (conv > teamAvgConv * 1.5) {
+      reasons.push(
+        `Конверсия ${conv.toFixed(1)}% — выше команды (среднее ${teamAvgConv.toFixed(1)}%) почти в ${(conv / Math.max(teamAvgConv, 1)).toFixed(1)}x`
+      )
+    } else {
+      reasons.push(`Конверсия ${conv.toFixed(1)}% — выше среднего по команде`)
+    }
+    if (avgVal > teamAvgCheck * 1.3) {
+      reasons.push(`Средний чек ${Math.round(avgVal).toLocaleString("ru-RU")}₽ — работает с дорогими сделками`)
+    }
+    reasons.push(
+      `Закрыл ${success} из ${total} сделок. ${total < 5 ? "Маленькая выборка — нужно подтвердить на объёме." : "Стабильная работа."}`
+    )
+  } else if (bucket === "worst") {
+    if (total >= 10 && conv < 10) {
+      reasons.push(
+        `Низкая конверсия ${conv.toFixed(1)}% при ${total} сделках — это не случайность, а паттерн`
+      )
+    } else if (total < 5) {
+      reasons.push(
+        `Всего ${total} сделок — мало данных. Возможно новичок или редко работает с клиентами`
+      )
+    } else {
+      reasons.push(
+        `${success} закрытых из ${total} — стабильно ниже команды (среднее ${teamAvgConv.toFixed(1)}%)`
+      )
+    }
+    if (lost > 5) {
+      reasons.push(`${lost} проигранных сделок — есть на чём учить разбор объекций`)
+    }
+    reasons.push(`Что делать: послушать топ-3 проигранных звонка, разобрать с РОПом`)
+  } else {
+    reasons.push(
+      `Конверсия ${conv.toFixed(1)}% — на уровне команды. ${success} из ${total} сделок`
+    )
+    if (avgVal > 0) {
+      reasons.push(`Средний чек ${Math.round(avgVal).toLocaleString("ru-RU")}₽`)
+    }
+    reasons.push(`Стабильный исполнитель — потенциал роста через копирование топов`)
   }
 
-  const best = managers.slice(0, 2).map((m) => ({
-    ...m,
-    bucket: "best" as const,
-  }))
-  const worst = managers.slice(-2).map((m) => ({
-    ...m,
-    bucket: "worst" as const,
-  }))
-  // Middle 2: take from the geometric middle so we skip near-best / near-worst.
-  const midStart = Math.floor((managers.length - 2) / 2)
-  const middle = managers.slice(midStart, midStart + 2).map((m) => ({
-    ...m,
-    bucket: "middle" as const,
-  }))
+  if (avgTime > 0) {
+    reasons.push(`Цикл сделки: ${avgTime.toFixed(1)} дн`)
+  }
 
-  return [...best, ...middle, ...worst]
+  return reasons.join(". ")
 }
 
 export async function getRetroPatterns(

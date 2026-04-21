@@ -140,9 +140,17 @@ export async function getManagerDetail(
 
   if (!manager) return null
 
-  // Fetch all deals (including OPEN) for the deals list
+  // Fetch deals — exclude empty/test ones (amount=0 OR title-only webinar regs).
+  // Only show deals with amount > 0 OR with content (messages/calls).
   const allDealsRaw = await db.deal.findMany({
-    where: { managerId },
+    where: {
+      managerId,
+      OR: [
+        { amount: { gt: 0 } },
+        { messages: { some: {} } },
+        { callRecords: { some: { transcript: { not: null } } } },
+      ],
+    },
     select: {
       id: true,
       crmId: true,

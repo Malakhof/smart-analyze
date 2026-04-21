@@ -1,5 +1,4 @@
 import { requireTenantId } from "@/lib/auth"
-import { getDealStatSnapshot } from "@/lib/queries/dashboard"
 import {
   getRetroVolume,
   getRetroNonTaggedInsights,
@@ -7,12 +6,10 @@ import {
   getRetroManagerPortraits,
   getRetroPatterns,
 } from "@/lib/queries/retro"
-import { DealStatSnapshotWidget } from "@/app/(dashboard)/_components/dealstat-snapshot"
+import { AiInsights } from "@/app/(dashboard)/_components/ai-insights"
 import { RetroSection } from "./_components/retro-section"
 import { RetroHero } from "./_components/retro-hero"
-import { RetroSectionInsight } from "./_components/retro-section-insight"
 import { RetroMasterInsight } from "./_components/retro-master-insight"
-import { RetroInsightsTop } from "./_components/retro-insights-top"
 import { RetroManagerPortraits } from "./_components/retro-manager-portraits"
 import { RetroPatterns } from "./_components/retro-patterns"
 
@@ -21,15 +18,24 @@ export const dynamic = "force-dynamic"
 export default async function RetroPage() {
   const tenantId = await requireTenantId()
 
-  const [volume, sectionInsights, otherInsights, managers, patterns, dealStat] =
+  const [volume, sectionInsights, otherInsights, managers, patterns] =
     await Promise.all([
       getRetroVolume(tenantId),
       getRetroSectionInsights(tenantId),
-      getRetroNonTaggedInsights(tenantId, 6),
+      getRetroNonTaggedInsights(tenantId, 10),
       getRetroManagerPortraits(tenantId),
       getRetroPatterns(tenantId, 9),
-      getDealStatSnapshot(tenantId),
     ])
+
+  // Combine all retro-tagged insights (except master) into single accordion
+  const sectionList = [
+    sectionInsights.duplicates,
+    sectionInsights.deals,
+    sectionInsights.calls,
+    sectionInsights.messages,
+    sectionInsights.transcripts,
+    sectionInsights.callscores,
+  ].filter((i): i is NonNullable<typeof i> => i !== null)
 
   return (
     <div className="p-6">
@@ -42,81 +48,29 @@ export default async function RetroPage() {
         </p>
       </header>
 
-      {/* Master summary FIRST — главный вывод аудита */}
+      {/* 1. Hero — 6 цифр (объём работы) */}
+      <div className="mt-6">
+        <RetroHero volume={volume} />
+      </div>
+
+      {/* 2. Master summary — главный вывод аудита */}
       {sectionInsights.master && (
-        <div className="mt-6">
+        <div className="mt-8">
           <RetroMasterInsight insight={sectionInsights.master} />
         </div>
       )}
 
-      {/* Hero — 6 huge tiles */}
-      <div className="mt-8">
-        <RetroHero volume={volume} />
-      </div>
+      {/* 3. Аккордеон AI Insight по отделу — Retro */}
+      {sectionList.length > 0 && (
+        <RetroSection
+          title="🤖 Аналитика по разделам"
+          subtitle="AI-вывод под каждой большой цифрой — кликни чтобы развернуть"
+        >
+          <AiInsights insights={sectionList} />
+        </RetroSection>
+      )}
 
-      {/* Per-section AI summaries */}
-      <RetroSection
-        title="📊 Сделки"
-        subtitle={`${volume.dealsTotal.toLocaleString("ru-RU")} карточек обработано — что мы об этом думаем`}
-      >
-        <RetroSectionInsight
-          insight={sectionInsights.deals}
-          fallback="Анализ сделок ещё не сгенерирован"
-        />
-      </RetroSection>
-
-      {/* Дубли клиентов — отдельный жирный блок */}
-      <RetroSection
-        title="🔁 Дубли клиентов — главный источник шума"
-        subtitle="Один клиент = много карточек в разных воронках. Эту боль вы хотели увидеть"
-      >
-        <RetroSectionInsight
-          insight={sectionInsights.duplicates}
-          fallback="Анализ дублей ещё не сгенерирован"
-        />
-      </RetroSection>
-
-      <RetroSection
-        title="📞 Звонки"
-        subtitle={`${volume.calls.toLocaleString("ru-RU")} звонков, ${volume.transcripts} расшифровано`}
-      >
-        <RetroSectionInsight
-          insight={sectionInsights.calls}
-          fallback="Анализ звонков ещё не сгенерирован"
-        />
-      </RetroSection>
-
-      <RetroSection
-        title="💬 Сообщения и переписки"
-        subtitle={`${volume.messagesTotal.toLocaleString("ru-RU")} сообщений (${volume.messagesByRole.client.toLocaleString("ru-RU")} от клиентов / ${volume.messagesByRole.manager.toLocaleString("ru-RU")} от менеджеров)`}
-      >
-        <RetroSectionInsight
-          insight={sectionInsights.messages}
-          fallback="Анализ переписок ещё не сгенерирован"
-        />
-      </RetroSection>
-
-      <RetroSection
-        title="🎯 Расшифровки звонков"
-        subtitle={`Разобрано ${volume.transcripts} разговоров — общая характеристика стиля`}
-      >
-        <RetroSectionInsight
-          insight={sectionInsights.transcripts}
-          fallback="Анализ расшифровок ещё не сгенерирован"
-        />
-      </RetroSection>
-
-      <RetroSection
-        title="⭐ Оценки качества звонков (100-балльная)"
-        subtitle={`${volume.callScores} звонков оценено по 8 критериям продаж`}
-      >
-        <RetroSectionInsight
-          insight={sectionInsights.callscores}
-          fallback="Оценки ещё не сгенерированы"
-        />
-      </RetroSection>
-
-      {/* Менеджеры — все портреты */}
+      {/* 4. Менеджеры — все портреты */}
       <RetroSection
         title="👥 Портреты менеджеров"
         subtitle="Лидеры, середняки и те, кому нужна помощь"
@@ -124,33 +78,23 @@ export default async function RetroPage() {
         <RetroManagerPortraits managers={managers} />
       </RetroSection>
 
-      {/* Прочие insights (без ретро-тега) */}
+      {/* 5. Дополнительные находки (insights без ретро-тега) */}
       {otherInsights.length > 0 && (
         <RetroSection
           title="💎 Дополнительные находки"
-          subtitle="Конкретные сделки и фразы, найденные AI"
+          subtitle="Конкретные сделки, фразы и паттерны, найденные AI"
         >
-          <RetroInsightsTop insights={otherInsights} />
+          <AiInsights insights={otherInsights} />
         </RetroSection>
       )}
 
-      {/* Паттерны — компактно */}
+      {/* 6. Паттерны 90 дней — компактно */}
       <RetroSection
-        title="🔄 Паттерны поведения"
-        subtitle={`${patterns.length} закономерностей в общении с клиентами`}
+        title="🔄 Паттерны за 90 дней"
+        subtitle={`${patterns.length} повторяющихся закономерностей в общении с клиентами`}
       >
         <RetroPatterns patterns={patterns} />
       </RetroSection>
-
-      {/* CRM raw stats внизу */}
-      {dealStat && (
-        <RetroSection
-          title="📈 Финансы по данным CRM (raw)"
-          subtitle="Pre-aggregated отчёт из GetCourse — для сравнения с нашим анализом"
-        >
-          <DealStatSnapshotWidget snapshot={dealStat} />
-        </RetroSection>
-      )}
     </div>
   )
 }

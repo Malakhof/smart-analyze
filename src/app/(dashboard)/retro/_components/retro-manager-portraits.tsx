@@ -29,20 +29,27 @@ const STATUS_BADGE: Record<
   { label: string; bg: string; text: string }
 > = {
   EXCELLENT: {
-    label: "EXCELLENT",
+    label: "ЛИДЕР",
     bg: "bg-status-green-dim",
     text: "text-status-green",
   },
   WATCH: {
-    label: "WATCH",
+    label: "СТАБИЛЬНО",
     bg: "bg-status-amber-dim",
     text: "text-status-amber",
   },
   CRITICAL: {
-    label: "CRITICAL",
+    label: "НУЖНА ПОМОЩЬ",
     bg: "bg-status-red-dim",
     text: "text-status-red",
   },
+}
+
+/** Map bucket to status — guarantees consistency with the bucket badge above. */
+const BUCKET_TO_STATUS: Record<RetroManagerPortrait["bucket"], string> = {
+  best: "EXCELLENT",
+  middle: "WATCH",
+  worst: "CRITICAL",
 }
 
 function getInitials(name: string): string {
@@ -102,7 +109,9 @@ export function RetroManagerPortraits({
 }
 
 function PortraitCard({ m }: { m: RetroManagerPortrait }) {
-  const status = m.status ? STATUS_BADGE[m.status] : null
+  // Always derive status from bucket — ignore stale m.status to avoid
+  // contradictions like "CRITICAL in 🏆 Лидеры" or "NO STATUS" gaps.
+  const status = STATUS_BADGE[BUCKET_TO_STATUS[m.bucket]]
   const conv = m.conversionRate ?? 0
   const total = m.totalDeals ?? 0
   const success = m.successDeals ?? 0
@@ -122,17 +131,11 @@ function PortraitCard({ m }: { m: RetroManagerPortrait }) {
             <div className="truncate text-[15px] font-semibold text-text-primary">
               {m.name}
             </div>
-            {status ? (
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${status.bg} ${status.text}`}
-              >
-                {status.label}
-              </span>
-            ) : (
-              <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-text-tertiary">
-                NO STATUS
-              </span>
-            )}
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${status.bg} ${status.text}`}
+            >
+              {status.label}
+            </span>
           </div>
           <div className="mt-0.5 text-[11px] text-text-tertiary">Менеджер</div>
         </div>

@@ -9,9 +9,11 @@ import {
   getManagerRanking,
   getInsights,
   getDailyConversion,
+  getDealStatSnapshot,
   getDuplicateStats,
 } from "@/lib/queries/dashboard"
 import { getTenantMode } from "@/lib/queries/active-window"
+import { PeriodFilter } from "./_components/period-filter"
 import { FunnelChart } from "./_components/funnel-chart"
 import { SuccessFailCards } from "./_components/success-fail-cards"
 import { RevenuePotential } from "./_components/revenue-potential"
@@ -19,37 +21,56 @@ import { KeyMetrics } from "./_components/key-metrics"
 import { ConversionChart } from "./_components/conversion-chart"
 import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
+import { DealStatSnapshotWidget } from "./_components/dealstat-snapshot"
 import { DuplicateBadge } from "./_components/duplicate-badge"
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ funnel?: string }>
+  searchParams?: Promise<{ funnel?: string; period?: string }>
 }) {
   const tenantId = await requireTenantId()
   const sp = (await searchParams) ?? {}
   const selectedFunnelId = sp.funnel
   const mode = await getTenantMode(tenantId)
+  const period = (sp.period ?? "all") as
+    | "day"
+    | "week"
+    | "month"
+    | "quarter"
+    | "all"
 
-  const [stats, funnels, funnel, managers, insights, daily, dupes] =
+  // LIVE mode (diva): фильтр по 7д активности, без period filter
+  // ALL mode (vastu/reklama): legacy с PeriodFilter + DealStatSnapshot
+  const [stats, funnels, funnel, managers, insights, daily, dealStat, dupes] =
     await Promise.all([
-      getDashboardStats(tenantId, undefined, mode),
+      getDashboardStats(tenantId, mode === "live" ? undefined : period, mode),
       getFunnelList(tenantId),
-      getFunnelData(tenantId, selectedFunnelId, undefined, mode),
+      getFunnelData(
+        tenantId,
+        selectedFunnelId,
+        mode === "live" ? undefined : period,
+        mode
+      ),
       getManagerRanking(tenantId, mode),
       getInsights(tenantId, mode),
-      getDailyConversion(tenantId, undefined, mode),
+      getDailyConversion(
+        tenantId,
+        mode === "live" ? undefined : period,
+        mode
+      ),
+      mode === "all" ? getDealStatSnapshot(tenantId) : Promise.resolve(null),
       getDuplicateStats(tenantId),
     ])
 
   return (
     <div className="space-y-6 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
-            {mode === "live" ? "Оперативный режим" : "Дашборд"}
-          </h1>
-          {mode === "live" && (
+      {mode === "live" ? (
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
+              Оперативный режим
+            </h1>
             <p className="mt-1 text-[13px] text-text-tertiary">
               Последние 7 дней по реальной активности менеджеров (звонки и
               сообщения). Историческую картину смотри в{" "}
@@ -61,10 +82,15 @@ export default async function DashboardPage({
               </a>
               .
             </p>
-          )}
+          </div>
+          <DuplicateBadge stats={dupes} />
+        </header>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PeriodFilter totalDeals={stats.totalDeals} />
+          <DuplicateBadge stats={dupes} />
         </div>
-        <DuplicateBadge stats={dupes} />
-      </header>
+      )}
 
       <Suspense>
         <KeyMetrics
@@ -74,6 +100,12 @@ export default async function DashboardPage({
           avgTime={stats.avgTime}
         />
       </Suspense>
+
+      {dealStat && (
+        <Suspense>
+          <DealStatSnapshotWidget snapshot={dealStat} />
+        </Suspense>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Suspense>
@@ -115,12 +147,14 @@ export default async function DashboardPage({
         <AiInsights insights={insights} />
       </Suspense>
 
-      <div className="mt-6 border-t border-border-default pt-3 text-[11px] text-text-muted">
-        В оперативном режиме показываются только сделки с активностью (звонок
-        или сообщение) за последние 7 дней — это исключает «шум» исторических
-        данных. Полную картину за 90 дней с накопленной аналитикой смотри на
-        странице «Ретро аудит».
-      </div>
+      {mode === "live" && (
+        <div className="mt-6 border-t border-border-default pt-3 text-[11px] text-text-muted">
+          В оперативном режиме показываются только сделки с активностью
+          (звонок или сообщение) за последние 7 дней — это исключает «шум»
+          исторических данных. Полную картину за 90 дней с накопленной
+          аналитикой смотри на странице «Ретро аудит».
+        </div>
+      )}
     </div>
   )
 }

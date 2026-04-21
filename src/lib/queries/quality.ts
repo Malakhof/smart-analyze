@@ -1045,11 +1045,13 @@ export async function getCallDetail(
   const scoreItems = call.score?.items ?? []
   scoreItems.sort((a, b) => a.scriptItem.order - b.scriptItem.order)
 
-  // Resolve CRM deep-link from tenant config. Prefer the deal.crmId (the lead
-  // in CRM); fall back to call.crmId.
-  const crmUrl = await buildCrmDealUrl(
+  // Resolve CRM deep-link from tenant config. For GC we link to the contact
+  // page (the call itself), which shows linked order info inline. For amoCRM
+  // calls live as notes inside a lead, so we link to the lead.
+  const crmUrl = await buildCrmCallUrl(
     call.tenantId,
-    call.deal?.crmId ?? call.crmId
+    call.crmId,
+    call.deal?.crmId ?? null
   )
 
   return {
@@ -1081,19 +1083,19 @@ export async function getCallDetail(
 }
 
 /**
- * Build a CRM deep-link to the deal/lead based on tenant's active CrmConfig.
- *  - amoCRM:    https://{subdomain}.amocrm.ru/leads/detail/{crmId}
- *  - GetCourse: https://{account}/pl/sales/control/deal/update/id/{crmId}
- *      where {account} is either "{subdomain}.getcourse.ru" (plain subdomain)
- *      or the custom domain itself if the subdomain field already contains dots
- *      (e.g. "web.diva.school"). GC admin paths are served under /pl/.
- *  - Bitrix24:  not supported here (returns null)
+ * Build a CRM deep-link for a call (the natural CRM landing page for it).
+ *  - GetCourse: https://{account}/user/control/contact/update/id/{callCrmId}
+ *      The contact page IS the call's record in GC (audio + linked order info).
+ *  - amoCRM:    https://{subdomain}.amocrm.ru/leads/detail/{dealCrmId}
+ *      Calls in amoCRM are notes attached to a lead — landing page is the lead.
+ *      Returns null if no deal is linked.
+ *  - Bitrix24:  not supported (returns null)
  */
-async function buildCrmDealUrl(
+async function buildCrmCallUrl(
   tenantId: string,
-  crmId: string | null
+  callCrmId: string | null,
+  dealCrmId: string | null
 ): Promise<string | null> {
-  if (!crmId) return null
   const config = await db.crmConfig.findFirst({
     where: { tenantId, isActive: true },
     select: { provider: true, subdomain: true },
@@ -1101,12 +1103,14 @@ async function buildCrmDealUrl(
   if (!config?.subdomain) return null
   switch (config.provider) {
     case "AMOCRM":
-      return `https://${config.subdomain}.amocrm.ru/leads/detail/${crmId}`
+      if (!dealCrmId) return null
+      return `https://${config.subdomain}.amocrm.ru/leads/detail/${dealCrmId}`
     case "GETCOURSE": {
+      if (!callCrmId) return null
       const host = config.subdomain.includes(".")
         ? config.subdomain
         : `${config.subdomain}.getcourse.ru`
-      return `https://${host}/sales/control/deal/update/id/${crmId}`
+      return `https://${host}/user/control/contact/update/id/${callCrmId}`
     }
     default:
       return null

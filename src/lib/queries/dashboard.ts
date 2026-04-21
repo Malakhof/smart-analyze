@@ -40,16 +40,28 @@ export async function getDashboardStats(
   period?: Period,
   mode: QueryMode = "all"
 ) {
+  // Anonymous-deal filter applies ONLY to GetCourse tenants — GC creates
+  // bulk webinar/trip-wire carts with no contact (134K of 138K for diva).
+  // amoCRM leads never populate clientCrmId at write time, so applying the
+  // filter there would hide every deal (reklama/vastu had 0 patterns after
+  // the naive rollout). Resolve per-tenant up front.
+  const crmConfig = await db.crmConfig.findFirst({
+    where: { tenantId, isActive: true },
+    select: { provider: true },
+  })
+  const anonymousFilter =
+    crmConfig?.provider === "GETCOURSE"
+      ? { clientCrmId: { not: null } }
+      : {}
+
   // In LIVE mode: skip Deal.createdAt cutoff (broken for diva — equals sync date)
   // and instead require recent Message OR CallRecord activity in the window.
-  // Anonymous filter: diva has 134K anonymous webinar carts with no contact;
-  // requiring clientCrmId gives an honest "real deals" count across all tenants.
   const baseWhere =
     mode === "live"
-      ? { tenantId, clientCrmId: { not: null }, ...dealActivityWhere() }
+      ? { tenantId, ...anonymousFilter, ...dealActivityWhere() }
       : {
           tenantId,
-          clientCrmId: { not: null },
+          ...anonymousFilter,
           createdAt: { gte: periodToCutoff(period) },
         }
 

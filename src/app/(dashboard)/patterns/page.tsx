@@ -17,11 +17,20 @@ export default async function PatternsPage({
   const filter = params.filter === "success" || params.filter === "failure"
     ? params.filter
     : undefined
+  // Anonymous filter only for GetCourse tenants (amoCRM never sets clientCrmId
+  // on deals, so applying the filter there hides every analysis).
+  const crmConfig = await db.crmConfig.findFirst({
+    where: { tenantId, isActive: true },
+    select: { provider: true },
+  })
+  const dealWhere =
+    crmConfig?.provider === "GETCOURSE"
+      ? { tenantId, clientCrmId: { not: null } }
+      : { tenantId }
+
   const [patterns, analysesCount, lastPattern] = await Promise.all([
     getPatterns(tenantId, filter),
-    db.dealAnalysis.count({
-      where: { deal: { tenantId, clientCrmId: { not: null } } },
-    }),
+    db.dealAnalysis.count({ where: { deal: dealWhere } }),
     db.pattern.findFirst({
       where: { tenantId },
       orderBy: { createdAt: "desc" },

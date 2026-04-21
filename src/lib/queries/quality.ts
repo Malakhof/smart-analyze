@@ -1083,7 +1083,10 @@ export async function getCallDetail(
 /**
  * Build a CRM deep-link to the deal/lead based on tenant's active CrmConfig.
  *  - amoCRM:    https://{subdomain}.amocrm.ru/leads/detail/{crmId}
- *  - GetCourse: https://{subdomain}.getcourse.ru/sales/control/deal/update/id/{crmId}
+ *  - GetCourse: https://{account}/pl/sales/control/deal/update/id/{crmId}
+ *      where {account} is either "{subdomain}.getcourse.ru" (plain subdomain)
+ *      or the custom domain itself if the subdomain field already contains dots
+ *      (e.g. "web.diva.school"). GC admin paths are served under /pl/.
  *  - Bitrix24:  not supported here (returns null)
  */
 async function buildCrmDealUrl(
@@ -1099,8 +1102,12 @@ async function buildCrmDealUrl(
   switch (config.provider) {
     case "AMOCRM":
       return `https://${config.subdomain}.amocrm.ru/leads/detail/${crmId}`
-    case "GETCOURSE":
-      return `https://${config.subdomain}.getcourse.ru/sales/control/deal/update/id/${crmId}`
+    case "GETCOURSE": {
+      const host = config.subdomain.includes(".")
+        ? config.subdomain
+        : `${config.subdomain}.getcourse.ru`
+      return `https://${host}/pl/sales/control/deal/update/id/${crmId}`
+    }
     default:
       return null
   }

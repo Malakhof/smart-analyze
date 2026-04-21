@@ -717,6 +717,18 @@ export async function getRecentCallsEnhanced(
   mode: QcQueryMode = "all",
   filters: QcFilters = {}
 ): Promise<QcRecentCallEnhanced[]> {
+  // If user explicitly selected a period filter (day/week/month/quarter) OR any
+  // other filter — show ALL matching calls (not just top 20). Otherwise cap at `limit`.
+  const hasExplicitFilter =
+    filters.periodDays !== undefined ||
+    (filters.categories && filters.categories.length > 0) ||
+    (filters.tags && filters.tags.length > 0) ||
+    (filters.managerIds && filters.managerIds.length > 0) ||
+    (filters.scriptItemIds && filters.scriptItemIds.length > 0) ||
+    filters.scoreMin !== undefined ||
+    filters.scoreMax !== undefined
+  const effectiveLimit = hasExplicitFilter ? 500 : limit
+
   const calls = await db.callRecord.findMany({
     where: qcCallWhere(tenantId, mode, filters),
     include: {
@@ -741,7 +753,7 @@ export async function getRecentCallsEnhanced(
       },
     },
     orderBy: { createdAt: "desc" },
-    take: limit,
+    take: effectiveLimit,
   })
 
   return calls.map((c) => {

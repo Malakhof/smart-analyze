@@ -9,6 +9,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata:/var/lib/postgresql/data
+    shm_size: 1gb
     restart: unless-stopped
 
   app:
@@ -20,6 +21,7 @@ services:
       - DATABASE_URL=postgresql://smartanalyze:${DB_PASSWORD:-strongpassword}@smart-analyze-db:5432/smartanalyze
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3001}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - AUTH_TRUST_HOST=true
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}

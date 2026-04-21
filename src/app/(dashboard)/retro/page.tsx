@@ -4,28 +4,24 @@ import {
   getRetroNonTaggedInsights,
   getRetroSectionInsights,
   getRetroManagerPortraits,
-  getRetroPatterns,
 } from "@/lib/queries/retro"
 import { AiInsights } from "@/app/(dashboard)/_components/ai-insights"
 import { RetroSection } from "./_components/retro-section"
 import { RetroHero } from "./_components/retro-hero"
 import { RetroMasterInsight } from "./_components/retro-master-insight"
 import { RetroManagerPortraits } from "./_components/retro-manager-portraits"
-import { RetroPatterns } from "./_components/retro-patterns"
 
 export const dynamic = "force-dynamic"
 
 export default async function RetroPage() {
   const tenantId = await requireTenantId()
 
-  const [volume, sectionInsights, otherInsights, managers, patterns] =
-    await Promise.all([
-      getRetroVolume(tenantId),
-      getRetroSectionInsights(tenantId),
-      getRetroNonTaggedInsights(tenantId, 10),
-      getRetroManagerPortraits(tenantId),
-      getRetroPatterns(tenantId, 9),
-    ])
+  const [volume, sectionInsights, otherInsights, managers] = await Promise.all([
+    getRetroVolume(tenantId),
+    getRetroSectionInsights(tenantId),
+    getRetroNonTaggedInsights(tenantId, 10),
+    getRetroManagerPortraits(tenantId),
+  ])
 
   // Combine all retro-tagged insights (except master) into single accordion
   const sectionList = [
@@ -88,13 +84,7 @@ export default async function RetroPage() {
         </RetroSection>
       )}
 
-      {/* 6. Паттерны 90 дней — компактно */}
-      <RetroSection
-        title="🔄 Паттерны за 90 дней"
-        subtitle={`${patterns.length} повторяющихся закономерностей в общении с клиентами`}
-      >
-        <RetroPatterns patterns={patterns} />
-      </RetroSection>
+      {/* Паттерны убраны — они одинаковы с разделом /patterns, дублирование */}
     </div>
   )
 }

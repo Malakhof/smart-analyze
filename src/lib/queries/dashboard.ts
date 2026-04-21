@@ -305,17 +305,31 @@ export async function getManagerRanking(
     },
   })
 
-  // Hide:
-  // 1) managers with no deals at all (system accounts, dormant users)
-  // 2) managers with sample <3 closed (WON+LOST <3) — "100% from 1 deal" is noise
-  const filtered = managers.filter((m) => {
-    const total = m.totalDeals ?? 0
-    const success = m.successDeals ?? 0
-    const closed = success + Math.max(0, total - success)
-    if (total === 0) return false
-    if (closed < 3 && (m.conversionRate ?? 0) === 100) return false
-    return true
-  })
+  // Hide ONLY truly empty managers (no deals at all = system/dormant accounts).
+  // Keep everyone else — even 1/1 = 100% IS a real sale, shouldn't disappear.
+  const withDeals = managers.filter((m) => (m.totalDeals ?? 0) > 0)
+
+  // Bayesian smoothing: penalize small samples in ranking by pulling rate toward
+  // team average. Formula: smoothed = (n*own + k*team) / (n + k), k=5.
+  // Effect: 1/1=100% on team=20% → smoothed 33%. 14/14=100% → smoothed 79%.
+  // Real top performers stay top, single-sale managers don't dominate.
+  const teamAvg =
+    withDeals.length > 0
+      ? withDeals.reduce((s, m) => s + (m.conversionRate ?? 0), 0) /
+        withDeals.length
+      : 0
+  const SMOOTHING_K = 5
+  const ranked = withDeals
+    .map((m) => {
+      const n = (m.successDeals ?? 0) + Math.max(0, (m.totalDeals ?? 0) - (m.successDeals ?? 0))
+      const own = m.conversionRate ?? 0
+      const smoothed = (n * own + SMOOTHING_K * teamAvg) / (n + SMOOTHING_K)
+      return { ...m, _smoothed: smoothed }
+    })
+    .sort((a, b) => b._smoothed - a._smoothed)
+    .map(({ _smoothed: _, ...m }) => m)
+
+  const filtered = ranked
 
   if (mode === "live") {
     const { getActiveManagerIds } = await import("@/lib/queries/active-window")

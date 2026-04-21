@@ -2,11 +2,13 @@ import { requireTenantId } from "@/lib/auth"
 export const dynamic = "force-dynamic"
 
 import { getManagersList } from "@/lib/queries/managers"
+import { getTenantMode } from "@/lib/queries/active-window"
 import { ManagerCards } from "./_components/manager-cards"
 
 export default async function ManagersPage() {
   const tenantId = await requireTenantId()
-  const { managers, summary } = await getManagersList(tenantId, "live")
+  const mode = await getTenantMode(tenantId)
+  const { managers, summary } = await getManagersList(tenantId, mode)
 
   return (
     <div className="space-y-6 p-6">
@@ -16,8 +18,11 @@ export default async function ManagersPage() {
             Менеджеры
           </h1>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            {summary.total} {activeManagersWord(summary.total)} за 7 дней ·
-            отлично: {summary.excellent} · наблюдение: {summary.watch} ·
+            {summary.total}{" "}
+            {mode === "live"
+              ? `${activeManagersWord(summary.total)} за 7 дней`
+              : managersWord(summary.total)}{" "}
+            · отлично: {summary.excellent} · наблюдение: {summary.watch} ·
             критично: {summary.critical}
           </p>
         </div>
@@ -44,4 +49,13 @@ function activeManagersWord(n: number): string {
   if (lastOne === 1) return "активный менеджер"
   if (lastOne >= 2 && lastOne <= 4) return "активных менеджера"
   return "активных менеджеров"
+}
+
+function managersWord(n: number): string {
+  const lastTwo = n % 100
+  const lastOne = n % 10
+  if (lastTwo >= 11 && lastTwo <= 14) return "менеджеров"
+  if (lastOne === 1) return "менеджер"
+  if (lastOne >= 2 && lastOne <= 4) return "менеджера"
+  return "менеджеров"
 }

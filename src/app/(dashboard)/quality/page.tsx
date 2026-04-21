@@ -9,6 +9,7 @@ import {
   getQcGraphData,
   getRecentCallsEnhanced,
 } from "@/lib/queries/quality"
+import { getTenantMode } from "@/lib/queries/active-window"
 import { QcSummary } from "./_components/qc-summary"
 import { QcDonutCharts } from "./_components/qc-donut-charts"
 import { QcComplianceChart } from "./_components/qc-compliance-chart"
@@ -19,12 +20,13 @@ import { QcFilters } from "./_components/qc-filters"
 
 export default async function QualityPage() {
   const tenantId = await requireTenantId()
+  const mode = await getTenantMode(tenantId)
   const [dashboard, filters, charts, graphs, recent] = await Promise.all([
-    getQualityDashboard(tenantId, "live"),
+    getQualityDashboard(tenantId, mode),
     getQcFilterOptions(tenantId),
-    getQcChartData(tenantId, "live"),
-    getQcGraphData(tenantId, "live"),
-    getRecentCallsEnhanced(tenantId, 20, "live"),
+    getQcChartData(tenantId, mode),
+    getQcGraphData(tenantId, mode),
+    getRecentCallsEnhanced(tenantId, 20, mode),
   ])
 
   return (
@@ -35,9 +37,9 @@ export default async function QualityPage() {
             Контроль качества
           </h1>
           <p className="mt-1 text-[13px] text-text-tertiary">
-            Только звонки с расшифровкой за последние 7 дней —{" "}
-            {dashboard.totalCalls} {callsWord(dashboard.totalCalls)}{" "}
-            проанализировано
+            {mode === "live"
+              ? `Только звонки с расшифровкой за последние 7 дней — ${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`
+              : `${dashboard.totalCalls} ${callsWord(dashboard.totalCalls)} проанализировано`}
           </p>
         </div>
         <AiBadge text="AI оценка" />

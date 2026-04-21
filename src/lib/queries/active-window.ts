@@ -2,6 +2,17 @@ import { db } from "@/lib/db"
 
 export const LIVE_WINDOW_DAYS = 7
 
+const TENANTS_WITH_LIVE_MODE = new Set(["diva-school"])
+
+/** Per-tenant: only diva uses LIVE 7d; reklama/vastu stay on legacy "all". */
+export async function getTenantMode(tenantId: string): Promise<"live" | "all"> {
+  const tenant = await db.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true },
+  })
+  return tenant && TENANTS_WITH_LIVE_MODE.has(tenant.name) ? "live" : "all"
+}
+
 export function liveWindowStart(days = LIVE_WINDOW_DAYS): Date {
   return new Date(Date.now() - days * 86_400_000)
 }

@@ -11,6 +11,7 @@ import {
   getDailyConversion,
   getDuplicateStats,
 } from "@/lib/queries/dashboard"
+import { getTenantMode } from "@/lib/queries/active-window"
 import { FunnelChart } from "./_components/funnel-chart"
 import { SuccessFailCards } from "./_components/success-fail-cards"
 import { RevenuePotential } from "./_components/revenue-potential"
@@ -28,15 +29,16 @@ export default async function DashboardPage({
   const tenantId = await requireTenantId()
   const sp = (await searchParams) ?? {}
   const selectedFunnelId = sp.funnel
+  const mode = await getTenantMode(tenantId)
 
   const [stats, funnels, funnel, managers, insights, daily, dupes] =
     await Promise.all([
-      getDashboardStats(tenantId, undefined, "live"),
+      getDashboardStats(tenantId, undefined, mode),
       getFunnelList(tenantId),
-      getFunnelData(tenantId, selectedFunnelId, undefined, "live"),
-      getManagerRanking(tenantId, "live"),
-      getInsights(tenantId, "live"),
-      getDailyConversion(tenantId, undefined, "live"),
+      getFunnelData(tenantId, selectedFunnelId, undefined, mode),
+      getManagerRanking(tenantId, mode),
+      getInsights(tenantId, mode),
+      getDailyConversion(tenantId, undefined, mode),
       getDuplicateStats(tenantId),
     ])
 
@@ -45,19 +47,21 @@ export default async function DashboardPage({
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
-            Оперативный режим
+            {mode === "live" ? "Оперативный режим" : "Дашборд"}
           </h1>
-          <p className="mt-1 text-[13px] text-text-tertiary">
-            Последние 7 дней по реальной активности менеджеров (звонки и
-            сообщения). Историческую картину смотри в{" "}
-            <a
-              href="/retro"
-              className="underline decoration-border-default underline-offset-2 hover:text-text-secondary"
-            >
-              Ретро аудите
-            </a>
-            .
-          </p>
+          {mode === "live" && (
+            <p className="mt-1 text-[13px] text-text-tertiary">
+              Последние 7 дней по реальной активности менеджеров (звонки и
+              сообщения). Историческую картину смотри в{" "}
+              <a
+                href="/retro"
+                className="underline decoration-border-default underline-offset-2 hover:text-text-secondary"
+              >
+                Ретро аудите
+              </a>
+              .
+            </p>
+          )}
         </div>
         <DuplicateBadge stats={dupes} />
       </header>

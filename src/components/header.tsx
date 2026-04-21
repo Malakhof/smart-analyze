@@ -6,14 +6,20 @@ import { usePathname } from "next/navigation"
 import { AiBadge } from "@/components/ai-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 
-const NAV_ITEMS = [
-  { label: "Ретро аудит", href: "/retro" },
+const NAV_ITEMS_BASE = [
   { label: "Главная", href: "/" },
   { label: "Менеджеры", href: "/managers" },
   { label: "Паттерны", href: "/patterns" },
   { label: "Контроль качества", href: "/quality" },
   { label: "Настройки", href: "/settings" },
 ] as const
+
+const NAV_ITEMS_WITH_RETRO = [
+  { label: "Ретро аудит", href: "/retro" },
+  ...NAV_ITEMS_BASE,
+] as const
+
+const TENANTS_WITH_RETRO = new Set(["diva-school"])
 
 interface HeaderProps {
   tenantName?: string
@@ -30,6 +36,10 @@ export function Header({ tenantName }: HeaderProps = {}) {
   const displayName = tenantName
     ? TENANT_DISPLAY_NAMES[tenantName] ?? tenantName
     : "Организация"
+  const navItems =
+    tenantName && TENANTS_WITH_RETRO.has(tenantName)
+      ? NAV_ITEMS_WITH_RETRO
+      : NAV_ITEMS_BASE
 
   return (
     <header className="sticky top-0 z-50 flex h-[52px] items-center gap-8 border-b border-border-default bg-header-bg px-8 backdrop-blur-[20px]">
@@ -67,7 +77,7 @@ export function Header({ tenantName }: HeaderProps = {}) {
 
       {/* Navigation */}
       <nav className="flex gap-0">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"

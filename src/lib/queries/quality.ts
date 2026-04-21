@@ -806,8 +806,10 @@ export async function getManagerQualityFull(
     bucket.previous = Math.max(0, bucket.current + Math.floor((Math.random() - 0.5) * 3))
   }
 
-  // Recent calls enhanced
-  const recentCalls: QcRecentCallEnhanced[] = calls.slice(0, 20).map((c) => {
+  // Recent calls enhanced — show ONLY calls with transcript (otherwise "Не оценен" rows
+  // dominate the list and look broken to user)
+  const transcribedCalls = calls.filter((c) => c.transcript)
+  const recentCalls: QcRecentCallEnhanced[] = transcribedCalls.slice(0, 20).map((c) => {
     let recommendation: string | null = null
     if (c.deal?.analysis?.recommendations) {
       recommendation = c.deal.analysis.recommendations

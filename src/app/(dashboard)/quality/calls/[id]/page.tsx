@@ -85,6 +85,19 @@ export default async function CallDetailPage({
               <span className="text-text-secondary">
                 {fmtDate(call.createdAt)}
               </span>
+              {call.crmUrl && (
+                <>
+                  <span className="text-text-tertiary">|</span>
+                  <a
+                    href={call.crmUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-ai-1 hover:underline"
+                  >
+                    Открыть в CRM &rarr;
+                  </a>
+                </>
+              )}
             </div>
           </div>
 

@@ -16,12 +16,13 @@ interface QcFiltersProps {
 
 // ── Period helpers ──────────────────────────────────────
 
-type Period = "day" | "week" | "month"
+type Period = "day" | "week" | "month" | "quarter"
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "День", value: "day" },
   { label: "Неделя", value: "week" },
   { label: "Месяц", value: "month" },
+  { label: "Квартал", value: "quarter" },
 ]
 
 function getPeriodRange(period: Period): { start: Date; end: Date } {
@@ -32,8 +33,11 @@ function getPeriodRange(period: Period): { start: Date; end: Date } {
     // today
   } else if (period === "week") {
     start.setDate(start.getDate() - 6)
-  } else {
+  } else if (period === "month") {
     start.setDate(start.getDate() - 29)
+  } else {
+    // quarter
+    start.setDate(start.getDate() - 89)
   }
   return { start, end }
 }
@@ -217,8 +221,12 @@ export function QcFilters({ categories, tags, managers, scriptItems, hideManager
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Read state from URL
-  const period = (searchParams.get("period") as Period) ?? "week"
+  // Read state from URL (no default — empty means "no filter")
+  const periodRaw = searchParams.get("period")
+  const period: Period | null =
+    periodRaw === "day" || periodRaw === "week" || periodRaw === "month" || periodRaw === "quarter"
+      ? periodRaw
+      : null
   const selectedCategories = searchParams.getAll("category")
   const selectedTags = searchParams.getAll("tag")
   const scoreMin = Number(searchParams.get("scoreMin") ?? "0")
@@ -244,9 +252,9 @@ export function QcFilters({ categories, tags, managers, scriptItems, hideManager
     })
   }
 
-  // Period ranges
-  const currentRange = getPeriodRange(period)
-  const compRange = getComparisonRange(period)
+  // Period ranges — only meaningful when a period is selected
+  const currentRange = period ? getPeriodRange(period) : null
+  const compRange = period ? getComparisonRange(period) : null
 
   return (
     <aside className="flex h-fit w-[280px] shrink-0 flex-col gap-5 rounded-[14px] border border-border-default bg-surface-1 p-4">
@@ -261,7 +269,14 @@ export function QcFilters({ categories, tags, managers, scriptItems, hideManager
               key={p.value}
               type="button"
               onClick={() =>
-                updateParams((params) => params.set("period", p.value))
+                updateParams((params) => {
+                  // Click again on the active period clears it.
+                  if (period === p.value) {
+                    params.delete("period")
+                  } else {
+                    params.set("period", p.value)
+                  }
+                })
               }
               className={`cursor-pointer rounded-[6px] border-none px-3 py-[5px] text-[12px] font-medium transition-all duration-[0.18s] ${
                 period === p.value
@@ -273,16 +288,18 @@ export function QcFilters({ categories, tags, managers, scriptItems, hideManager
             </button>
           ))}
         </div>
-        <div className="mt-2 space-y-0.5 text-[11px] text-text-secondary">
-          <div>
-            Текущий период: {fmtDate(currentRange.start)} &ndash;{" "}
-            {fmtDate(currentRange.end)}
+        {currentRange && compRange && (
+          <div className="mt-2 space-y-0.5 text-[11px] text-text-secondary">
+            <div>
+              Текущий период: {fmtDate(currentRange.start)} &ndash;{" "}
+              {fmtDate(currentRange.end)}
+            </div>
+            <div>
+              Сравнение с периодом: {fmtDate(compRange.start)} &ndash;{" "}
+              {fmtDate(compRange.end)}
+            </div>
           </div>
-          <div>
-            Сравнение с периодом: {fmtDate(compRange.start)} &ndash;{" "}
-            {fmtDate(compRange.end)}
-          </div>
-        </div>
+        )}
       </section>
 
       {/* ── Категории ── */}

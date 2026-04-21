@@ -3,6 +3,64 @@ import { liveWindowStart } from "@/lib/queries/active-window"
 
 export type QcQueryMode = "live" | "all"
 
+/**
+ * Filters applied via search params. All optional.
+ *  - periodDays: explicit period (1=day, 7=week, 30=month, 90=quarter). Overrides
+ *    the LIVE 7d default.
+ *  - categories / tags / managerIds / scriptItemIds: multi-select arrays.
+ *  - scoreMin / scoreMax: 0..100 range; only calls with score in window.
+ *  - stepStatus: when scriptItemIds set, restrict to "done" or "missed".
+ */
+export interface QcFilters {
+  periodDays?: number
+  categories?: string[]
+  tags?: string[]
+  managerIds?: string[]
+  scriptItemIds?: string[]
+  scoreMin?: number
+  scoreMax?: number
+  stepStatus?: "done" | "missed"
+}
+
+const PERIOD_TO_DAYS: Record<string, number> = {
+  day: 1,
+  week: 7,
+  month: 30,
+  quarter: 90,
+}
+
+/** Parse Next.js searchParams (Promise resolved value) into QcFilters. */
+export function parseQcFiltersFromSearchParams(
+  sp: Record<string, string | string[] | undefined>
+): QcFilters {
+  const f: QcFilters = {}
+
+  const period = typeof sp.period === "string" ? sp.period : undefined
+  if (period && PERIOD_TO_DAYS[period] !== undefined) {
+    f.periodDays = PERIOD_TO_DAYS[period]
+  }
+
+  const toArr = (v: string | string[] | undefined): string[] | undefined => {
+    if (!v) return undefined
+    const arr = Array.isArray(v) ? v : [v]
+    return arr.length > 0 ? arr : undefined
+  }
+  f.categories = toArr(sp.category)
+  f.tags = toArr(sp.tag)
+  f.managerIds = toArr(sp.manager)
+  f.scriptItemIds = toArr(sp.step)
+
+  const sMin = typeof sp.scoreMin === "string" ? Number(sp.scoreMin) : NaN
+  const sMax = typeof sp.scoreMax === "string" ? Number(sp.scoreMax) : NaN
+  if (!Number.isNaN(sMin) && sMin > 0) f.scoreMin = sMin
+  if (!Number.isNaN(sMax) && sMax < 100) f.scoreMax = sMax
+
+  const stepStatus = typeof sp.stepStatus === "string" ? sp.stepStatus : undefined
+  if (stepStatus === "done" || stepStatus === "missed") f.stepStatus = stepStatus
+
+  return f
+}
+
 export interface QcManagerRow {
   id: string
   name: string
@@ -39,24 +97,79 @@ const QC_FILTER = {
   transcript: { not: null },
 }
 
-/** Build call-record where clause respecting LIVE window. Keeps QC_FILTER intact. */
-function qcCallWhere(tenantId: string, mode: QcQueryMode) {
-  if (mode === "live") {
-    return {
-      tenantId,
-      ...QC_FILTER,
-      createdAt: { gte: liveWindowStart() },
+/**
+ * Build call-record where clause respecting LIVE window AND user-applied filters.
+ * Filter precedence: explicit periodDays overrides the 7d LIVE default.
+ */
+function qcCallWhere(
+  tenantId: string,
+  mode: QcQueryMode,
+  filters: QcFilters = {}
+) {
+  // Date window: explicit period wins; otherwise live → 7d, all → unbounded
+  let createdAt: { gte: Date } | undefined
+  if (filters.periodDays !== undefined) {
+    createdAt = { gte: liveWindowStart(filters.periodDays) }
+  } else if (mode === "live") {
+    createdAt = { gte: liveWindowStart() }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = { tenantId, ...QC_FILTER }
+  if (createdAt) where.createdAt = createdAt
+
+  if (filters.categories && filters.categories.length > 0) {
+    where.category = { in: filters.categories }
+  }
+
+  if (filters.managerIds && filters.managerIds.length > 0) {
+    where.OR = [
+      { managerId: { in: filters.managerIds } },
+      { deal: { managerId: { in: filters.managerIds } } },
+    ]
+  }
+
+  if (filters.tags && filters.tags.length > 0) {
+    where.tags = { some: { tag: { in: filters.tags } } }
+  }
+
+  // Score range — applied via score relation. If filter is non-default we
+  // require the call to have a score in range.
+  if (filters.scoreMin !== undefined || filters.scoreMax !== undefined) {
+    const scoreCond: { gte?: number; lte?: number } = {}
+    if (filters.scoreMin !== undefined) scoreCond.gte = filters.scoreMin
+    if (filters.scoreMax !== undefined) scoreCond.lte = filters.scoreMax
+    where.score = { is: { totalScore: scoreCond } }
+  }
+
+  // Script step filter — call must have a score item for the chosen step
+  // matching the requested status (done/missed). When no status given, any.
+  if (filters.scriptItemIds && filters.scriptItemIds.length > 0) {
+    const itemCond: {
+      scriptItemId: { in: string[] }
+      isDone?: boolean
+    } = { scriptItemId: { in: filters.scriptItemIds } }
+    if (filters.stepStatus === "done") itemCond.isDone = true
+    if (filters.stepStatus === "missed") itemCond.isDone = false
+    where.score = {
+      ...(where.score ?? {}),
+      is: {
+        ...(where.score?.is ?? {}),
+        items: { some: itemCond },
+      },
     }
   }
-  return { tenantId, ...QC_FILTER }
+
+  return where
 }
 
 export async function getQualityDashboard(
   tenantId: string,
-  mode: QcQueryMode = "all"
+  mode: QcQueryMode = "all",
+  filters: QcFilters = {}
 ): Promise<QcDashboardData> {
   const calls = await db.callRecord.findMany({
-    where: qcCallWhere(tenantId, mode),
+    where: qcCallWhere(tenantId, mode, filters),
     include: {
       manager: { select: { id: true, name: true } },
       score: {
@@ -261,6 +374,7 @@ export async function getManagerQuality(
 export interface QcCallDetail {
   id: string
   crmId: string | null
+  crmUrl: string | null
   managerName: string | null
   managerId: string | null
   clientName: string | null
@@ -309,8 +423,9 @@ export async function getQcFilterOptions(
       select: { tag: true },
       distinct: ["tag"],
     }),
+    // Hide managers without any CallRecord — empty rows look broken in the UI.
     db.manager.findMany({
-      where: { tenantId },
+      where: { tenantId, callRecords: { some: {} } },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -357,10 +472,11 @@ const TAG_COLORS = ["#EF4444", "#DC2626", "#B91C1C", "#991B1B", "#7F1D1D"]
 
 export async function getQcChartData(
   tenantId: string,
-  mode: QcQueryMode = "all"
+  mode: QcQueryMode = "all",
+  filters: QcFilters = {}
 ): Promise<QcChartData> {
   const calls = await db.callRecord.findMany({
-    where: qcCallWhere(tenantId, mode),
+    where: qcCallWhere(tenantId, mode, filters),
     include: {
       manager: { select: { id: true, name: true } },
       score: true,
@@ -512,22 +628,20 @@ export interface QcGraphData {
 
 export async function getQcGraphData(
   tenantId: string,
-  mode: QcQueryMode = "all"
+  mode: QcQueryMode = "all",
+  filters: QcFilters = {}
 ): Promise<QcGraphData> {
-  // In LIVE mode: only include score items belonging to calls created in the window.
-  const since = mode === "live" ? liveWindowStart() : null
-  // Get all script items for this tenant (active script)
+  // Build call-record where (already encodes period + tags + categories etc.)
+  const callWhere = qcCallWhere(tenantId, mode, filters)
+
+  // Get all script items for this tenant (active script). Score items are
+  // filtered to only those whose parent call passes our filter.
   const scriptItems = await db.scriptItem.findMany({
     where: { script: { tenantId, isActive: true } },
     include: {
       scoreItems: {
-        include: {
-          callScore: {
-            include: {
-              callRecord: { select: { tenantId: true, createdAt: true } },
-            },
-          },
-        },
+        where: { callScore: { callRecord: callWhere } },
+        select: { isDone: true },
       },
     },
     orderBy: { order: "asc" },
@@ -535,13 +649,8 @@ export async function getQcGraphData(
 
   // Compliance by step: % of calls where isDone=true for each script item
   const complianceByStep: QcComplianceStep[] = scriptItems.map((si) => {
-    const relevantItems = si.scoreItems.filter((item) => {
-      if (item.callScore.callRecord.tenantId !== tenantId) return false
-      if (since && item.callScore.callRecord.createdAt < since) return false
-      return true
-    })
-    const total = relevantItems.length
-    const done = relevantItems.filter((item) => item.isDone).length
+    const total = si.scoreItems.length
+    const done = si.scoreItems.filter((item) => item.isDone).length
     const current = total > 0 ? Math.round((done / total) * 100) : 0
 
     // Previous period placeholder: slight random variation for visual demo
@@ -556,12 +665,7 @@ export async function getQcGraphData(
 
   // Score distribution: group totalScore into 10 buckets (0-10, 10-20, ..., 90-100)
   const callScores = await db.callScore.findMany({
-    where: {
-      callRecord:
-        mode === "live"
-          ? { tenantId, createdAt: { gte: liveWindowStart() } }
-          : { tenantId },
-    },
+    where: { callRecord: callWhere },
     select: { totalScore: true },
   })
 
@@ -608,10 +712,11 @@ export interface QcRecentCallEnhanced {
 export async function getRecentCallsEnhanced(
   tenantId: string,
   limit = 20,
-  mode: QcQueryMode = "all"
+  mode: QcQueryMode = "all",
+  filters: QcFilters = {}
 ): Promise<QcRecentCallEnhanced[]> {
   const calls = await db.callRecord.findMany({
-    where: qcCallWhere(tenantId, mode),
+    where: qcCallWhere(tenantId, mode, filters),
     include: {
       manager: { select: { name: true } },
       score: {
@@ -682,7 +787,8 @@ export interface QcManagerFullData {
 }
 
 export async function getManagerQualityFull(
-  managerId: string
+  managerId: string,
+  filters: QcFilters = {}
 ): Promise<QcManagerFullData | null> {
   const manager = await db.manager.findUnique({
     where: { id: managerId },
@@ -691,14 +797,31 @@ export async function getManagerQualityFull(
 
   if (!manager) return null
 
+  // Build the manager-scoped where: this manager (or via deal) + other filters.
+  // We re-use qcCallWhere for filter handling, then OR-narrow on managerId.
+  const baseWhere = qcCallWhere(manager.tenantId, "all", {
+    ...filters,
+    // managerIds is overridden below — we always pin to this single manager.
+    managerIds: undefined,
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const callWhere: any = {
+    ...baseWhere,
+    AND: [
+      {
+        OR: [
+          { managerId },
+          { deal: { managerId } },
+        ],
+      },
+    ],
+  }
+  // If qcCallWhere already produced an OR (managerIds filter unused here, but
+  // could collide if someone passes scoreMin etc.), it's not OR-shaped, so safe.
+
   // Include calls directly assigned to this manager OR linked via deals assigned to this manager
   const calls = await db.callRecord.findMany({
-    where: {
-      OR: [
-        { managerId },
-        { deal: { managerId } },
-      ],
-    },
+    where: callWhere,
     include: {
       manager: { select: { name: true } },
       score: {
@@ -760,21 +883,13 @@ export async function getManagerQualityFull(
       color: TAG_COLORS[i % TAG_COLORS.length],
     }))
 
-  // Compliance by step
+  // Compliance by step — re-use the per-call where so filters apply.
   const scriptItems = await db.scriptItem.findMany({
     where: { script: { tenantId: manager.tenantId, isActive: true } },
     include: {
       scoreItems: {
-        where: {
-          callScore: {
-            callRecord: {
-              OR: [
-                { managerId },
-                { deal: { managerId } },
-              ],
-            },
-          },
-        },
+        where: { callScore: { callRecord: callWhere } },
+        select: { isDone: true },
       },
     },
     orderBy: { order: "asc" },
@@ -902,6 +1017,7 @@ export async function getCallDetail(
       tags: true,
       deal: {
         select: {
+          crmId: true,
           analysis: {
             select: { summary: true, recommendations: true },
           },
@@ -915,9 +1031,17 @@ export async function getCallDetail(
   const scoreItems = call.score?.items ?? []
   scoreItems.sort((a, b) => a.scriptItem.order - b.scriptItem.order)
 
+  // Resolve CRM deep-link from tenant config. Prefer the deal.crmId (the lead
+  // in CRM); fall back to call.crmId.
+  const crmUrl = await buildCrmDealUrl(
+    call.tenantId,
+    call.deal?.crmId ?? call.crmId
+  )
+
   return {
     id: call.id,
     crmId: call.crmId,
+    crmUrl,
     managerName: call.manager?.name ?? null,
     managerId: call.manager?.id ?? null,
     clientName: call.clientName,
@@ -939,5 +1063,31 @@ export async function getCallDetail(
       aiComment: si.aiComment,
       scriptItem: si.scriptItem,
     })),
+  }
+}
+
+/**
+ * Build a CRM deep-link to the deal/lead based on tenant's active CrmConfig.
+ *  - amoCRM:    https://{subdomain}.amocrm.ru/leads/detail/{crmId}
+ *  - GetCourse: https://{subdomain}.getcourse.ru/sales/control/deal/update/id/{crmId}
+ *  - Bitrix24:  not supported here (returns null)
+ */
+async function buildCrmDealUrl(
+  tenantId: string,
+  crmId: string | null
+): Promise<string | null> {
+  if (!crmId) return null
+  const config = await db.crmConfig.findFirst({
+    where: { tenantId, isActive: true },
+    select: { provider: true, subdomain: true },
+  })
+  if (!config?.subdomain) return null
+  switch (config.provider) {
+    case "AMOCRM":
+      return `https://${config.subdomain}.amocrm.ru/leads/detail/${crmId}`
+    case "GETCOURSE":
+      return `https://${config.subdomain}.getcourse.ru/sales/control/deal/update/id/${crmId}`
+    default:
+      return null
   }
 }

@@ -8,6 +8,7 @@ import {
   getQcChartData,
   getQcGraphData,
   getRecentCallsEnhanced,
+  parseQcFiltersFromSearchParams,
 } from "@/lib/queries/quality"
 import { getTenantMode } from "@/lib/queries/active-window"
 import { QcSummary } from "./_components/qc-summary"
@@ -18,15 +19,21 @@ import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
 import { QcFilters } from "./_components/qc-filters"
 
-export default async function QualityPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>
+
+export default async function QualityPage(props: {
+  searchParams: SearchParams
+}) {
+  const sp = await props.searchParams
   const tenantId = await requireTenantId()
   const mode = await getTenantMode(tenantId)
+  const qcFilters = parseQcFiltersFromSearchParams(sp)
   const [dashboard, filters, charts, graphs, recent] = await Promise.all([
-    getQualityDashboard(tenantId, mode),
+    getQualityDashboard(tenantId, mode, qcFilters),
     getQcFilterOptions(tenantId),
-    getQcChartData(tenantId, mode),
-    getQcGraphData(tenantId, mode),
-    getRecentCallsEnhanced(tenantId, 20, mode),
+    getQcChartData(tenantId, mode, qcFilters),
+    getQcGraphData(tenantId, mode, qcFilters),
+    getRecentCallsEnhanced(tenantId, 20, mode, qcFilters),
   ])
 
   return (

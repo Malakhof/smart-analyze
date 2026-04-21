@@ -290,10 +290,31 @@ export function CallSlideOver({
                   </button>
                   {call.type === "CHAT" ? "Переписка" : "Звонок"} {call.crmId ?? call.id.slice(0, 8)}
                 </SheetTitle>
-                {call.crmId && (
-                  <SheetDescription className="text-[12px] text-ai-1 hover:underline">
-                    ссылка на CRM
-                  </SheetDescription>
+                {call.crmUrl ? (
+                  <a
+                    href={call.crmUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12px] text-ai-1 hover:underline"
+                  >
+                    ссылка на CRM &rarr;
+                  </a>
+                ) : null}
+              </div>
+
+              {/* Manager / Client */}
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-text-secondary">
+                <span>
+                  Менеджер:{" "}
+                  <span className="font-semibold text-text-primary">
+                    {call.managerName ?? "не указан"}
+                  </span>
+                </span>
+                {call.clientName && (
+                  <>
+                    <span className="text-text-tertiary">|</span>
+                    <span>Клиент: {call.clientName}</span>
+                  </>
                 )}
               </div>
 

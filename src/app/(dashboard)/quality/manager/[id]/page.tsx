@@ -2,7 +2,10 @@ export const dynamic = "force-dynamic"
 
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { getManagerQualityFull } from "@/lib/queries/quality"
+import {
+  getManagerQualityFull,
+  parseQcFiltersFromSearchParams,
+} from "@/lib/queries/quality"
 import { QcFilters } from "../../_components/qc-filters"
 import { QcDonutCharts } from "../../_components/qc-donut-charts"
 import { QcComplianceChart } from "../../_components/qc-compliance-chart"
@@ -32,11 +35,15 @@ function scoreColor(score: number): string {
 
 export default async function QcManagerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { id } = await params
-  const data = await getManagerQualityFull(id)
+  const sp = await searchParams
+  const qcFilters = parseQcFiltersFromSearchParams(sp)
+  const data = await getManagerQualityFull(id, qcFilters)
 
   if (!data) notFound()
 

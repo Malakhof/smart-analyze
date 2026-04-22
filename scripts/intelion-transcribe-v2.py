@@ -158,6 +158,28 @@ def merge_words_into_utterances(words, gap_threshold: float = GAP_THRESHOLD):
 utterances_end = []
 
 
+# Known Whisper large-v3 hallucinations on silence/static fragments.
+# Filter these out from final transcript so they don't confuse downstream AI.
+HALLUCINATION_PATTERNS = [
+    r"DimaTorzok", r"redactor.*субтитр", r"редактор.*субтитр",
+    r"субтитр[ыов]?\s*создавал", r"субтитр[ыов]?\s*от", r"субтитры?\s*by",
+    r"корректор\s*субтитр", r"перевод\s*и?\s*субтитры",
+    r"спасибо\s*за\s*просмотр", r"thank.*for.*watching",
+]
+import re as _re
+_HALLUCINATION_RE = _re.compile("|".join(HALLUCINATION_PATTERNS), _re.IGNORECASE)
+
+
+def filter_whisper_hallucinations(utterances):
+    """Drop utterances that match known Whisper hallucination patterns."""
+    out = []
+    for start, label, text in utterances:
+        if _HALLUCINATION_RE.search(text):
+            continue
+        out.append((start, label, text))
+    return out
+
+
 def format_transcript(utterances) -> str:
     """Pretty format with [LABEL MM:SS] timestamps."""
     lines = []
@@ -225,8 +247,13 @@ def process_one(model: WhisperModel, row: dict) -> dict:
             ls, l_info = transcribe_one_channel(model, left)
             rs, _ = transcribe_one_channel(model, right)
 
-            words = extract_words(ls, "КЛИЕНТ") + extract_words(rs, "МЕНЕДЖЕР")
+            # Verified on Sipuni (vastu) and onlinePBX (diva) 2026-04-23:
+            #   LEFT(ch0)  = МЕНЕДЖЕР (CRM-side participant)
+            #   RIGHT(ch1) = КЛИЕНТ   (remote)
+            # Earlier comment in code was wrong — corrected after first prod test.
+            words = extract_words(ls, "МЕНЕДЖЕР") + extract_words(rs, "КЛИЕНТ")
             utterances = merge_words_into_utterances(words)
+            utterances = filter_whisper_hallucinations(utterances)
 
             text = format_transcript(utterances)
             raw = {

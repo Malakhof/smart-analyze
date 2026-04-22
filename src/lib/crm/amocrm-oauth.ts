@@ -47,8 +47,16 @@ export async function getAmoCrmAccessToken(crmConfigId: string): Promise<string>
   // apiKey missing or token expired → fall through to refresh
 
   // Token expired — refresh
-  if (!config.refreshToken || !config.clientId || !config.clientSecret || !config.subdomain) {
-    throw new Error("Missing OAuth credentials for token refresh")
+  if (
+    !config.refreshToken ||
+    !config.clientId ||
+    !config.clientSecret ||
+    !config.subdomain ||
+    !config.redirectUri
+  ) {
+    throw new Error(
+      "Missing OAuth credentials for token refresh — redirectUri must be set in CrmConfig (no silent fallback to legacy host)"
+    )
   }
 
   const refreshToken = decrypt(config.refreshToken)
@@ -63,15 +71,18 @@ export async function getAmoCrmAccessToken(crmConfigId: string): Promise<string>
       client_secret: clientSecret,
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      redirect_uri:
-        config.redirectUri ?? "https://sa.qupai.ru/api/auth/amocrm/callback",
+      redirect_uri: config.redirectUri,
     }),
     signal: AbortSignal.timeout(15000),
   })
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}))
-    console.error("[AMOCRM_REFRESH] Failed:", error)
+    console.error(
+      `[AMOCRM_REFRESH] Failed for config ${crmConfigId} ` +
+        `(subdomain=${config.subdomain}, redirect_uri=${config.redirectUri}):`,
+      error
+    )
     throw new Error("amoCRM token refresh failed")
   }
 

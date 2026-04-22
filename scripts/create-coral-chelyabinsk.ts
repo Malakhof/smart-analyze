@@ -4,7 +4,7 @@
  *
  * ── FILL THESE BEFORE RUN ───────────────────────────────────────────
  */
-const SUBDOMAIN = ""       // e.g. "CoralChelyabinsk" — то что в URL amoCRM до .amocrm.ru
+const SUBDOMAIN = ""       // e.g. "ctravel" — то что в URL amoCRM до .amocrm.ru
 const CLIENT_ID = ""       // UUID из "Интеграции" в amoCRM
 const CLIENT_SECRET = ""   // длинный токен из той же вкладки
 const AUTH_CODE = ""       // одноразовый код (действует 20 минут!) — НЕ refresh_token

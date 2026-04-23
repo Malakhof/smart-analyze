@@ -59,20 +59,59 @@ SSL_CTX.check_hostname = False
 SSL_CTX.verify_mode = ssl.CERT_NONE
 
 
-def download(url: str, dest: Path, timeout: int = 60) -> bool:
+def resolve_onpbx_url(uuid: str) -> str:
+    """Resolve fresh download URL from onPBX (URLs expire ~30 min).
+
+    Requires env: ON_PBX_DOMAIN (e.g. 'pbx1720.onpbx.ru'), ON_PBX_KEY_ID, ON_PBX_KEY.
+    """
+    domain = os.environ.get("ON_PBX_DOMAIN")
+    key_id = os.environ.get("ON_PBX_KEY_ID")
+    key = os.environ.get("ON_PBX_KEY")
+    if not (domain and key_id and key):
+        return None
+    body = urllib.parse.urlencode({"uuid": uuid, "download": "1"}).encode()
+    req = urllib.request.Request(
+        f"https://api.onlinepbx.ru/{domain}/mongo_history/search.json",
+        data=body, method="POST",
+        headers={"x-pbx-authentication": f"{key_id}:{key}"},
+    )
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-            },
-        )
-        with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
-            dest.write_bytes(r.read())
-        return dest.stat().st_size > 1000
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
-        print(f"[download-fail] {url[:80]}: {e}", file=sys.stderr)
-        return False
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as r:
+            j = json.loads(r.read())
+        url = j.get("data")
+        if isinstance(url, str) and url.startswith("http"):
+            return url
+    except Exception as e:
+        print(f"[onpbx-resolve-fail] uuid={uuid}: {e}", file=sys.stderr)
+    return None
+
+
+def download(url: str, dest: Path, timeout: int = 60, uuid: str = None) -> bool:
+    """Download with retry. If URL fails (e.g. expired) AND uuid provided AND env has onPBX creds —
+    re-resolve fresh URL via API and retry once."""
+    def _try(u):
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"})
+            with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
+                dest.write_bytes(r.read())
+            return dest.stat().st_size > 1000
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+            print(f"[download-fail] {u[:80]}: {e}", file=sys.stderr)
+            return False
+
+    if _try(url):
+        return True
+    # Retry with fresh URL via onPBX resolve if available
+    if uuid:
+        fresh = resolve_onpbx_url(uuid)
+        if fresh and fresh != url:
+            print(f"[onpbx-retry] uuid={uuid} fresh URL", file=sys.stderr)
+            return _try(fresh)
+    return False
+
+
+# Patch urllib.parse import for resolve_onpbx_url
+import urllib.parse
 
 
 def probe_channels(path: Path) -> int:
@@ -398,7 +437,7 @@ def process_one(model: WhisperModel, row: dict) -> dict:
     right = WORK_DIR / f"{cid}.R.wav"
 
     t0 = time.time()
-    if not download(url, src):
+    if not download(url, src, uuid=cid):
         return {"id": cid, "error": "download_failed", "url": url}
 
     min_dur = float(os.environ.get("MIN_DURATION", "60"))   # default 60 сек (ниже = служебное)

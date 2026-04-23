@@ -5,6 +5,8 @@ import { notFound } from "next/navigation"
 import { getCallDetail } from "@/lib/queries/quality"
 import { ScriptChecklist } from "../../_components/script-checklist"
 import { AudioPlayer } from "../../_components/audio-player"
+import { QcTranscriptToggle } from "../../_components/qc-transcript-toggle"
+import { QcScriptScoreBadge } from "../../_components/qc-script-score-badge"
 
 function scoreColor(score: number): string {
   if (score >= 80) return "text-status-green"
@@ -104,17 +106,13 @@ export default async function CallDetailPage({
           {/* Audio player */}
           <AudioPlayer audioUrl={call.audioUrl} />
 
-          {/* Transcript */}
-          {call.transcript && (
-            <div className="rounded-[10px] border border-border-default bg-surface-1 p-5 shadow-[var(--card-shadow)]">
-              <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
-                Транскрипция
-              </h3>
-              <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-text-secondary">
-                {call.transcript}
-              </div>
-            </div>
-          )}
+          {/* Transcript — switchable between original Whisper output and the
+              AI-repaired version. Component handles defaulting and disabling
+              the toggle when only one variant exists. */}
+          <QcTranscriptToggle
+            transcript={call.transcript}
+            transcriptRepaired={call.transcriptRepaired}
+          />
 
           {/* Script checklist */}
           <ScriptChecklist
@@ -188,6 +186,13 @@ export default async function CallDetailPage({
                   <span className="font-medium text-text-primary">
                     {call.scoreItems.length}
                   </span>
+                </div>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-text-secondary">Балл скрипта</span>
+                  <QcScriptScoreBadge
+                    score={call.scriptScore}
+                    details={call.scriptDetails}
+                  />
                 </div>
                 <div className="flex justify-between text-[13px]">
                   <span className="text-text-secondary">Выполнено</span>

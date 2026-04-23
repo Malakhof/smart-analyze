@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import type { QcRecentCallEnhanced } from "@/lib/queries/quality"
 import { CallSlideOver } from "./call-slide-over"
+import { QcScriptScoreBadge } from "./qc-script-score-badge"
 
 function fmtDuration(seconds: number | null): string {
   if (!seconds) return "--:--"
@@ -74,6 +75,7 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
     "Категория",
     "Теги",
     "Рекомендации",
+    "Скрипт",
     "Оценка",
     "",
   ]
@@ -194,6 +196,14 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
                       )}
                     </td>
 
+                    {/* Скрипт — script score badge X/22 with popover */}
+                    <td className="px-[14px] py-3">
+                      <QcScriptScoreBadge
+                        score={c.scriptScore}
+                        details={c.scriptDetails}
+                      />
+                    </td>
+
                     {/* Оценка — colored dot */}
                     <td className="px-[14px] py-3">
                       {c.totalScore != null ? (
@@ -261,7 +271,7 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
               {calls.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-[14px] py-8 text-center text-[13px] text-text-tertiary"
                   >
                     Нет записей звонков
@@ -277,13 +287,14 @@ export function QcRecentCalls({ calls }: QcRecentCallsProps) {
       <div className="mt-3 flex justify-end">
         <button
           onClick={() => {
-            const header = ["ID", "Дата", "Длительность", "Категория", "Теги", "Оценка"]
+            const header = ["ID", "Дата", "Длительность", "Категория", "Теги", "Скрипт", "Оценка"]
             const rows = calls.map((c) => [
               c.crmId ?? c.id.slice(0, 8),
               new Date(c.createdAt).toLocaleDateString("ru-RU"),
               c.duration != null ? String(c.duration) : "",
               c.category ?? "",
               c.tags.join("; "),
+              c.scriptScore != null ? `${c.scriptScore}/22` : "",
               c.totalScore != null ? String(Math.round(c.totalScore)) : "",
             ])
             const csv = [header, ...rows]

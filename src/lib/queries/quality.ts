@@ -20,6 +20,13 @@ export interface QcFilters {
   scoreMin?: number
   scoreMax?: number
   stepStatus?: "done" | "missed"
+  /**
+   * Voicemail / "real-only" filter. When `realOnly` is true we restrict the
+   * query to calls where `callType = 'REAL'` OR `callType IS NULL` (NULL is
+   * tolerated so calls without classification still show up — the migration
+   * may not have backfilled every row).
+   */
+  realOnly?: boolean
 }
 
 const PERIOD_TO_DAYS: Record<string, number> = {
@@ -57,6 +64,10 @@ export function parseQcFiltersFromSearchParams(
 
   const stepStatus = typeof sp.stepStatus === "string" ? sp.stepStatus : undefined
   if (stepStatus === "done" || stepStatus === "missed") f.stepStatus = stepStatus
+
+  // Voicemail filter — `?type=real` means "hide autoresponders / non-real calls".
+  const callTypeParam = typeof sp.type === "string" ? sp.type : undefined
+  if (callTypeParam === "real") f.realOnly = true
 
   return f
 }
@@ -118,6 +129,19 @@ function qcCallWhere(
   const where: any = { tenantId, ...QC_FILTER }
   if (createdAt) where.createdAt = createdAt
 
+  // Voicemail filter: keep REAL conversations + still-unknown rows (NULL).
+  // When the migration backfills callType for old rows the NULL branch becomes
+  // effectively unused, but keeping it makes the toggle non-destructive today.
+  // We push the OR into AND so it composes safely with the manager-OR below.
+  if (filters.realOnly) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const andList: any[] = where.AND ?? []
+    andList.push({
+      OR: [{ callType: "REAL" }, { callType: null }],
+    })
+    where.AND = andList
+  }
+
   if (filters.categories && filters.categories.length > 0) {
     where.category = { in: filters.categories }
   }
@@ -161,6 +185,25 @@ function qcCallWhere(
   }
 
   return where
+}
+
+/**
+ * Returns the call count split as (filtered, total-ignoring-realOnly).
+ * Used to render "234 / 567 показано" next to the voicemail filter chip so the
+ * operator sees how many rows the toggle hides.
+ */
+export async function getQcCallTypeCounts(
+  tenantId: string,
+  mode: QcQueryMode = "all",
+  filters: QcFilters = {}
+): Promise<{ filtered: number; total: number }> {
+  const [filtered, total] = await Promise.all([
+    db.callRecord.count({ where: qcCallWhere(tenantId, mode, filters) }),
+    db.callRecord.count({
+      where: qcCallWhere(tenantId, mode, { ...filters, realOnly: false }),
+    }),
+  ])
+  return { filtered, total }
 }
 
 export async function getQualityDashboard(
@@ -373,6 +416,23 @@ export async function getManagerQuality(
   }
 }
 
+/**
+ * Per-stage script breakdown stored in `CallRecord.scriptDetails` (Json column).
+ * Shape is contract between the AI scorer and the UI — keep aligned with the
+ * pipeline that writes it. `score` is the per-stage points; `evidence` is a
+ * short verbatim quote from the transcript explaining the verdict.
+ */
+export interface ScriptDetailsStage {
+  name: string
+  score: number
+  maxScore: number
+  evidence?: string | null
+}
+
+export interface ScriptDetailsPayload {
+  stages: ScriptDetailsStage[]
+}
+
 export interface QcCallDetail {
   id: string
   crmId: string | null
@@ -386,9 +446,13 @@ export interface QcCallDetail {
   category: string | null
   audioUrl: string | null
   transcript: string | null
+  transcriptRepaired: string | null
   duration: number | null
   createdAt: Date
   totalScore: number | null
+  callType: string | null
+  scriptScore: number | null
+  scriptDetails: ScriptDetailsPayload | null
   tags: string[]
   summary: string | null
   recommendation: string | null
@@ -709,6 +773,9 @@ export interface QcRecentCallEnhanced {
   recommendation: string | null
   audioUrl: string | null
   createdAt: Date
+  callType: string | null
+  scriptScore: number | null
+  scriptDetails: ScriptDetailsPayload | null
 }
 
 export async function getRecentCallsEnhanced(
@@ -779,6 +846,9 @@ export async function getRecentCallsEnhanced(
       recommendation,
       audioUrl: c.audioUrl,
       createdAt: c.createdAt,
+      callType: c.callType ?? null,
+      scriptScore: c.scriptScore ?? null,
+      scriptDetails: (c.scriptDetails as ScriptDetailsPayload | null) ?? null,
     }
   })
 }
@@ -960,6 +1030,9 @@ export async function getManagerQualityFull(
       recommendation,
       audioUrl: c.audioUrl,
       createdAt: c.createdAt,
+      callType: c.callType ?? null,
+      scriptScore: c.scriptScore ?? null,
+      scriptDetails: (c.scriptDetails as ScriptDetailsPayload | null) ?? null,
     }
   })
 
@@ -1067,9 +1140,13 @@ export async function getCallDetail(
     category: call.category,
     audioUrl: call.audioUrl,
     transcript: call.transcript,
+    transcriptRepaired: call.transcriptRepaired ?? null,
     duration: call.duration,
     createdAt: call.createdAt,
     totalScore: call.score?.totalScore ?? null,
+    callType: call.callType ?? null,
+    scriptScore: call.scriptScore ?? null,
+    scriptDetails: (call.scriptDetails as ScriptDetailsPayload | null) ?? null,
     tags: call.tags.map((t) => t.tag),
     summary: call.deal?.analysis?.summary ?? null,
     recommendation: call.deal?.analysis?.recommendations ?? null,

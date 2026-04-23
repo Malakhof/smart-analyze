@@ -384,11 +384,15 @@ model CallRecord {
   direction   CallDirection
   type        CommunicationType @default(CALL)
   category    String?
+  callType    String?
   audioUrl    String?
   transcript  String?
+  transcriptRepaired String?
   duration    Int?
   createdAt   DateTime      @default(now())
   score       CallScore?
+  scriptScore   Int?
+  scriptDetails Json?
   tags        CallTag[]
 }
 

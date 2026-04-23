@@ -26,6 +26,8 @@ import ssl
 from pathlib import Path
 
 from faster_whisper import WhisperModel
+import wave
+import audioop
 
 WORK_DIR = Path("/workspace/audio")
 WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,8 +35,23 @@ MODEL_NAME = os.environ.get("WHISPER_MODEL", "large-v3")
 LANGUAGE = os.environ.get("WHISPER_LANG", "ru")
 COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE", "float16")
 
-# Word grouping threshold — words from same speaker within this gap = same utterance
-GAP_THRESHOLD = float(os.environ.get("GAP_THRESHOLD", "0.6"))
+# Word grouping threshold — words from same speaker within this gap = same utterance.
+# Increased from 0.6s → 2.0s after first prod test: slow speakers (elderly clients)
+# pause for 1-2s mid-phrase, and 0.6s threshold split их фразы in 5-10 фрагментов.
+GAP_THRESHOLD = float(os.environ.get("GAP_THRESHOLD", "2.0"))
+
+# Probability threshold for keeping a word. Cross-channel echo bleed produces
+# words with prob ~0.3-0.5; real voice prob ~0.7-0.95. Drop low-prob words.
+PROB_THRESHOLD = float(os.environ.get("PROB_THRESHOLD", "0.55"))
+
+# Cross-channel dedup window: if same/similar word appears on both channels
+# within this time window — drop the one with lower probability (it's bleed).
+ECHO_WINDOW_S = float(os.environ.get("ECHO_WINDOW_S", "1.5"))
+
+# Energy-based filter ratio. If during word time, the OTHER channel's RMS
+# is N× louder than THIS channel's RMS — this word is echo. Default 2.5×
+# (echo is typically -8 to -20 dB quieter, i.e. 2.5-10× ratio).
+ECHO_ENERGY_RATIO = float(os.environ.get("ECHO_ENERGY_RATIO", "2.5"))
 
 # Allow expired SSL (some providers have broken certs)
 SSL_CTX = ssl.create_default_context()
@@ -100,6 +117,8 @@ def transcribe_one_channel(model: WhisperModel, fp: Path):
     """Returns (segments_with_words, info).
 
     KEY: word_timestamps=True, vad_filter=False, condition_on_previous_text=False.
+    v2.4: repetition guards (no_repeat_ngram_size + repetition_penalty) — prevents
+    Whisper looping into "вот, вот, вот ×80" on monotone segments (seen on long calls).
     """
     segments_iter, info = model.transcribe(
         str(fp),
@@ -109,49 +128,207 @@ def transcribe_one_channel(model: WhisperModel, fp: Path):
         condition_on_previous_text=False,  # ← без галлюцинаций
         beam_size=5,
         temperature=[0.0, 0.2, 0.4],     # температура fallback (стандарт OpenAI)
+        no_repeat_ngram_size=3,          # v2.4: prevent "вот, вот, вот..." loops
+        repetition_penalty=1.1,          # v2.4: discourage immediate repeats
     )
     return list(segments_iter), info
 
 
 def extract_words(segments, label: str):
-    """Flatten segments → list of (start, end, label, word_text) tuples."""
+    """Flatten segments → list of (start, end, label, word_text, probability) tuples.
+
+    Filter words below PROB_THRESHOLD on the spot — these are usually echo bleed
+    from the OTHER channel (manager's mic picks up client's voice through speakers
+    with ~50-100ms delay and -20dB attenuation; Whisper sees the bleed and produces
+    low-confidence transcription).
+    """
     words = []
     for seg in segments:
         if not seg.words:
-            # Fallback: если по какой-то причине без word_timestamps — берём весь сегмент
-            words.append((seg.start, seg.end, label, seg.text.strip()))
+            # Fallback: если без word_timestamps — берём весь сегмент с avg prob
+            prob = getattr(seg, "avg_logprob", -1.0)
+            # convert avg_logprob to probability-ish (rough)
+            est_prob = 1.0 if prob > -0.3 else 0.5 if prob > -0.7 else 0.3
+            if est_prob >= PROB_THRESHOLD:
+                words.append((seg.start, seg.end, label, seg.text.strip(), est_prob))
             continue
         for w in seg.words:
             text = (w.word or "").strip()
             if not text:
                 continue
-            words.append((w.start, w.end, label, text))
+            prob = getattr(w, "probability", 1.0)
+            if prob < PROB_THRESHOLD:
+                continue  # likely cross-channel bleed
+            words.append((w.start, w.end, label, text, prob))
     return words
 
 
-def merge_words_into_utterances(words, gap_threshold: float = GAP_THRESHOLD):
-    """Group consecutive same-channel words into utterances.
+def load_wav_rms_lookup(wav_path: Path):
+    """Load a wav file and return a function rms(start_s, end_s) → RMS amplitude.
 
-    New utterance when:
-      - speaker changes, OR
-      - gap between word.end of previous and word.start of current > gap_threshold
+    Used to gate echo: a word transcribed on channel X but with low RMS in
+    channel X (and high RMS in the other channel at same time) is echo bleed.
     """
-    words.sort(key=lambda w: w[0])  # sort by start time
-    utterances = []  # [(start_time, label, "concatenated text")]
-    for w_start, w_end, label, text in words:
+    try:
+        wf = wave.open(str(wav_path), "rb")
+        sample_width = wf.getsampwidth()
+        sample_rate = wf.getframerate()
+        n_frames = wf.getnframes()
+        frames = wf.readframes(n_frames)
+        wf.close()
+    except Exception as e:
+        print(f"[wav-load-fail] {wav_path}: {e}", file=sys.stderr)
+        return lambda s, e: 1.0  # fallback — never gate
+
+    def rms(start_s: float, end_s: float) -> float:
+        a = max(0, int(start_s * sample_rate)) * sample_width
+        b = min(len(frames), int(end_s * sample_rate) * sample_width)
+        if b <= a:
+            return 0.0
+        chunk = frames[a:b]
+        if not chunk:
+            return 0.0
+        try:
+            return float(audioop.rms(chunk, sample_width))
+        except audioop.error:
+            return 0.0
+
+    return rms
+
+
+def filter_echo_by_energy(words, rms_self, rms_other, ratio: float = ECHO_ENERGY_RATIO):
+    """Drop words where the OTHER channel was N× louder during word time.
+
+    Such words are physical echo bleed (other speaker's voice picked up by
+    this channel's mic via speakers, with attenuation but real audio).
+    """
+    out = []
+    for w in words:
+        s, e, label, text, prob = w
+        # Pad ±0.1s around word for stable RMS measurement
+        rms_s = rms_self(s - 0.1, e + 0.1)
+        rms_o = rms_other(s - 0.1, e + 0.1)
+        # If other channel was much louder → this is echo, drop
+        if rms_o > 0 and rms_s > 0 and (rms_o / rms_s) >= ratio:
+            continue
+        out.append(w)
+    return out
+
+
+def dedup_cross_channel_echo(words):
+    """Drop echo-bleed duplicates between channels.
+
+    For each pair of words (different channels) within ECHO_WINDOW_S of each other,
+    if their texts are similar (one is substring of other, or share most chars),
+    keep the one with HIGHER probability — this is the real voice; the other is
+    bleed from speakers picked up by the other channel's mic.
+    """
+    # Sort by start time
+    words.sort(key=lambda w: w[0])
+    keep = [True] * len(words)
+
+    for i, (s1, e1, l1, t1, p1) in enumerate(words):
+        if not keep[i]:
+            continue
+        # Look forward within window
+        for j in range(i + 1, len(words)):
+            s2, e2, l2, t2, p2 = words[j]
+            if s2 - s1 > ECHO_WINDOW_S:
+                break  # too far, sorted
+            if l1 == l2:
+                continue  # same channel, not echo
+            # Texts similar?
+            t1_lc = t1.lower().strip(".,!?;:—-")
+            t2_lc = t2.lower().strip(".,!?;:—-")
+            if not t1_lc or not t2_lc:
+                continue
+            similar = (
+                t1_lc == t2_lc
+                or (len(t1_lc) >= 3 and len(t2_lc) >= 3 and (
+                    t1_lc in t2_lc or t2_lc in t1_lc
+                ))
+            )
+            if similar:
+                # Drop the lower-probability one (the echo)
+                if p1 >= p2:
+                    keep[j] = False
+                else:
+                    keep[i] = False
+                    break  # i dropped, no need to keep checking
+    return [w for w, k in zip(words, keep) if k]
+
+
+def merge_words_into_utterances(words, gap_threshold: float = GAP_THRESHOLD):
+    """Legacy global merge — kept for tests. Use merge_channel_first() in production.
+
+    PROBLEM: sorting all words by start_time globally interleaves overlapping
+    channels into ping-pong — Whisper transcribes L/R independently, their word
+    timestamps differ by tens of ms, so during real overlap (manager talking,
+    client backchanneling) the merged stream alternates word-by-word instead of
+    showing two parallel utterances. See merge_channel_first() for the fix.
+    """
+    words.sort(key=lambda w: w[0])
+    utterances = []
+    for w in words:
+        w_start, w_end, label, text = w[0], w[1], w[2], w[3]
         if utterances:
             last_start, last_label, last_text = utterances[-1]
             last_end_estimate = utterances_end[-1] if utterances_end else last_start
             gap = w_start - last_end_estimate
             if last_label == label and gap <= gap_threshold:
-                # Append to current utterance
                 utterances[-1] = (last_start, last_label, last_text + " " + text)
                 utterances_end[-1] = w_end
                 continue
-        # New utterance
         utterances.append((w_start, label, text))
         utterances_end.append(w_end)
     return utterances
+
+
+def merge_channel_first(mgr_words, cli_words, gap_threshold: float = GAP_THRESHOLD):
+    """Channel-first merge: build per-channel utterances FIRST, then interleave.
+
+    Whisper transcribes L and R channels independently — its word-level timestamps
+    don't align perfectly with reality (drift ~50-200ms). When we sort the combined
+    word stream by start_time, on real overlap zones (e.g., client backchanneling
+    "ага/угу" while manager says "если можно"), the streams interleave word-by-word:
+
+        L Ага,        64.78
+        R Если        64.86  ← interleaves
+        L это         65.44
+        R можно,      65.64  ← interleaves
+        L хорошо.     65.66
+
+    This produces ping-pong that downstream AI can't parse. The fix:
+    1. Build complete utterances PER CHANNEL (drift invisible — only that channel)
+    2. THEN interleave the utterances by start time
+
+    Result for the same zone:
+        [КЛИЕНТ 01:04]   Ага, это хорошо.
+        [МЕНЕДЖЕР 01:04] Если можно, ...
+    """
+    def build_channel_utterances(words):
+        """Group consecutive words from one channel into utterances by gap."""
+        words = sorted(words, key=lambda w: w[0])
+        utts = []  # (start, end, label, text)
+        for w in words:
+            w_start, w_end, label, text = w[0], w[1], w[2], w[3]
+            if utts:
+                last_s, last_e, last_label, last_text = utts[-1]
+                if (w_start - last_e) <= gap_threshold:
+                    utts[-1] = (last_s, w_end, label, last_text + " " + text)
+                    continue
+            utts.append((w_start, w_end, label, text))
+        return utts
+
+    mgr_utts = build_channel_utterances(mgr_words)
+    cli_utts = build_channel_utterances(cli_words)
+
+    # Interleave by start time. Each utterance is now atomic — neither channel's
+    # turn can be split by the other channel's words.
+    all_utts = mgr_utts + cli_utts
+    all_utts.sort(key=lambda u: u[0])
+
+    return [(s, label, text) for s, e, label, text in all_utts]
 
 
 # Module-level mutable state for end-times (used by merge func above)
@@ -165,6 +342,9 @@ HALLUCINATION_PATTERNS = [
     r"субтитр[ыов]?\s*создавал", r"субтитр[ыов]?\s*от", r"субтитры?\s*by",
     r"корректор\s*субтитр", r"перевод\s*и?\s*субтитры",
     r"спасибо\s*за\s*просмотр", r"thank.*for.*watching",
+    r"продолжение\s*следует",        # Whisper invents on long silence at end of call
+    r"^\s*звонок\s*телефона\s*$",    # ringtone description (single-line dial tone)
+    r"^\s*звонок\s+(дверь|телефон)\s*$",  # v2.4: caps "ЗВОНОК ДВЕРЬ" hallucination
 ]
 import re as _re
 _HALLUCINATION_RE = _re.compile("|".join(HALLUCINATION_PATTERNS), _re.IGNORECASE)
@@ -241,30 +421,61 @@ def process_one(model: WhisperModel, row: dict) -> dict:
     try:
         if channels == 2 and split_channels(src, left, right):
             # ── STEREO PATH (100% role accuracy) ──
-            # Convention (verified on Sipuni/onPBX 2026-04-19+22):
-            #   LEFT(ch0)  = remote = КЛИЕНТ
-            #   RIGHT(ch1) = local  = МЕНЕДЖЕР
             ls, l_info = transcribe_one_channel(model, left)
             rs, _ = transcribe_one_channel(model, right)
 
-            # Verified on Sipuni (vastu) and onlinePBX (diva) 2026-04-23:
-            #   LEFT(ch0)  = МЕНЕДЖЕР (CRM-side participant)
-            #   RIGHT(ch1) = КЛИЕНТ   (remote)
-            # Earlier comment in code was wrong — corrected after first prod test.
-            words = extract_words(ls, "МЕНЕДЖЕР") + extract_words(rs, "КЛИЕНТ")
-            utterances = merge_words_into_utterances(words)
+            # v2.4: provider-aware role mapping.
+            # Default convention (onPBX, Sipuni inbound): LEFT=МЕНЕДЖЕР, RIGHT=КЛИЕНТ.
+            # Sipuni OUTBOUND inverts: agent goes to RIGHT, remote callee on LEFT.
+            # (Verified on vastu outbound calls 2026-04-23 by 5-agent QA review.)
+            provider = (row.get("provider") or "onpbx").lower()
+            direction = (row.get("direction") or "in").lower()
+
+            sipuni_outbound = provider == "sipuni" and direction in ("out", "outgoing")
+            if sipuni_outbound:
+                mgr_words = extract_words(rs, "МЕНЕДЖЕР")  # SWAPPED: right=manager
+                cli_words = extract_words(ls, "КЛИЕНТ")    # SWAPPED: left=client
+            else:
+                mgr_words = extract_words(ls, "МЕНЕДЖЕР")
+                cli_words = extract_words(rs, "КЛИЕНТ")
+
+            # v2.2: ENERGY-based echo filter — open both channel WAVs, drop words
+            # where the OTHER channel was loud (means this channel just heard echo).
+            # Catches single-syllable echoes ("могу"/"два") that text-dedup missed.
+            rms_left = load_wav_rms_lookup(left)
+            rms_right = load_wav_rms_lookup(right)
+            mgr_words = filter_echo_by_energy(mgr_words, rms_left, rms_right)
+            cli_words = filter_echo_by_energy(cli_words, rms_right, rms_left)
+
+            # Text-similar dedup across channels (v2.1) — needs combined list
+            words = mgr_words + cli_words
+            words = dedup_cross_channel_echo(words)
+
+            # v2.3: split back by label and apply channel-first merge.
+            # Builds per-channel utterances FIRST so Whisper's independent-timestamp
+            # drift can't interleave overlapping channels into ping-pong fragments.
+            mgr_words_clean = [w for w in words if w[2] == "МЕНЕДЖЕР"]
+            cli_words_clean = [w for w in words if w[2] == "КЛИЕНТ"]
+            utterances = merge_channel_first(mgr_words_clean, cli_words_clean)
             utterances = filter_whisper_hallucinations(utterances)
 
             text = format_transcript(utterances)
+            # v2.4: raw_segments labels match actual role assignment (provider-aware)
+            left_label = "КЛИЕНТ" if sipuni_outbound else "МЕНЕДЖЕР"
+            right_label = "МЕНЕДЖЕР" if sipuni_outbound else "КЛИЕНТ"
             raw = {
-                "left_segments": serialize_raw_segments(ls, "КЛИЕНТ"),
-                "right_segments": serialize_raw_segments(rs, "МЕНЕДЖЕР"),
+                "left_segments": serialize_raw_segments(ls, left_label),
+                "right_segments": serialize_raw_segments(rs, right_label),
                 "merged_utterances": [
                     {"start": round(s, 3), "label": l, "text": t}
                     for s, l, t in utterances
                 ],
+                "role_mapping": {
+                    "provider": provider, "direction": direction,
+                    "sipuni_outbound": sipuni_outbound,
+                },
             }
-            mode = "stereo_word_merge_v2"
+            mode = "stereo_channel_first_v24"
             duration = l_info.duration
             language = l_info.language
             prob = l_info.language_probability

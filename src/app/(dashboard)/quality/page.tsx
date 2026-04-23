@@ -8,6 +8,7 @@ import {
   getQcChartData,
   getQcGraphData,
   getRecentCallsEnhanced,
+  getQcCallTypeCounts,
   parseQcFiltersFromSearchParams,
 } from "@/lib/queries/quality"
 import { getTenantMode } from "@/lib/queries/active-window"
@@ -18,6 +19,7 @@ import { QcScoreDistribution } from "./_components/qc-score-distribution"
 import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
 import { QcFilters } from "./_components/qc-filters"
+import { QcVoicemailFilter } from "./_components/qc-voicemail-filter"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -28,13 +30,15 @@ export default async function QualityPage(props: {
   const tenantId = await requireTenantId()
   const mode = await getTenantMode(tenantId)
   const qcFilters = parseQcFiltersFromSearchParams(sp)
-  const [dashboard, filters, charts, graphs, recent] = await Promise.all([
-    getQualityDashboard(tenantId, mode, qcFilters),
-    getQcFilterOptions(tenantId),
-    getQcChartData(tenantId, mode, qcFilters),
-    getQcGraphData(tenantId, mode, qcFilters),
-    getRecentCallsEnhanced(tenantId, 20, mode, qcFilters),
-  ])
+  const [dashboard, filters, charts, graphs, recent, callTypeCounts] =
+    await Promise.all([
+      getQualityDashboard(tenantId, mode, qcFilters),
+      getQcFilterOptions(tenantId),
+      getQcChartData(tenantId, mode, qcFilters),
+      getQcGraphData(tenantId, mode, qcFilters),
+      getRecentCallsEnhanced(tenantId, 20, mode, qcFilters),
+      getQcCallTypeCounts(tenantId, mode, qcFilters),
+    ])
 
   return (
     <div className="space-y-6 p-6">
@@ -77,6 +81,11 @@ export default async function QualityPage(props: {
         tags={filters.tags}
         managers={filters.managers}
         scriptItems={filters.scriptItems}
+      />
+
+      <QcVoicemailFilter
+        filteredCount={callTypeCounts.filtered}
+        totalCount={callTypeCounts.total}
       />
 
       {dashboard.totalCalls === 0 ? (

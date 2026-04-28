@@ -394,6 +394,54 @@ model CallRecord {
   scriptScore   Int?
   scriptDetails Json?
   tags        CallTag[]
+
+  // PBX metadata (canon #8)
+  pbxUuid       String?
+  managerExt    String?
+  startStamp    DateTime?
+  userTalkTime  Int?
+  hangupCause   String?
+  gateway       String?
+  qualityScore  Int?
+  pbxMeta       Json?
+  callSummary   String?
+  sentiment     String?
+  objections    Json?
+  hotLead       Boolean?
+  hotLeadReason String?
+  gcContactId   String?
+
+  // Master Enrich (6 блоков, canon-master-enrich-card.md)
+  enrichmentStatus      String?
+  enrichedAt            DateTime?
+  enrichedBy            String?
+  callOutcome           String?
+  hadRealConversation   Boolean?
+  outcome               String?
+  isCurator             Boolean?
+  isFirstLine           Boolean?
+  possibleDuplicate     Boolean?
+  scriptScorePct        Float?
+  criticalErrors        Json?
+  psychTriggers         Json?
+  clientReaction        String?
+  managerStyle          String?
+  clientEmotionPeaks    Json?
+  keyClientPhrases      Json?
+  cleanedTranscript     String?
+  cleanupNotes          Json?
+  managerWeakSpot       String?
+  criticalDialogMoments Json?
+  ropInsight            String?
+  enrichedTags          Json?
+  nextStepRecommendation String?
+  purchaseProbability   Int?
+  gcCallCardUrl         String?
+  gcDeepLinkType        String?
+
+  @@index([enrichmentStatus])
+  @@index([callOutcome])
+  @@index([outcome])
 }
 
 enum CallDirection {

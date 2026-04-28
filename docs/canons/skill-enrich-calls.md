@@ -11,15 +11,22 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
 
 ## 🛑 STEP 0 — ОБЯЗАТЕЛЬНЫЙ ПЕРВЫЙ TOOL-CALL (фикс #1+#2)
 
-**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО tool-call:**
+**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО ОБА tool-call:**
 
 ```
+Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-2-empathic-win-back-brackets.md")
 Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md")
 ```
 
-Без этого Read **весь дальнейший вывод считается некорректным**. Не «я знаю эту структуру» — **Read обязателен в каждой новой сессии**, даже если думаешь что помнишь.
+**Порядок важен:**
+- **sample-2 ПЕРВЫМ** — он TABLE-RICH (markdown таблицы для каждой секции, эмодзи в nextStep). Это **визуальный benchmark** глубины.
+- **sample-1 ВТОРЫМ** — YAML-style для понимания структуры fields. **НЕ копировать YAML стиль**, использовать markdown таблицы как в sample-2.
 
-Эталон лежит **в репо** (не на ~/Desktop) — воспроизводимо на любой машине / production / в worktree.
+Без этих двух Read'ов **весь дальнейший вывод считается некорректным**. Не «я знаю эту структуру» — **Read обязателен в каждой новой сессии**, даже если думаешь что помнишь.
+
+⚠️ **Если выдаёшь карточку YAML-style без markdown таблиц — это ошибка. Перечитать sample-2.**
+
+Эталоны лежат **в репо** (не на ~/Desktop) — воспроизводимо на любой машине / production / в worktree.
 
 ---
 
@@ -66,14 +73,20 @@ Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sampl
 **Перед каждым commit карточки в БД считай явно:**
 
 ```python
-assert len(psychTriggers["missed"]) >= 4, "missed triggers < 4 — переделать"
-assert len(psychTriggers["positive"]) >= 3, "positive triggers < 3 — переделать"
-assert ropInsight.count("\n") + 1 >= 5, "ropInsight < 5 пунктов — переделать"
-assert len(scriptDetails) == 11, "scriptDetails != 11 stages — переделать"
-assert len(criticalDialogMoments) >= 1, "criticalDialogMoments пуст — переделать"
-assert len(nextStepRecommendation.split("\n")) >= 4, "nextStep < 4 шагов — переделать"
-assert len(keyClientPhrases) >= 4, "keyClientPhrases < 4 цитат — переделать"
-assert len(criticalErrors) >= 0  # может быть 0 если МОП всё сделал правильно
+# Только для NORMAL звонков (не для edge-case Тип A-D):
+if callOutcome == "real_conversation":
+    assert len(psychTriggers["missed"]) >= 4, "missed triggers < 4 — переделать"
+    assert len(psychTriggers["positive"]) >= 3, "positive triggers < 3 — переделать"
+    assert ropInsight.count("\n") + 1 >= 5, "ropInsight < 5 пунктов — переделать"
+    assert len(scriptDetails) == 11, "scriptDetails != 11 stages diva — переделать"
+    assert len(criticalDialogMoments) >= 1, "criticalDialogMoments пуст — переделать"
+    assert len(nextStepRecommendation.split("\n")) >= 4, "nextStep < 4 шагов — переделать"
+    assert len(keyClientPhrases) >= 4, "keyClientPhrases < 4 цитат — переделать"
+    assert purchaseProbability is not None, "purchaseProbability = null для NORMAL — переделать"
+    assert len(extractedCommitments) >= 1, "extractedCommitments пуст для NORMAL — переделать (Block 7 killer feature)"
+
+# extractedCommitments может быть пуст для edge-case (НДЗ, voicemail) — это норма
+# criticalErrors может быть пуст если МОП всё сделал правильно
 ```
 
 Если хоть одно AssertionError → **карточка переделывается**, не коммитится.
@@ -194,7 +207,7 @@ ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db psql -U sm
    - `callType` — по содержимому transcript (анкета п.5)
    - `callOutcome` — по содержимому: real_conversation если есть полноценный диалог, voicemail если только автоинформер, no_answer если короткий разговор без слов клиента, hung_up если резкий обрыв, ivr если IVR-меню
    - `outcome` — по итогу разговора (анкета п.4)
-   - `possible_duplicate` — `SELECT COUNT(*) FROM "CallRecord" WHERE "clientPhone"=X AND "tenantId"=Y AND id != current_id` — если есть другой звонок с тем же phone — true
+   - `possibleDuplicate` — `SELECT COUNT(*) FROM "CallRecord" WHERE "clientPhone"=X AND "tenantId"=Y AND id != current_id` — если есть другой звонок с тем же phone — true
 
 3. **Script compliance** (анкета п.6):
    - 6 фиксированных criticalErrors enum
@@ -274,7 +287,7 @@ UPDATE "CallRecord" SET
   "outcome" = '...',
   "isCurator" = ...,
   "isFirstLine" = ...,
-  "possible_duplicate" = ...,
+  "possibleDuplicate" = ...,
   "scriptScore" = ...,
   "scriptScorePct" = ...,
   "criticalErrors" = '[...]'::jsonb,
@@ -285,10 +298,11 @@ UPDATE "CallRecord" SET
   "clientEmotionPeaks" = '[...]'::jsonb,
   "keyClientPhrases" = '[...]'::jsonb,
   "cleanedTranscript" = '...',
-  "summary" = '...',
+  "callSummary" = '...',
   "managerWeakSpot" = '...',
+  "criticalDialogMoments" = '[...]'::jsonb,
   "ropInsight" = '...',
-  "tags" = '[...]'::jsonb,
+  "enrichedTags" = '[...]'::jsonb,
   "nextStepRecommendation" = '...',
   "purchaseProbability" = ...,
   "extractedCommitments" = '[...]'::jsonb,
@@ -477,7 +491,7 @@ tags: [перенос, короткий_звонок]
 
 | Признак | Тип |
 |---|---|
-| transcript ≤ 100 chars + только placeholder | A: NO_SPEECH |
+| transcript ≤ 100 chars (любое содержимое — placeholder / Whisper-галлюцинация типа "Ого!" / "Продолжение следует..." / шум) | A: NO_SPEECH |
 | только МОП реплики, voicemail-фразы | B: VOICEMAIL/IVR |
 | < 30 сек, "Алло" сбросил | C: HUNG_UP |
 | повторяющиеся "Алло, слышите?" | D: TECHNICAL |

@@ -8,48 +8,102 @@
 
 ## 📋 Промпт для копирования в новую сессию
 
-> Привет. Я хочу реализовать **боевой режим cron auto-update** для SalesGuru pipeline. Контекст уже зафиксирован в memory + repo. Прочитай в таком порядке:
+> Привет. Реализую **боевой режим cron auto-update** для SalesGuru. Контекст полностью в memory + repo.
 >
-> **Memory (читать по очереди):**
-> 1. `feedback-pipeline-canon-with-opus-enrich.md` — 5-стадийный pipeline (Whisper → v2.13 → repair → Stage 3.5 → Opus enrich)
-> 2. `feedback-onboarding-and-daily-enrich-flow.md` — два режима работы (backfill / daily)
-> 3. `feedback-canon-38-daily-reconciliation.md` — сверка PBX↔CRM↔БД встроена в cron
-> 4. `feedback-master-enrich-canon.md` — schema enriched call card (6 блоков + Block 7)
-> 5. `feedback-pipeline-v213-final-settings.md` — params текущего pipeline + planned hotwords
-> 6. `feedback-pbx-call-metadata-required.md` — какие поля сохранять в CallRecord (canon #8)
-> 7. `feedback-upsert-call-canon8-mandatory.md` — phone matching через GC API
-> 8. `feedback-rop-dashboard-minimum.md` — Канон #37 (что показывать в UI)
+> ## 🛑 STEP 0 — ОБЯЗАТЕЛЬНЫЕ tool-calls ПЕРЕД любым кодом
 >
-> **Doc canons (в проекте):**
-> - `docs/canons/canon-38-reconciliation-in-cron.md` — компиляция reconciliation
-> - `docs/canons/canon-37-rop-dashboard-minimum.md`
-> - `docs/canons/canon-master-enrich-card.md`
-> - `docs/plans/2026-04-28-pipeline-v213-roadmap.md` — что уже сделано / pending
-> - `docs/plans/2026-04-28-promise-keeping-layer.md`
+> Прежде чем писать любой код / SQL / план — выполни **БУКВАЛЬНО** эти Read tool-calls (не «прочитал внимание уделил» — реальный Read):
 >
-> **Существующие скрипты:**
-> - `scripts/cron-stage35-link-fresh-calls.ts` — Stage 3.5 уже готов (phone resolve + dealId link)
-> - `scripts/resolve-phones-via-gc.ts` — phone resolve via GC HTML scraping
-> - `scripts/intelion-transcribe-v2.py` — Whisper pipeline v2.13
-> - `scripts/cron-amo-refresh-all.ts` — токены amoCRM
+> ```
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-pipeline-canon-with-opus-enrich.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-canon-38-daily-reconciliation.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-pipeline-v213-final-settings.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-pbx-call-metadata-required.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-upsert-call-canon8-mandatory.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-intelion-auto-renewal-bug.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-ssh-intelion-quirks.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-orchestrate-tar-mp3-suffix-bug.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/canons/canon-38-reconciliation-in-cron.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/handoffs/2026-04-28-cron-realtime-pipeline-handoff.md")
+> Read("/Users/kirillmalahov/smart-analyze/scripts/cron-stage35-link-fresh-calls.ts")
+> Read("/Users/kirillmalahov/smart-analyze/scripts/resolve-phones-via-gc.ts")
+> ```
 >
-> **Состояние БД (на 2026-04-28):**
-> - 6126 CallRecord для diva (tenant `cmo4qkb1000000jo432rh0l3u`)
-> - Deal.clientCrmId заполнен 99.99% (137974/137992) — sync fix `gc-sync-v2.ts:482`
-> - GC sync теперь автоматически пишет clientCrmId
-> - Mmaster Enrich schema готова (26 колонок CallRecord для Opus enrich)
-> - Skill `/enrich-calls` готов с auto-loop + edge-case handling
+> Без Read'ов **продолжать запрещено**. Не «знаю, помню» — реальный Read tool в этой сессии.
 >
-> **Цель сессии (Фаза 1 — cron + API pull):**
-> Создать cron-инфраструктуру для real-time режима по всем 5 клиентам:
-> - diva (onPBX) — каждые 15 мин
-> - vastu / reklama (Sipuni) — каждые 15 мин
-> - coral (МегаПБХ) — каждые 30 мин
-> - shumka — TBD (когда подключим)
+> ## Дополнительный контекст (по необходимости)
 >
-> С встроенной reconciliation (Канон #38): один cron-проход = sync новые звонки + Stage 3.5 link + reconciliation сверка PBX/CRM/БД.
+> - `/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-master-enrich-canon.md` — schema enriched
+> - `/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-rop-dashboard-minimum.md` — Канон #37
+> - `/Users/kirillmalahov/smart-analyze/docs/canons/canon-37-rop-dashboard-minimum.md`
+> - `/Users/kirillmalahov/smart-analyze/docs/canons/canon-master-enrich-card.md`
+> - `/Users/kirillmalahov/smart-analyze/docs/plans/2026-04-28-pipeline-v213-roadmap.md`
+> - `/Users/kirillmalahov/smart-analyze/docs/plans/2026-04-28-promise-keeping-layer.md`
+> - `/Users/kirillmalahov/smart-analyze/scripts/intelion-transcribe-v2.py` — Whisper v2.13
+> - `/Users/kirillmalahov/smart-analyze/scripts/cron-amo-refresh-all.ts` — токены amoCRM
 >
-> Начни с обзора что есть, потом план реализации, потом код. Каждый этап коммить отдельно.
+> ## Tenant ID для diva
+>
+> `tenantId = 'cmo4qkb1000000jo432rh0l3u'` (diva-school) — копировать без опечаток.
+>
+> ## Доступ к prod БД
+>
+> ```bash
+> ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db psql -U smartanalyze -d smartanalyze -c '<SQL>'"
+> ```
+>
+> **НЕ использовать** `mcp__soldout-db__*` — это другая БД (WB-аналитика), там нет SalesGuru таблиц.
+>
+> ## Tribal knowledge — gotchas (НЕ повторять)
+>
+> 1. `Tenant.subdomain` НЕ существует — subdomain в `CrmConfig.subdomain` (из probed schema 29 апр)
+> 2. `Deal.clientCrmId` для diva уже заполнен 99.99% (137974/137992) — но fix `gc-sync-v2.ts:482` обязателен для будущих syncов
+> 3. Phone normalize — последние 10 цифр (`destination_number.replace(/\D/g, "").slice(-10)`)
+> 4. GC endpoint `/pl/api/account/users` требует API key которого у нас нет — использовать HTML scraping `/pl/user/contact/index?ContactSearch[phone]=X` (cookie из CrmConfig.gcCookie)
+> 5. GC HTML — парсить `data-user-id` (реальный user_id), НЕ `data-key` (это row index Yii2)
+> 6. cookie может быть encrypted (формат `iv:tag:enc`) или plain — проверить через regex `/^[a-f0-9]+:[a-f0-9]+:[a-f0-9]+$/i` перед `decrypt()`
+> 7. Intelion GPU silently stops через 60 мин — **watchdog обязателен** (canon: feedback-intelion-auto-renewal-bug.md)
+> 8. GC sync отдает только обновлённые deals в date_range (created_at в их БД ≠ нашему createdAt) — **per-user filter не работает**, только per-deal page fetch
+>
+> ## Состояние БД сейчас
+>
+> - **diva 6126 CallRecord:** transcript+repaired 100%, gcContactId 99.8%, dealId 82.2%
+> - **Deal.clientCrmId заполнен 99.99%** (137974/137992)
+> - **Schema готова для Master Enrich** (60 колонок CallRecord, см. SKILL.md /enrich-calls)
+> - **Skill /enrich-calls v4** — auto-mode + benchmark + ScheduleWakeup loop
+>
+> ## Цель сессии (Фаза 1 — cron + API pull, БЕЗ webhook)
+>
+> Создать end-to-end cron orchestrator (11 stages в этом handoff'е). Расписание:
+> - **diva** (onPBX) — каждые 15 мин
+> - **vastu/reklama** (Sipuni) — каждые 15 мин
+> - **coral** (МегаПБХ) — каждые 30 мин
+> - **shumoff** — TBD (когда подключим)
+>
+> Каждый cron-проход = sync новые → smart-download → bin-pack → GPU auto-start → Whisper v2.13 → GPU auto-stop → DeepSeek downstream → Stage 3.5 link → upsert (audioUrl=onPBX!) → reconciliation → Telegram alert if discrepancy>5% → UPDATE LastSync.
+>
+> ## Plan of attack
+>
+> 1. Inventory existing scripts (`ls scripts/cron-*.ts scripts/intelion-*.py`)
+> 2. План реализации с этапами (commit отдельно за каждый)
+> 3. **Этап 0 — manual run end-to-end** для diva на интервале 28-29 апреля (пока крон НЕ настроен) — убедиться что цепочка работает
+> 4. Этап 1-6 master-pipeline + adapters + reconciliation
+> 5. Crontab установка на prod
+> 6. End-to-end тест (тестовый звонок → 15 мин → виден в /quality)
+>
+> ## Success criteria
+>
+> - [ ] Manual end-to-end run проходит без ошибок (Этап 0)
+> - [ ] `cron-master-pipeline.ts` создан и работает
+> - [ ] PBX adapter для onPBX/Sipuni унифицирован
+> - [ ] Schema `LastSync` + `ReconciliationCheck` мигрированы
+> - [ ] GPU auto-start с watchdog (нет silent stops)
+> - [ ] audioUrl = onPBX URL (НЕ GC fileservice!)
+> - [ ] Reconciliation 3-way работает, alert при >5%
+> - [ ] Crontab активен на prod
+> - [ ] Тестовый звонок виден в /quality через 15 мин
+>
+> Каждый этап = отдельный commit с conventional message.
 
 ---
 

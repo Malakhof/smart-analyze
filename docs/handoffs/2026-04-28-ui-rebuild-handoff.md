@@ -8,30 +8,90 @@
 
 ## 📋 Промпт для копирования в новую сессию
 
-> Привет. Я хочу **переделать UI SalesGuru** под канон #37 + анкету diva. Текущий UI — кривой, показывает не то что нужно.
+> Привет. Переделываю **UI SalesGuru** под канон #37 + анкету diva. Текущий UI — кривой, показывает не то что нужно.
 >
-> **Сначала прочитай в таком порядке (memory):**
-> 1. `feedback-rop-dashboard-minimum.md` — Канон #37, что должно быть на главной (5 must-have блоков + 4 advanced + anti-patterns)
-> 2. `feedback-master-enrich-canon.md` — schema enriched call card (6 блоков + Block 7 commitments)
-> 3. `feedback-master-enrich-canon.md` — Block 7 promise tracking
+> ## 🛑 STEP 0 — ОБЯЗАТЕЛЬНЫЕ tool-calls ПЕРЕД любым кодом
 >
-> **Doc canon в проекте:**
-> 4. `docs/canons/canon-37-rop-dashboard-minimum.md` — компиляция канона #37
-> 5. `docs/canons/canon-master-enrich-card.md` — schema карточки звонка
-> 6. `docs/demo/2026-04-22-diva-anketa-answers.md` — что РЕАЛЬНО просил клиент (раздел 9 — РОП-боли)
-> 7. `docs/demo/2026-04-22-diva-sales-script.md` — 11 этапов скрипта
+> Прежде чем писать любой код / план — выполни **БУКВАЛЬНО** эти Read tool-calls:
 >
-> **Эталон карточки:** `~/Desktop/v213-fix-samples/b8367ce9_enriched.md` — как должен выглядеть разбор одного звонка
+> ```
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-rop-dashboard-minimum.md")
+> Read("/Users/kirillmalahov/.claude/projects/-Users-kirillmalahov/memory/feedback-master-enrich-canon.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/canons/canon-37-rop-dashboard-minimum.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/canons/canon-master-enrich-card.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/demo/2026-04-22-diva-anketa-answers.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/demo/2026-04-22-diva-sales-script.md")
+> Read("/Users/kirillmalahov/smart-analyze/docs/handoffs/2026-04-28-ui-rebuild-handoff.md")
+> ```
 >
-> **Состояние БД (на 2026-04-28):**
-> - 6126 CallRecord для diva
-> - Schema enriched готова (26 колонок CallRecord для Master Enrich + 3 для Block 7)
-> - Skill `/enrich-calls` будет батчить 857 параллельно (или уже завершит к моменту разработки UI)
-> - Все нужные поля будут в БД: callType, callOutcome, criticalErrors, psychTriggers, summary, ropInsight, tags, extractedCommitments, gcCallCardUrl
+> Без Read'ов **продолжать запрещено**. Реальный Read tool, не «прочитал».
 >
-> **Цель сессии:** переделать UI чтоб клиент дивы открывал → сразу видел РОП-дашборд → drill-down в МОПов → drill-down в звонок (карточка эталон) → задачи/обещания.
+> ## ⚠️ Inventory existing UI ОБЯЗАТЕЛЬНО (до плана)
 >
-> Начни с обзора текущего UI (что есть) → план переделки → код → коммит по блокам.
+> ```bash
+> ls /Users/kirillmalahov/smart-analyze/src/app/
+> ls /Users/kirillmalahov/smart-analyze/src/components/
+> ls /Users/kirillmalahov/smart-analyze/src/components/ui/
+> cat /Users/kirillmalahov/smart-analyze/tailwind.config.ts
+> cat /Users/kirillmalahov/smart-analyze/package.json | grep -E "react|next|tailwind|recharts|tremor|lucide|sonner|shadcn"
+> ```
+>
+> Зафиксировать в комментарии плана: библиотека графиков, цветовая схема, базовый компонент карточки, layout. **Только потом** приступать к коду.
+>
+> ## Состояние БД (на 29 апреля)
+>
+> - **6126 CallRecord для diva** (`tenantId = 'cmo4qkb1000000jo432rh0l3u'`)
+> - **Все enriched поля в БД** (60 колонок включая Master Enrich + Block 7) — см. ниже
+> - **Skill `/enrich-calls` v4** обогащает 857 в параллельной сессии (или завершит к моменту UI разработки)
+> - **dealId заполнен 82.2%** (5038/6126), `gcContactId 99.8%`, остальное — лиды без сделок (норма)
+>
+> ## Точные имена колонок CallRecord (camelCase!)
+>
+> Не путать:
+> - `possibleDuplicate` (НЕ possible_duplicate)
+> - `callSummary` (от detect-call-type, НЕ summary)
+> - `enrichedTags` (НЕ tags — есть отдельная связь CallTag)
+> - `cleanedTranscript`, `psychTriggers`, `criticalErrors`, `criticalDialogMoments`, `nextStepRecommendation`, `extractedCommitments` — все camelCase
+>
+> Полный список 60 колонок — в `docs/canons/skill-enrich-calls.md` секция «ТОЧНЫЕ имена колонок».
+>
+> ## Доступ к prod БД (для проверки)
+>
+> ```bash
+> ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db psql -U smartanalyze -d smartanalyze -c '<SQL>'"
+> ```
+>
+> **НЕ использовать** `mcp__soldout-db__*` — это другая БД.
+>
+> ## Tribal knowledge (НЕ повторять ошибки)
+>
+> 1. `Tenant.subdomain` НЕ существует — subdomain в `CrmConfig.subdomain`
+> 2. Аудио — играть **прямой URL** из БД (`audioUrl`), НЕ скачивать в нашу инфру
+> 3. Для diva subdomain = `web.diva.school` (без `.getcourse.ru` суффикса — кастомный)
+> 4. **GC карточка клиента в нашем UI = только deep-link + ID**, НЕ парсим данные клиента
+> 5. **Сделки** не центральная сущность — у нас **звонки**. Сделка = контейнер для звонков
+>
+> ## Цель сессии
+>
+> Переделать UI чтоб РОП открывал → сразу видел дашборд (Канон #37) → drill-down в МОПов → drill-down в звонок (карточка по эталону) → задачи/обещания (Block 7).
+>
+> ## Plan of attack
+>
+> 1. STEP 0 + Inventory (выше)
+> 2. План переделки (что переиспользуем, что переделываем)
+> 3. Этапы 1-6 (см. ниже в handoff'е)
+> 4. Каждый этап = отдельный commit
+>
+> ## Success criteria
+>
+> - [ ] Главная = Дашборд РОПа (5 блоков канона #37, удалены ретро-аудит + потенциалы)
+> - [ ] Контроль качества: список звонков с фильтрами по callType / managerStyle / outcome / criticalErrors
+> - [ ] Карточка звонка: 7 секций по эталону + Block 7 commitments + native `<audio>` player
+> - [ ] Менеджеры: МОП → клиент → сделка → звонки + удачные/неудачные паттерны
+> - [ ] Настройки: только телефония + скрипт + связки МОП/Куратор
+> - [ ] **НЕ переделан** дизайн (цвета/компоненты/иконки/layout) — только содержимое
+> - [ ] Smoke test на 5 звонках: данные корректные, drill-down работает
 
 ---
 

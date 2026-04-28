@@ -7,6 +7,44 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
 
 Обогащает звонки в БД SalesGuru до полной enriched-карточки. **100% покрытие анкеты клиента + наш слой нейропродаж.**
 
+---
+
+## 🔴 CRITICAL — ПРОЧИТАЙ ПЕРЕД ЛЮБЫМ ENRICH
+
+### 1. ОБЯЗАТЕЛЬНО прочитать эталон ПОЛНОСТЬЮ
+**`~/Desktop/v213-fix-samples/b8367ce9_enriched.md`** — это **точный benchmark глубины** обогащения. **НЕ сокращать**, **НЕ упрощать**. Каждая твоя карточка должна быть в той же глубине что эталон.
+
+В эталоне:
+- 🧼 Очищенный транскрипт (cleanedTranscript) с заметками cleanup
+- 📝 Резюме звонка (summary) — 4 строки
+- 🧠 Психология и нейропродажи — **table** удачных приёмов (time / приём / эффект) + **table** упущений + 4-5 missed triggers с цитатами + clientReaction + managerStyle + clientEmotionPeaks + 4-5 keyClientPhrases + criticalDialogMoments (отдельный анализ ключевых моментов с цитатами клиента и предложением "что должна была сказать МОП")
+- 📊 Скрипт-скоринг — **table** all 11 stages с оценкой и комментарием
+- 🚨 Критические ошибки — **table** all 6 ошибок (✅/⚠️/❌)
+- 💡 Инсайт для РОПа — **5 пунктов** конкретных action items + паттерн (soft_seller / empathic / etc) + purchaseProbability с обоснованием
+- 🛠️ nextStepRecommendation — **4 конкретных шага** с каналами и временами
+- 🏷️ Tags
+- 🎯 Категория и исход — **table**
+- ✅ Соответствие требованиям — **table** анкета diva → покрыто
+
+**Если ты делаешь карточку без таблиц / без 4+ missed triggers / без criticalDialogMoments — ты НЕ в эталоне. Переделывай.**
+
+### 2. AUTO-MODE — НЕ спрашивать подтверждений
+- Не спрашивать "продолжать?" после каждой карточки
+- Не спрашивать "как форматировать?"
+- Не спрашивать "сколько обрабатывать?"
+- Не делать пробный 1 звонок и спрашивать "ок?"
+- **Сразу делать batch согласно --limit и применять к БД**
+- Только в случае **системной ошибки** (БД недоступна, schema колонок нет) — остановиться и сообщить
+- `--dry-run` режим = показать batch без записи (тогда подтверждение не требуется, просто показ)
+
+### 3. Глубина = эталон, не "пример краткого формата"
+- Если выдаёшь карточку короче эталона — это ошибка
+- Если пропускаешь criticalDialogMoments — ошибка
+- Если выдаёшь ropInsight в 1-2 строки — ошибка (нужно 5 пунктов)
+- Если в `psychTriggers.missed` менее 3 элементов — ошибка (норма 4-5)
+
+---
+
 ## Использование
 
 ```
@@ -57,7 +95,11 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
    - 3-этапная цепочка: phone → GC `/pl/api/account/users?phone=X` → user_id → `Deal.clientCrmId` → `Deal.id`
    - НЕТ поля `phone` в нашей БД — bridge через GC API (per-tenant различия)
 
-7. **Образец enriched card:** `~/Desktop/v213-fix-samples/b8367ce9_enriched.md`
+7. **🔥 Эталон enriched card (ОБЯЗАТЕЛЬНО прочитать ПОЛНОСТЬЮ):**
+   `~/Desktop/v213-fix-samples/b8367ce9_enriched.md`
+   - **Это benchmark глубины.** Каждая твоя карточка = эта структура с тем же уровнем детализации.
+   - НЕ сокращать таблицы, НЕ упрощать формулировки, НЕ пропускать секции
+   - Если skill грузит мало контекста → перечитать ПОЛНОСТЬЮ перед каждым batch (даже если думаешь "уже знаю")
 
 8. **Список менеджеров tenant:**
    ```sql
@@ -66,15 +108,22 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
    - Кураторы = `role='curator'` OR fuzzy match по фамилиям из анкеты раздел 2
    - Первая линия = list из анкеты раздел 2
 
-### Шаг 2: Получить batch звонков
+### Шаг 2: Получить batch звонков (с готовыми linker'ами)
+
 ```sql
 SELECT
   cr.id, cr."pbxUuid", cr."clientPhone", cr."startStamp", cr.duration,
   cr."userTalkTime", cr.gateway, cr."hangupCause", cr.direction,
   cr."managerId", m.name as managerName, m."internalExtension",
-  cr.transcript, cr."transcriptRepaired"
+  cr.transcript, cr."transcriptRepaired",
+  cr."gcContactId", cr."dealId",      -- ← АВТОМАТИЧЕСКИ из Stage 3.5
+  d."crmId" as dealCrmId,              -- ← для deep-link на сделку
+  t.subdomain as gcSubdomain           -- ← для построения URL
 FROM "CallRecord" cr
 LEFT JOIN "Manager" m ON cr."managerId" = m.id
+LEFT JOIN "Deal" d ON cr."dealId" = d.id
+LEFT JOIN "Tenant" t ON cr."tenantId" = t.id
+LEFT JOIN "CrmConfig" cc ON cc."tenantId" = cr."tenantId" AND cc.provider='GETCOURSE'
 WHERE cr."tenantId" = '<tenantId>'
   AND cr.transcript IS NOT NULL
   AND (cr."enrichmentStatus" IS NULL OR cr."enrichmentStatus" != 'enriched' OR --rescore)
@@ -83,6 +132,8 @@ WHERE cr."tenantId" = '<tenantId>'
 ORDER BY cr."startStamp" DESC
 LIMIT --limit
 ```
+
+**Важно:** для diva subdomain храним из `CrmConfig.subdomain` (например `web.diva.school`). Использовать его для deep-link.
 
 Применить через MCP soldout-db `execute_raw_query` или через ssh + docker exec.
 
@@ -131,7 +182,23 @@ LIMIT --limit
    - Конкретный канал (WhatsApp/Telegram/email/звонок)
    - Конкретное время
 
-7. **🔥 extractedCommitments (Block 7 — KILLER FEATURE):**
+7. **🔗 GC Deep-link (АВТОМАТИЧЕСКИ из БД):**
+   ```python
+   subdomain = row['gcSubdomain']  # web.diva.school
+   if row['dealId'] and row['dealCrmId']:
+       gcCallCardUrl = f"https://{subdomain}/sales/control/deal/update/id/{row['dealCrmId']}"
+       gcDeepLinkType = 'call_card'
+   elif row['gcContactId']:
+       gcCallCardUrl = f"https://{subdomain}/pl/user/contact/update/id/{row['gcContactId']}"
+       gcDeepLinkType = 'contact_fallback'
+   else:
+       gcCallCardUrl = None
+       gcDeepLinkType = None
+   ```
+   **Не нужно ничего "выдумывать"** — данные уже в БД (Stage 3.5 заполняет до enrich).
+   Для **новых звонков** в production: cron sync-pipeline автоматически делает phone resolve + deal link → к моменту enrich оба поля готовы.
+
+8. **🔥 extractedCommitments (Block 7 — KILLER FEATURE):**
    Вытаскиваешь ВСЕ обещания и договорённости из звонка — отдельно для МОПа и клиента.
    Каждое обещание — структурированный объект:
    ```yaml

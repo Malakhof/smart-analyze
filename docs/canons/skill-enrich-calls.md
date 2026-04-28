@@ -32,8 +32,13 @@ Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sampl
 
 ## 🔴 CRITICAL — ПРОЧИТАЙ ПЕРЕД ЛЮБЫМ ENRICH
 
-### 1. Эталон = benchmark глубины
-**`docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md`** — это **точный benchmark**. **НЕ сокращать**, **НЕ упрощать**. Каждая карточка = эта структура с той же детализацией.
+### 1. Эталоны — два, разные роли
+- **Visual benchmark = sample-2** (`master-enrich-samples/sample-2-empathic-win-back-brackets.md`) — markdown таблицы для каждой секции, эмодзи в nextStep. Это **визуальный стиль** который нужно повторять.
+- **Field reference = sample-1** (`master-enrich-samples/sample-1-soft-seller-no-offer.md`) — YAML-style, для понимания **набора полей**.
+
+**Стиль вывода = sample-2 (таблицы). Набор полей = sample-1 (YAML reference).**
+
+**НЕ копировать YAML-стиль sample-1 в финальный output.** Карточка должна выглядеть как sample-2 (table-rich, markdown).
 
 В эталоне:
 - 🧼 Очищенный транскрипт (cleanedTranscript) с заметками cleanup
@@ -73,8 +78,10 @@ Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sampl
 **Перед каждым commit карточки в БД считай явно:**
 
 ```python
-# Только для NORMAL звонков (не для edge-case Тип A-D):
-if callOutcome == "real_conversation":
+# Только для полноценных NORMAL звонков (Тип F):
+# Тип E (30-60 сек "перезвоните позже") и edge-case (Тип A-D) проверяются мягче.
+if callOutcome == "real_conversation" and duration >= 60:
+    # ПОЛНЫЙ NORMAL — все проверки
     assert len(psychTriggers["missed"]) >= 4, "missed triggers < 4 — переделать"
     assert len(psychTriggers["positive"]) >= 3, "positive triggers < 3 — переделать"
     assert ropInsight.count("\n") + 1 >= 5, "ropInsight < 5 пунктов — переделать"
@@ -84,8 +91,15 @@ if callOutcome == "real_conversation":
     assert len(keyClientPhrases) >= 4, "keyClientPhrases < 4 цитат — переделать"
     assert purchaseProbability is not None, "purchaseProbability = null для NORMAL — переделать"
     assert len(extractedCommitments) >= 1, "extractedCommitments пуст для NORMAL — переделать (Block 7 killer feature)"
+elif callOutcome == "real_conversation" and duration < 60:
+    # Тип E (SHORT_RESCHEDULE) — мягкие проверки, без assert на purchaseProbability/commitments
+    assert len(scriptDetails) == 11, "scriptDetails != 11 stages — переделать"
+    # extractedCommitments может быть пуст (клиент просто "перезвоните позже")
+    # purchaseProbability может быть null (нет данных за 30-60 сек)
+    # nextStepRecommendation может быть короче (1-2 шага = "перезвонить в Y времени")
 
-# extractedCommitments может быть пуст для edge-case (НДЗ, voicemail) — это норма
+# Для edge-case Тип A-D (voicemail/no_answer/hung_up/technical) — assertions не применяются
+# extractedCommitments может быть пуст для edge-case — это норма
 # criticalErrors может быть пуст если МОП всё сделал правильно
 ```
 

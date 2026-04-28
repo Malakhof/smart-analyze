@@ -32,6 +32,24 @@ Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sampl
 
 ## 🔴 CRITICAL — ПРОЧИТАЙ ПЕРЕД ЛЮБЫМ ENRICH
 
+### 0. ⛔ DIVA CUT-OFF: ≥ 2026-04-24 (всё что раньше — НЕ обрабатывать)
+
+**Аналитика для diva-school ведётся СТРОГО с 24 апреля 2026.**
+
+- Первый легитимный звонок: `pbxUuid=3d811959-3994-4387-bd91-a143e4f99ae1` от `2026-04-24 05:46:55 UTC` (08:46 МСК)
+- В БД лежит **5269 старых CallRecord** для diva с `startStamp IS NULL` (legacy syncs до schema migration) — **их НЕ обогащать**
+- Master Enrich ОБЯЗАТЕЛЬНО фильтрует:
+  ```sql
+  AND "startStamp" >= '2026-04-24 00:00:00'
+  AND "startStamp" IS NOT NULL
+  ```
+
+**Без этого фильтра skill сожрёт 80 quota-токенов на legacy без startStamp вместо актуального backfill 857 (24-27.04).**
+
+Если пользователь явно хочет старые → передаёт флаг `--include-legacy` (по умолчанию **выкл**).
+
+---
+
 ### 1. Эталоны — два, разные роли
 - **Visual benchmark = sample-2** (`master-enrich-samples/sample-2-empathic-win-back-brackets.md`) — markdown таблицы для каждой секции, эмодзи в nextStep. Это **визуальный стиль** который нужно повторять.
 - **Field reference = sample-1** (`master-enrich-samples/sample-1-soft-seller-no-offer.md`) — YAML-style, для понимания **набора полей**.
@@ -187,12 +205,18 @@ LEFT JOIN "Deal" d ON cr."dealId" = d.id
 LEFT JOIN "CrmConfig" cc ON cc."tenantId" = cr."tenantId" AND cc.provider='GETCOURSE'
 WHERE cr."tenantId" = '<tenantId>'
   AND cr.transcript IS NOT NULL
+  AND cr."startStamp" IS NOT NULL                  -- ⛔ legacy без stamp ИГНОРИРОВАТЬ
+  AND cr."startStamp" >= '2026-04-24 00:00:00'    -- ⛔ DIVA CUT-OFF (см. секцию 0)
   AND (cr."enrichmentStatus" IS NULL OR cr."enrichmentStatus" != 'enriched' OR --rescore)
   AND (--since: cr."startStamp" >= --since)
   AND (--uuids: cr."pbxUuid" IN (--uuids))
-ORDER BY cr."startStamp" DESC
+ORDER BY cr."startStamp" ASC                       -- старые-в-периоде первыми (хронология)
 LIMIT --limit
 ```
+
+**Per-tenant cut-off** (если меняется tenant — обновить):
+- `diva-school`: `>= '2026-04-24'`
+- остальные tenants: cut-off из `Tenant.analyticsStartDate` (если поле есть) или анкеты onboarding
 
 **Важно:** для diva subdomain в `CrmConfig.subdomain` (`web.diva.school`). `Tenant.subdomain` НЕ существует — не использовать.
 

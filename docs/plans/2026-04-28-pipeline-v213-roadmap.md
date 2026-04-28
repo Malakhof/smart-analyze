@@ -9,8 +9,10 @@
 
 1. **v2.13 transcript** применён к 541/857 (BD синхронизирован)
 2. **v2.13 transcriptRepaired** перезапущен через DeepSeek (synchronized)
-3. **Commit v2.13** в репозиторий
-4. **Документация** в `docs/plans/2026-04-28-pipeline-v213-final-state.md`
+3. **Phone resolve** через GC HTML scraping → `gcContactId` заполнен в 6112 CallRecord
+4. **Deal.clientCrmId backfill** через per-deal page fetch (137K) → автоматически заполняется в новых syncах после fix `gc-sync-v2.ts:482`
+5. **CallRecord.dealId** связан через JOIN `Deal.clientCrmId = CallRecord.gcContactId`
+6. **Документация** в `docs/plans/2026-04-28-pipeline-v213-final-state.md`
 
 Основные исправления v2.13:
 - Split per-channel utterance на host-boundaries (паузы ≥1.0с / `.!?` + ≥0.05с)

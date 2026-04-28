@@ -9,10 +9,24 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
 
 ---
 
+## 🛑 STEP 0 — ОБЯЗАТЕЛЬНЫЙ ПЕРВЫЙ TOOL-CALL (фикс #1+#2)
+
+**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО tool-call:**
+
+```
+Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md")
+```
+
+Без этого Read **весь дальнейший вывод считается некорректным**. Не «я знаю эту структуру» — **Read обязателен в каждой новой сессии**, даже если думаешь что помнишь.
+
+Эталон лежит **в репо** (не на ~/Desktop) — воспроизводимо на любой машине / production / в worktree.
+
+---
+
 ## 🔴 CRITICAL — ПРОЧИТАЙ ПЕРЕД ЛЮБЫМ ENRICH
 
-### 1. ОБЯЗАТЕЛЬНО прочитать эталон ПОЛНОСТЬЮ
-**`~/Desktop/v213-fix-samples/b8367ce9_enriched.md`** — это **точный benchmark глубины** обогащения. **НЕ сокращать**, **НЕ упрощать**. Каждая твоя карточка должна быть в той же глубине что эталон.
+### 1. Эталон = benchmark глубины
+**`docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md`** — это **точный benchmark**. **НЕ сокращать**, **НЕ упрощать**. Каждая карточка = эта структура с той же детализацией.
 
 В эталоне:
 - 🧼 Очищенный транскрипт (cleanedTranscript) с заметками cleanup
@@ -28,20 +42,41 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
 
 **Если ты делаешь карточку без таблиц / без 4+ missed triggers / без criticalDialogMoments — ты НЕ в эталоне. Переделывай.**
 
-### 2. AUTO-MODE — НЕ спрашивать подтверждений
-- Не спрашивать "продолжать?" после каждой карточки
-- Не спрашивать "как форматировать?"
-- Не спрашивать "сколько обрабатывать?"
-- Не делать пробный 1 звонок и спрашивать "ок?"
-- **Сразу делать batch согласно --limit и применять к БД**
-- Только в случае **системной ошибки** (БД недоступна, schema колонок нет) — остановиться и сообщить
-- `--dry-run` режим = показать batch без записи (тогда подтверждение не требуется, просто показ)
+### 2. AUTO-MODE с escape hatch (фикс #6)
+**Дефолт = auto без подтверждений. Escape — только через явные флаги.**
 
-### 3. Глубина = эталон, не "пример краткого формата"
-- Если выдаёшь карточку короче эталона — это ошибка
+- Не спрашивать "продолжать?" / "как форматировать?" / "сколько обрабатывать?"
+- **Сразу делать batch согласно --limit и применять к БД**
+- Только системная ошибка (БД недоступна, schema колонок нет) → остановиться
+
+**Escape hatch для калибровки качества:**
+- `--uuids=<один UUID>` (ровно 1) → показать карточку **БЕЗ commit** и остановиться
+- `--dry-run` → показать batch **БЕЗ записи в БД**
+- В обоих случаях НЕ спрашивать подтверждение — просто вывод и stop
+
+Это сохраняет защитный паттерн «покажи 1 для калибровки» (тот что спас сегодняшний batch), не ломая auto-mode по умолчанию.
+
+### 3. Глубина = эталон, не "краткий формат"
+- Если выдаёшь карточку короче эталона — ошибка
 - Если пропускаешь criticalDialogMoments — ошибка
 - Если выдаёшь ropInsight в 1-2 строки — ошибка (нужно 5 пунктов)
 - Если в `psychTriggers.missed` менее 3 элементов — ошибка (норма 4-5)
+
+### 4. Self-check ПЕРЕД UPDATE в БД (фикс #7) — count-based
+**Перед каждым commit карточки в БД считай явно:**
+
+```python
+assert len(psychTriggers["missed"]) >= 4, "missed triggers < 4 — переделать"
+assert len(psychTriggers["positive"]) >= 3, "positive triggers < 3 — переделать"
+assert ropInsight.count("\n") + 1 >= 5, "ropInsight < 5 пунктов — переделать"
+assert len(scriptDetails) == 11, "scriptDetails != 11 stages — переделать"
+assert len(criticalDialogMoments) >= 1, "criticalDialogMoments пуст — переделать"
+assert len(nextStepRecommendation.split("\n")) >= 4, "nextStep < 4 шагов — переделать"
+assert len(keyClientPhrases) >= 4, "keyClientPhrases < 4 цитат — переделать"
+assert len(criticalErrors) >= 0  # может быть 0 если МОП всё сделал правильно
+```
+
+Если хоть одно AssertionError → **карточка переделывается**, не коммитится.
 
 ---
 
@@ -96,7 +131,7 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
    - НЕТ поля `phone` в нашей БД — bridge через GC API (per-tenant различия)
 
 7. **🔥 Эталон enriched card (ОБЯЗАТЕЛЬНО прочитать ПОЛНОСТЬЮ):**
-   `~/Desktop/v213-fix-samples/b8367ce9_enriched.md`
+   `/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md`
    - **Это benchmark глубины.** Каждая твоя карточка = эта структура с тем же уровнем детализации.
    - НЕ сокращать таблицы, НЕ упрощать формулировки, НЕ пропускать секции
    - Если skill грузит мало контекста → перечитать ПОЛНОСТЬЮ перед каждым batch (даже если думаешь "уже знаю")
@@ -118,11 +153,10 @@ SELECT
   cr.transcript, cr."transcriptRepaired",
   cr."gcContactId", cr."dealId",      -- ← АВТОМАТИЧЕСКИ из Stage 3.5
   d."crmId" as dealCrmId,              -- ← для deep-link на сделку
-  t.subdomain as gcSubdomain           -- ← для построения URL
+  cc.subdomain as gcSubdomain          -- ← из CrmConfig (Tenant.subdomain НЕ существует — фикс #4)
 FROM "CallRecord" cr
 LEFT JOIN "Manager" m ON cr."managerId" = m.id
 LEFT JOIN "Deal" d ON cr."dealId" = d.id
-LEFT JOIN "Tenant" t ON cr."tenantId" = t.id
 LEFT JOIN "CrmConfig" cc ON cc."tenantId" = cr."tenantId" AND cc.provider='GETCOURSE'
 WHERE cr."tenantId" = '<tenantId>'
   AND cr.transcript IS NOT NULL
@@ -133,9 +167,13 @@ ORDER BY cr."startStamp" DESC
 LIMIT --limit
 ```
 
-**Важно:** для diva subdomain храним из `CrmConfig.subdomain` (например `web.diva.school`). Использовать его для deep-link.
+**Важно:** для diva subdomain в `CrmConfig.subdomain` (`web.diva.school`). `Tenant.subdomain` НЕ существует — не использовать.
 
-Применить через MCP soldout-db `execute_raw_query` или через ssh + docker exec.
+**Применять ТОЛЬКО через ssh + docker exec (фикс #5):**
+```bash
+ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db psql -U smartanalyze -d smartanalyze -c '<SQL>'"
+```
+**НЕ использовать MCP soldout-db** — это другая БД (WB-аналитика), там нет таблиц SalesGuru.
 
 ### Шаг 3: Для каждого звонка — обогатить через Opus reasoning
 
@@ -160,8 +198,10 @@ LIMIT --limit
 
 3. **Script compliance** (анкета п.6):
    - 6 фиксированных criticalErrors enum
-   - scriptScore по 11 этапам diva (или 9 для других tenants)
-   - scriptDetails per-stage
+   - **scriptScoreMax (фикс #10):** теоретический максимум diva = 11 этапов, но фактически = 11 - count(N/A stages). На практике **max = 9 для большинства звонков** (этапы 7 «возражения» и 10 «ответы на вопросы» часто N/A — клиент не возражает / не задаёт вопросов). Не считать N/A в общую сумму.
+   - `scriptScore` = сумма баллов по non-N/A stages
+   - `scriptScorePct` = scriptScore / scriptScoreMax
+   - `scriptDetails` per-stage (jsonb со всеми 11)
 
 4. **Психология (наш слой):**
    - psychTriggers.positive — приёмы которые МОП использовала (искренний_комплимент, выбор_без_выбора, эмоциональный_подхват, юмор_забота, эхо_ритуала, программирование, маленькая_просьба)
@@ -257,6 +297,28 @@ UPDATE "CallRecord" SET
 WHERE "pbxUuid" = '...'
 ```
 
+### ⚠️ ТОЧНЫЕ имена колонок (фикс #3 — синхронизировано с prod БД 29.04.2026)
+
+**Не путать camelCase / underscore_case:**
+
+| Правильно | НЕ писать |
+|---|---|
+| `possibleDuplicate` | ❌ `possible_duplicate` |
+| `callSummary` (есть от detect-call-type) | ❌ `summary` (такой колонки нет) |
+| `enrichedTags` | ❌ `tags` (есть отдельная связь CallTag) |
+| `cleanedTranscript` | (правильно, только camelCase) |
+| `psychTriggers` | (правильно, только camelCase) |
+| `scriptDetails` | (есть от scoring) |
+| `scriptScorePct` | (правильно) |
+| `criticalDialogMoments` | (правильно) |
+| `nextStepRecommendation` | (правильно) |
+| `extractedCommitments` | (правильно) |
+
+**Полный список колонок CallRecord (60 штук, проверено):**
+id, tenantId, managerId, dealId, crmId, clientName, clientPhone, direction, category, audioUrl, transcript, duration, createdAt, type, callType, transcriptRepaired, scriptScore, scriptDetails, pbxUuid, managerExt, startStamp, userTalkTime, hangupCause, gateway, qualityScore, pbxMeta, **callSummary**, sentiment, objections, hotLead, hotLeadReason, gcContactId, **enrichmentStatus**, enrichedAt, enrichedBy, callOutcome, hadRealConversation, outcome, isCurator, isFirstLine, **possibleDuplicate**, scriptScorePct, criticalErrors, psychTriggers, clientReaction, managerStyle, clientEmotionPeaks, keyClientPhrases, cleanedTranscript, cleanupNotes, managerWeakSpot, criticalDialogMoments, ropInsight, **enrichedTags**, nextStepRecommendation, purchaseProbability, gcCallCardUrl, gcDeepLinkType, extractedCommitments, commitmentsCount.
+
+При сомнении — `\d "CallRecord"` через psql.
+
 **Если в БД нет нужных колонок** — сгенерировать миграцию:
 ```sql
 ALTER TABLE "CallRecord" ADD COLUMN IF NOT EXISTS "enrichmentStatus" TEXT;
@@ -285,25 +347,38 @@ WHERE "tenantId" = '<tenantId>'
   AND ("enrichmentStatus" IS NULL OR "enrichmentStatus" != 'enriched')
 ```
 
-**Условия продолжения:**
-- pending > 0 → следующий batch (recursive `/enrich-calls` с теми же args)
-- pending = 0 → **EXIT с финальным отчётом** "✅ Backfill complete: N/N enriched"
+### Auto-continue через ScheduleWakeup (фикс #8 — РАБОЧИЙ механизм)
 
-**Exit signal для `/loop`:**
-- pending > 0 → последняя строка ответа должна быть `[CONTINUE]` (skill `/loop` это видит → запускает снова)
-- pending = 0 → последняя строка `[DONE]` (loop останавливается)
+**`/loop` в dynamic mode НЕ сканирует строки `[CONTINUE]/[DONE]` — он ждёт `ScheduleWakeup` от тебя.**
 
-**Если без /loop, но с --auto-continue:**
-- pending > 0 → сам внутри skill вызвать `/enrich-calls` снова (рекурсивно)
+**В конце каждого batch ответа:**
 
-Это позволяет: один вызов `/loop /enrich-calls --tenant=diva-school --limit=40` обработает все 857 без остановки.
+```python
+if pending > 0:
+    ScheduleWakeup(
+        delaySeconds=120,
+        prompt="/enrich-calls --tenant=diva-school --limit=40",
+        reason="continue enrichment, pending=N"
+    )
+    print(f"⏸ Batch done. Pending {pending}. Next wake in 2 min.")
+else:
+    # просто НЕ вызывать ScheduleWakeup — loop остановится
+    print("✅ Backfill complete: N/N enriched")
+```
+
+**Никаких `[CONTINUE]`/`[DONE]` строк не нужно.** `ScheduleWakeup` (или его отсутствие) — единственный сигнал.
+
+**Если skill вызван НЕ через `/loop`, а с `--auto-continue`:**
+- pending > 0 → recursive вызов `/enrich-calls` сам через tool-call
+
+**Старт всего:** `/loop /enrich-calls --tenant=diva-school --limit=40` → loop крутится через ScheduleWakeup пока pending > 0.
 
 ## 🛑 Edge-cases — звонки БЕЗ нормального разговора
 
 Не все 857 звонков — настоящий диалог. Skill должен корректно классифицировать эти случаи:
 
-### Тип A: Звонок без речи (NO_SPEECH placeholder)
-**Признак:** transcript содержит ТОЛЬКО `[МЕНЕДЖЕР 00:00] (Приветствие. ПД. ФИО)` или близко к этому, < 100 chars total.
+### Тип A: Звонок без речи / Whisper-галлюцинация (фикс #9)
+**Признак:** transcript ≤ 100 chars **независимо от типа содержимого** (placeholder, Whisper-галлюцинация типа "Ого!" / "Продолжение следует...", шум). Признак: невозможно реконструировать диалог из текста.
 
 **Заполнить:**
 ```yaml
@@ -428,4 +503,4 @@ tags: [перенос, короткий_звонок]
 - Pipeline canon: `feedback-pipeline-canon-with-opus-enrich.md`
 - Flow: `feedback-onboarding-and-daily-enrich-flow.md`
 - View layer: `feedback-rop-dashboard-minimum.md` (Канон #37)
-- Образец: `~/Desktop/v213-fix-samples/b8367ce9_enriched.md`
+- Образец: `/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md`

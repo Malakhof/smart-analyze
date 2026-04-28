@@ -369,6 +369,73 @@ cat src/app/(dashboard)/page.tsx
 
 ---
 
+## 🎵 КРИТИЧНО: Audio playback из PBX (а не GC!)
+
+**Проблема (диагностика 2026-04-28):**
+В БД 6126 CallRecord:
+- 2410 (40%) имеют `audioUrl` на `fs*.getcourse.ru/fileservice/...` ❌
+- 0 — на onPBX
+- 3716 (60%) — без `audioUrl` вообще
+
+**Почему GC URLs плохие:**
+- Зависят от GC cookie (`gcCookie`) — протухает
+- GC может удалить запись или сменить fileservice URL
+- При прослушивании браузер получит 401/403/410
+
+**Правильное решение:**
+Прямая ссылка на onPBX recording — постоянная, доступна с нашим apiKey:
+
+```
+https://api.onlinepbx.ru/{domain}/mongo_history/download/{uuid}.mp3
+?key={apiKey}
+```
+
+Или через одноразовый signed URL:
+```
+GET https://api.onlinepbx.ru/{domain}/mongo_history/recording_link.json
+  &uuid={pbxUuid}
+  &expires_in=3600
+→ { "url": "https://..." }
+```
+
+### Что нужно сделать в UI sessии (Этап 1.5 после Этапа 3 «Карточка звонка»)
+
+**Шаг 1:** Подобрать корректный onPBX endpoint для recording playback (есть в их docs или см. `docs/demo/2026-04-22-diva-onpbx-integration.md`).
+
+**Шаг 2:** Добавить в `cron-master-pipeline.ts` (это будущий cron из cron-handoff'а):
+- При upsert новых CallRecord писать `audioUrl = <onPBX recording URL>`
+- НЕ скачивать аудио в нашу инфру
+- Сохранять только URL, проигрывать прямо в браузере
+
+**Шаг 3:** Backfill для существующих 6126 звонков:
+- `scripts/backfill-pbx-audio-urls.ts` — пройтись по всем UUIDs, получить onPBX recording URLs, UPDATE `CallRecord.audioUrl`
+- Это **отдельный скрипт**, не часть UI sessии. Можно запустить параллельно.
+
+**Шаг 4 (UI):** Player компонент:
+```tsx
+// Простейший — нативный HTML5
+<audio controls src={call.audioUrl} preload="metadata" />
+
+// Если нужны custom UI — использовать существующий компонент проекта
+// (проверить через grep -r "audio" в src/)
+```
+
+### Важные edge-case'ы
+
+- Звонки без записи (НДЗ, voicemail) → `audioUrl = null` → показать «Аудио недоступно — звонок не состоялся»
+- Звонки старше N дней — onPBX может архивировать → проверить retention policy у Тани Брусникиной
+- Очень короткие звонки (<5 сек) — может не быть recording → graceful fallback
+
+### Связь с cron handoff
+
+Эта задача **частично решается на стороне cron**:
+- Новые звонки автоматически получают onPBX `audioUrl` через `cron-master-pipeline.ts`
+- Старые 6126 — backfill отдельным скриптом
+
+В UI sessии **не реализуем backfill**, но **используем готовый `audioUrl` из БД**.
+
+---
+
 ## 🔥 Killer feature которые нужно вывести
 
 1. **Block 7 «Обещания»** на странице звонка — список «Что обещали МОП и клиент». Tracking «выполнено / не выполнено» (Phase 2 позже).

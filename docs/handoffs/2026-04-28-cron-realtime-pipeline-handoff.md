@@ -171,6 +171,32 @@ Missing UUIDs: ${reconciliation.missingInDb?.slice(0,5).join(', ')}...`
 }
 ```
 
+### Этап 5.5: Audio URLs из PBX (КРИТИЧНО для UI)
+
+**Проблема:** в БД 6126 diva CallRecord имеют `audioUrl` на `fs*.getcourse.ru` (40%) или null (60%) — **ни одной onPBX ссылки**. Это блокирует UI player.
+
+**Что делать:**
+
+1. **В `cron-master-pipeline.ts` upsert step:**
+   - При создании/апдейте CallRecord писать `audioUrl = <onPBX recording URL>`
+   - Endpoint: `https://api.onlinepbx.ru/{domain}/mongo_history/download/{uuid}.mp3?key={apiKey}` (или signed URL через `recording_link.json`)
+   - **НЕ скачивать** аудио в нашу инфру — только URL
+
+2. **Backfill `scripts/backfill-pbx-audio-urls.ts`:**
+   - Для всех 6126 существующих CallRecord без onPBX URL
+   - Получить из onPBX api актуальные URLs
+   - UPDATE `audioUrl`
+   - Можно запустить раз и навсегда (~10-15 мин при concurrency)
+
+3. **Edge cases:**
+   - Звонки старше retention policy onPBX → audio удалён → `audioUrl = null` + флаг
+   - НДЗ / voicemail → audio может быть пустой → проверить
+   - Короткие звонки (<5s) → recording не сохранён → null
+
+**Когда делать:** в Этапе 1 master-pipeline (для новых звонков) + отдельный backfill скрипт **сегодня же** (одноразовый прогон).
+
+---
+
 ### Этап 6: Тест end-to-end (1 час)
 
 1. Сделать тестовый звонок на diva (pickup → 30 сек разговор → hangup)

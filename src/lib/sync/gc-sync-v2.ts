@@ -479,6 +479,11 @@ async function writeDealsPage(
         | "OPEN"
         | "WON"
         | "LOST",
+      // CRITICAL: clientCrmId — без него phone matching CallRecord→Deal не работает.
+      // Парсер deal-list.ts вытаскивает d.clientUserId из data-user-id, но раньше
+      // здесь не записывалось → 97% Deals имели clientCrmId=NULL. Backfill через
+      // scripts/backfill-deal-userid-direct.ts. Цепочка резолва — canon #8.
+      clientCrmId: d.clientUserId || null,
     }
     const existing = await db.deal.findFirst({
       where: { tenantId, crmId: d.crmId },

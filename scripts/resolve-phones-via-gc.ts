@@ -56,14 +56,16 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-// Парсит HTML контактного списка GC, ищет contact id из <a href="/contact/update/id/X">
+// Парсит HTML контактного списка GC. ВАЖНО: data-user-id (GC user_id),
+// НЕ data-key (это row index в Yii2 grid — другое число).
+// Совпадает с logic в parsers/contact-list.ts (rowRegex с data-user-id).
 function parseContactIdFromHtml(html: string): string | null {
-  // primary pattern — table row data-key
-  const dataKey = html.match(/<tr[^>]*data-key="(\d+)"/)
-  if (dataKey) return dataKey[1]
-  // alternate — link
-  const link = html.match(/\/contact\/update\/id\/(\d+)/)
-  if (link) return link[1]
+  // Contact rows: <tr data-user-id="X" data-key="Y" ...> где X = реальный GC user_id
+  const m = html.match(/<tr[^>]*\bdata-user-id="(\d+)"[^>]*\bdata-key="\d+"/)
+  if (m) return m[1]
+  // Fallback: иногда GC сначала data-key потом data-user-id
+  const m2 = html.match(/<tr[^>]*\bdata-key="\d+"[^>]*\bdata-user-id="(\d+)"/)
+  if (m2) return m2[1]
   return null
 }
 

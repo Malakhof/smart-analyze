@@ -53,56 +53,150 @@
 
 ---
 
+## 🔥 ВАЖНО: Cron = ПОЛНАЯ ЦЕПОЧКА, не просто sync
+
+Cron не просто «забрал URLs». Это **end-to-end orchestrator** всего flow:
+
+```
+Cron triggers (каждые 15 мин)
+   ↓
+Stage 1: PBX API (mongo_history.search) — получить delta UUIDs новых звонков
+   ↓
+Stage 2: Smart-download MP3 (1 IP, sleep 3s, exp backoff, idempotent skip already-downloaded)
+   ↓
+Stage 3: Group + sort by duration (greedy bin-packing для GPU load balancing)
+   ↓
+Stage 4: ⭐ AUTO-START GPU (Intelion API) если есть >=10 новых
+   ↓
+Stage 5: Whisper v2.13 transcribe (per-channel, hotwords, watchdog auto-renewal)
+   ↓
+Stage 6: AUTO-STOP GPU когда очередь пуста
+   ↓
+Stage 7: DeepSeek downstream (callType, repair, scriptScore, callSummary)
+   ↓
+Stage 7.5: Phone resolve + Deal.clientCrmId JOIN (Stage 3.5 для GC tenants)
+   ↓
+Stage 8: Upsert CallRecord — все поля ВКЛЮЧАЯ audioUrl=onPBX URL (Канон #8)
+   ↓
+Stage 9: Reconciliation — PBX vs CRM (GC scraping) vs наша БД
+   ↓
+Stage 10: Telegram alert если discrepancy >5%
+   ↓
+Stage 11: UPDATE LastSync.timestamp = NOW()
+   ↓
+Готово — UI показывает первичную версию (transcript + scriptScore + базовые теги).
+   ↓
+Вечером: пользователь в Claude Code сессии запускает /loop /enrich-calls
+   ↓
+   Master Enrich (Opus, 6 блоков + Block 7 commitments) обогащает что cron не довёл.
+   ↓
+UI обновляется до полной enriched-версии.
+```
+
+**Критично:** в первый запуск cron должен забрать **весь день** (delta с last-sync до now), не пропустить ничего.
+
+---
+
 ## 🎯 Что должна сделать новая сессия
+
+### Этап 0: Первый прогон вручную (тестовый)
+
+**ПЕРЕД** настройкой cron — **прогнать всю цепочку ОДИН РАЗ вручную** на свежих данных:
+- За промежуток 2026-04-28..2026-04-29 (с момента последнего sync до сегодня)
+- Один tenant (diva-school)
+- Полный flow: PBX → download → GPU → Whisper → DeepSeek → Stage 3.5 → upsert → reconcile
+- **Цель:** убедиться что end-to-end собирается, нет регрессий, GPU не падает
+- Только после успеха — переход к Этапу 1
 
 ### Этап 1: Master Cron Worker (1 день)
 
 **Создать `scripts/cron-master-pipeline.ts`** — единый cron-проход:
 
 ```typescript
-// Per-tenant invocation
+// Per-tenant invocation — END-TO-END orchestrator
 async function runCronPipeline(tenantName: string) {
   const tenant = await loadTenant(tenantName)
-  const pbxConfig = await loadPbxConfig(tenant)  // onPBX/Sipuni/МегаПБХ
-  const crmConfig = await loadCrmConfig(tenant)  // GC/amoCRM
-
+  const pbxConfig = await loadPbxConfig(tenant)
+  const crmConfig = await loadCrmConfig(tenant)
   const lastSync = await getLastSync(tenant)
 
-  // ШАГ 1: Sync новых звонков (delta только)
+  // STAGE 1: PBX delta
   const newCalls = await pbxAdapter.fetchHistorySince(lastSync.timestamp)
-  console.log(`[pbx] fetched ${newCalls.length} new calls`)
-
-  // ШАГ 2: Smart-download audio (1 IP, sleep 3s, backoff)
-  await downloadAudios(newCalls, { rateLimit: 3000 })
-
-  // ШАГ 3: Trigger transcribe queue (если >10 новых — start GPU)
-  if (newCalls.length >= 10) await ensureGpuRunning()
-  await queueTranscription(newCalls)
-
-  // ШАГ 4: Wait для transcribe + downstream (или асинхронно — записать в очередь)
-  // Альтернатива: отдельный cron для transcribe queue
-
-  // ШАГ 5: Stage 3.5 — phone resolve + Deal link (только GC tenants)
-  if (crmConfig.provider === 'GETCOURSE') {
-    await runStage35(tenant)
+  if (newCalls.length === 0) {
+    await runReconcileOnly(tenant) // всё равно проверяем что нет потерь
+    return
   }
-  // Для amoCRM dealId уже пришёл в Note.params.uniq при sync
 
-  // ШАГ 6: Upsert CallRecord (Canon #8 — все поля в одном проходе)
-  await upsertCallRecords(newCalls, tenant)
+  // STAGE 2: Smart-download MP3 (1 IP, sleep 3s, exp backoff, idempotent)
+  const downloaded = await smartDownload(newCalls, {
+    rateLimit: 3000,
+    maxRetries: 5,
+    skipExisting: true, // если файл уже скачан — skip
+  })
 
-  // ШАГ 7: ⭐ RECONCILIATION (Канон #38)
+  // STAGE 3: Group + sort by duration (greedy bin-packing для GPU load balancing)
+  const batches = greedyBinPackByDuration(downloaded, { targetBatchMin: 30 })
+
+  // STAGE 4: AUTO-START GPU только если есть работа (>=10 новых)
+  if (downloaded.length >= 10) {
+    await intelionApi.startGpuPod({
+      tier: 'rtx-3090',
+      keepaliveWatchdog: true, // canon: feedback-intelion-auto-renewal-bug.md
+      maxIdleMinutes: 5,
+    })
+  }
+
+  // STAGE 5: Whisper v2.13 transcribe (с hotwords из БД)
+  const hotwords = await buildHotwords(tenant) // имена МОПов + топ русских имён
+  for (const batch of batches) {
+    await transcribeBatch(batch, {
+      pipeline: 'v2.13',
+      hotwords,
+      watchdog: true, // если silent stop — авто-restart
+    })
+  }
+
+  // STAGE 6: AUTO-STOP GPU когда очередь пуста
+  await intelionApi.stopGpuPodIfIdle({ idleMinutes: 5 })
+
+  // STAGE 7: DeepSeek downstream (concurrency 15)
+  await runDownstream(downloaded, {
+    steps: ['detect-call-type', 'repair', 'script-score', 'insights'],
+    concurrency: 15,
+  })
+
+  // STAGE 7.5: Phone resolve + Deal link (GC tenants)
+  if (crmConfig.provider === 'GETCOURSE') {
+    await runStage35(tenant) // scripts/cron-stage35-link-fresh-calls.ts logic
+  }
+  // Для amoCRM dealId уже пришёл из Note.params.uniq
+
+  // STAGE 8: Upsert CallRecord (Канон #8 — все поля в одном проходе)
+  await upsertCallRecords(downloaded, tenant, {
+    fields: [
+      'pbxUuid', 'managerId', 'dealId', 'clientPhone',
+      'transcript', 'transcriptRepaired',
+      'callType', 'scriptScore', 'scriptDetails',
+      'callSummary', 'sentiment', 'objections', 'hotLead',
+      'audioUrl', // ← onPBX direct URL (НЕ GC fileservice!)
+      'pbxMeta', 'gateway', 'hangupCause', 'userTalkTime',
+      'gcContactId', 'startStamp',
+    ],
+  })
+
+  // STAGE 9: Reconciliation (Канон #38)
   const reconciliation = await reconcile({
     pbxAdapter, crmAdapter, db,
     tenant, window: { from: lastSync.timestamp, to: now }
   })
   await db.reconciliationCheck.create({ data: reconciliation })
 
+  // STAGE 10: Telegram alert
   if (reconciliation.discrepancyPct > 5) {
     await sendTelegramAlert(tenant, reconciliation)
   }
 
-  // ШАГ 8: UPDATE LastSync
+  // STAGE 11: UPDATE LastSync
   await updateLastSync(tenant, now)
 }
 ```
@@ -246,24 +340,75 @@ TS: download audio → transcribe → DeepSeek → Prisma upsert
 
 - [x] Pipeline v2.13 (Whisper + repair) на сервере
 - [x] Stage 3.5 cron worker (`scripts/cron-stage35-link-fresh-calls.ts`)
-- [x] Master Enrich schema в БД (26 колонок CallRecord)
-- [x] Skill `/enrich-calls` с auto-loop
+- [x] Master Enrich schema в БД (29 колонок CallRecord включая Block 7)
+- [x] Skill `/enrich-calls` с auto-loop + edge-case
 - [x] Канон #37 (дашборд РОПа) doc
 - [x] Канон #38 (reconciliation) doc
-- [x] Phone resolve script (`resolve-phones-via-gc.ts`)
-- [x] Deal.clientCrmId backfill 99.99% для diva
+- [x] Phone resolve script (`resolve-phones-via-gc.ts`) — 99.8% покрытие
+- [x] Deal.clientCrmId backfill 99.99% для diva (137974/137992)
 - [x] gc-sync-v2.ts:482 — sync пишет clientCrmId автоматом
+- [x] CallRecord.dealId — 82.2% покрытие (5038/6126)
+- [x] Все memory canon (Intelion bugs, SSH quirks, tar suffix, pipeline params)
 
 ## 📝 Что НЕ готово (делать в новой сессии)
 
-- [ ] `cron-master-pipeline.ts` — главный cron worker
+### Этап 0 — Первый прогон вручную (за прошедший день)
+- [ ] Прогнать end-to-end на интервале с last-sync до now (для diva это 28-29 апреля)
+- [ ] Зафиксировать что всё работает
+- [ ] Только потом — настройка cron
+
+### Этап 1-6 — Master Cron
+- [ ] `cron-master-pipeline.ts` — главный orchestrator (11 stages выше)
 - [ ] PBX adapter pattern (onPBX/Sipuni/МегаПБХ под одним интерфейсом)
+- [ ] GPU auto-start/stop через Intelion API + watchdog
+- [ ] Greedy bin-packing batch sorter (по duration)
+- [ ] Smart-download MP3 с idempotent skip
+- [ ] **audioUrl = onPBX URL** (НЕ GC fileservice!) — backfill 6126 + новые
 - [ ] `LastSync` table + миграция
 - [ ] `ReconciliationCheck` table + миграция
-- [ ] Reconciliation logic (3-way diff)
-- [ ] Telegram alerts
-- [ ] Crontab установка на prod
-- [ ] End-to-end тест с тестовым звонком
+- [ ] Reconciliation logic (3-way diff PBX/CRM/БД)
+- [ ] Telegram alerts >5% discrepancy
+- [ ] GC playwright восстановить если sync через Playwright (cookie refresh)
+
+### Установка
+- [ ] Crontab на prod (per-tenant расписание)
+- [ ] End-to-end тест с тестовым звонком (sync → 15 мин → видим в /quality)
+- [ ] Документация в STATUS.md
+
+---
+
+## 🛡️ GPU защита (КРИТИЧНО — большой опыт шишек собран)
+
+В этой сессии было много инцидентов с GPU. Canon записан в memory:
+
+### Обязательно использовать
+
+1. **`feedback-intelion-auto-renewal-bug.md`**
+   - Серверы Intelion **silently stop через 60 мин** без видимой ошибки
+   - **Watchdog обязательно:** API ping каждые 25 мин → если pod_status='stopped' → restart
+   - В master-pipeline это `Promise.race([transcribe, watchdog])` pattern
+
+2. **`feedback-ssh-intelion-quirks.md`**
+   - SSH banner timeout — добавлять `-o ConnectTimeout=20`
+   - Exit 255 ≠ ошибка — это normal disconnection
+   - **Pattern:** `nohup setsid <cmd> > log 2>&1 &` для detachment от SSH
+   - SCP launcher вместо inline heredoc (heredoc ломает escaping)
+
+3. **`feedback-orchestrate-tar-mp3-suffix-bug.md`**
+   - tar transfer файлов ТРЕБУЕТ `.mp3` суффикс в files-list.txt
+   - Без суффикса — 0 файлов на target, 286 фейлов download_failed
+   - **Pre-process** files-list ДО tar transfer
+
+4. **`feedback-pipeline-v213-final-settings.md`**
+   - Production params Whisper (PROB 0.20, GAP 3.0, HOST_PAUSE_MIN 1.0, etc.)
+   - НЕ ТРОГАТЬ — калиброваны на 60 файлах + диагностике 10 проблемных
+
+### Anti-patterns (ABSOLUTELY DON'T)
+
+❌ Запускать GPU 24/7 — пустая трата денег
+❌ Запускать GPU без watchdog — тихо сломается через час
+❌ Использовать GC fileservice URLs для audioUrl — протухают
+❌ Скачивать audio в нашу инфру — лишняя работа, прямой URL onPBX лучше
 
 ---
 

@@ -439,9 +439,15 @@ model CallRecord {
   gcCallCardUrl         String?
   gcDeepLinkType        String?
 
+  // Block 7: Extracted commitments (Promise-keeping layer)
+  extractedCommitments  Json?
+  commitmentsCount      Int?
+  commitmentsTracked    Boolean? @default(false)
+
   @@index([enrichmentStatus])
   @@index([callOutcome])
   @@index([outcome])
+  @@index([commitmentsTracked])
 }
 
 enum CallDirection {

@@ -63,6 +63,15 @@
 ### Блок 6: AGGREGATABLE FIELDS (для Канон #37 widgets)
 Производные на уровне UI (group/count/avg по managerName, callOutcome, scriptScore).
 
+### Блок 7: EXTRACTED COMMITMENTS (Promise-keeping layer — НАША killer feature)
+- `extractedCommitments[]`: массив обещаний из звонка
+  - `{speaker, quote, timestamp, action, deadline, target, evidence}`
+  - actions: `send_whatsapp | send_email | callback | send_offer | meeting | task | other`
+- `commitmentsCount`: int
+- `commitmentsTracked`: bool (синхронизировано в CRM как задача)
+
+**Цель слоя:** вытащить ВСЕ обещания МОПа и клиента из звонка, потом sync в CRM как задачи, потом проверять выполнение, потом показывать РОПу «топ нарушителей сроков». Дифференциация vs Roistat/CoMagic.
+
 ---
 
 ## Соответствие анкете diva

@@ -507,12 +507,39 @@ def merge_channel_first(mgr_words, cli_words, gap_threshold: float = GAP_THRESHO
     mgr_utts = drop_backchannels(mgr_utts)
     cli_utts = drop_backchannels(cli_utts)
 
+    # v2.11: Smart-drop short reactions nested inside long host monolog.
+    # Problem (found 2026-04-28): client says "ну супер", "Хорошо", "Давай"
+    # (3-5 words, NOT pure ack tokens) DURING manager's 30+ sec monolog.
+    # These appear as orphan lines AFTER the monolog → breaks reading logic.
+    # ROP читает → ругается матом → не покупает.
+    # Fix: if guest utterance ≤4 words AND duration <3s AND fully nested in
+    # opposite-speaker monolog ≥20s long → DROP entirely (it's semantic noise).
+    # Larger interjections (>4 words OR >3s) still appear in chronological order.
+    def drop_orphan_reactions(host_utts, guest_utts):
+        if not host_utts or not guest_utts:
+            return guest_utts
+        long_host_spans = [(h[0], h[1]) for h in host_utts if (h[1] - h[0]) >= 20.0]
+        if not long_host_spans:
+            return guest_utts
+        kept = []
+        for g in guest_utts:
+            gs, ge, glbl, gtxt = g
+            words = gtxt.strip().split()
+            is_short = len(words) <= 4 and (ge - gs) < 3.0
+            nested = any(hs <= gs and ge <= he for hs, he in long_host_spans)
+            if is_short and nested:
+                continue  # drop semantic noise inside long monolog
+            kept.append(g)
+        return kept
+
+    cli_utts = drop_orphan_reactions(mgr_utts, cli_utts)
+    mgr_utts = drop_orphan_reactions(cli_utts, mgr_utts)
+
     # v2.9: split_overlapping disabled by default. It was cutting manager
-    # monologues into multiple lines around short client interjections like
-    # "и вообще подача материала, поэтому вот." (6 words), which broke
-    # readability. Keeping monologues whole; client's short interjections appear
-    # as separate lines after the monologue (chronologically slightly off but
-    # cleaner). Set USE_SPLIT_OVERLAPPING=1 to re-enable for experiments.
+    # monologues into multiple lines around short client interjections.
+    # v2.11: после drop_orphan_reactions опасных мелких вставок нет, так что
+    # split_overlapping можно включать только для guests >5 words (мы это
+    # делаем in-script ниже через SAFE check), но пока default OFF.
     if os.environ.get("USE_SPLIT_OVERLAPPING", "0") == "1":
         all_utts = split_overlapping_utterances(mgr_utts + cli_utts)
     else:
@@ -775,7 +802,7 @@ def process_one(model: WhisperModel, row: dict) -> dict:
                     "sipuni_outbound": sipuni_outbound,
                 },
             }
-            mode = "stereo_channel_first_v210"
+            mode = "stereo_channel_first_v211"
             duration = l_info.duration
             language = l_info.language
             prob = l_info.language_probability

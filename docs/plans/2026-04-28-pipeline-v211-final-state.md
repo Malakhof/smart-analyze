@@ -1,7 +1,7 @@
-# Pipeline v2.10 — финальное состояние (честно как есть)
+# Pipeline v2.11 — финальное состояние (честно как есть)
 
 **Date:** 2026-04-28
-**Status:** PRODUCTION-READY для backfill diva 1786 звонков
+**Status:** PRODUCTION-READY. Backfill diva 857 звонков выполнен, v2.11 re-merge применён к 677/857 (79%).
 
 ---
 
@@ -21,7 +21,7 @@ Pipeline доведён до **практического потолка Whisper
 
 ---
 
-## Архитектура pipeline v2.10
+## Архитектура pipeline v2.11
 
 ```
 [Stereo MP3 8kHz onPBX]
@@ -47,16 +47,18 @@ Pipeline доведён до **практического потолка Whisper
 │  • GAP_THRESHOLD=3.0 (склейка слов в одну реплику)         │
 │  • drop_backchannels (Gong-style: убираем "угу/ага/да")    │
 │  • USE_SPLIT_OVERLAPPING=0 default (резало монологи)       │
+│  • drop_orphan_reactions (v2.11: ≤4 слов <3с внутри ≥20с   │
+│    монолога противоположного спикера — режем)              │
 │  • filter_whisper_hallucinations (regex)                   │
 └────────────────────────────────────────────────────────────┘
          ↓
 ┌─ STAGE 3: format_transcript ───────────────────────────────┐
 │  • Long monologues (>60 слов) разбиваются по `.!?` ~45w/chunk
 │  • LATE_START >25s → placeholder "[МЕНЕДЖЕР 00:00] (Приветствие. ПД. ФИО)"
-│  • mode = stereo_channel_first_v210                        │
+│  • mode = stereo_channel_first_v211                        │
 └────────────────────────────────────────────────────────────┘
          ↓
-[transcript_v210.txt → CallRecord.transcript]
+[transcript_v211.txt → CallRecord.transcript]
          ↓
 ┌─ STAGE 4: detect-call-type.ts (DeepSeek) ──────────────────┐
 │  Классифицирует: REAL / VOICEMAIL / IVR / HUNG_UP / NO_ANSWER
@@ -102,7 +104,8 @@ Pipeline доведён до **практического потолка Whisper
 | v2.7 | 2026-04-27 | PROB 0.20 + halluc patterns + initial_prompt | initial_prompt → glossary echo bug |
 | v2.8 | 2026-04-27 | DROP backchannels (Gong-style) + cleanup | "Угу. Угу." на 3с не дропались |
 | v2.9 | 2026-04-27 | Drop backchannels без duration + split off | Хвосты-обрубки на быстрых диалогах |
-| **v2.10** | **2026-04-28** | **GAP=3.0 + placeholder LATE_START** | Whisper baseline limit |
+| v2.10 | 2026-04-28 | GAP=3.0 + placeholder LATE_START | Orphan reactions внутри монологов |
+| **v2.11** | **2026-04-28** | **drop_orphan_reactions (smart-drop "ну супер" внутри ≥20с монолога)** | Whisper baseline limit |
 
 ---
 
@@ -118,6 +121,9 @@ ECHO_ENERGY_RATIO = 2.5       # v2.2 (cross-channel echo defense)
 ECHO_WINDOW_S = 1.5
 MAX_WORD_SPAN_S = 3.0         # v2.6 (drop halluc artifacts)
 LATE_START_THRESHOLD_S = 25.0 # v2.10 (placeholder trigger)
+# v2.11 orphan reactions guard:
+#   host monologue >= 20.0s, guest utterance <= 4 words & < 3.0s,
+#   nested in time → drop. Реальные диалоги не страдают (там реплики >4 слов).
 
 # Whisper kwargs
 word_timestamps=True

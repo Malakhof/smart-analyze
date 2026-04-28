@@ -149,16 +149,42 @@ cat "$OUT_DIR"/whisper-*.jsonl > "$OUT_DIR/whisper.jsonl"
 WHISPER_OK=$(grep -c '"transcript"' "$OUT_DIR/whisper.jsonl" || echo 0)
 echo "Total transcribed: $WHISPER_OK"
 
-# 4. AI role detection
-echo "=== [4/7] AI role detector (DeepSeek) ==="
-tsx scripts/detect-channel-roles.ts --input "$OUT_DIR/whisper.jsonl" --out "$OUT_DIR/roles.jsonl" 2>&1 | tail -5
+# 4-5. AI role detection + re-merge.
+# v2.5: SKIP for tenants where pipeline default LEFT=МЕНЕДЖЕР is reliable
+# (onPBX inbound/outbound — diva). AI detector relied on first-30s window which
+# Whisper repetition guards corrupted; default heuristic outperforms AI on these.
+SKIP_AI_TENANTS="diva-school"
+INPUT_TENANTS=$(python3 -c "
+import json
+tenants = set()
+for line in open('$INPUT'):
+    line = line.strip()
+    if not line: continue
+    try: tenants.add(json.loads(line).get('tenant',''))
+    except: pass
+print(','.join(sorted(tenants)))
+")
+SKIP_AI=0
+for skip_t in $SKIP_AI_TENANTS; do
+  if [[ "$INPUT_TENANTS" == "$skip_t" ]]; then
+    SKIP_AI=1
+    break
+  fi
+done
 
-# 5. Re-merge with AI roles
-echo "=== [5/7] Re-merge with AI roles ==="
-python3 scripts/orchestrate-pipeline.py \
-  --input "$OUT_DIR/whisper.jsonl" \
-  --roles "$OUT_DIR/roles.jsonl" \
-  --output "$OUT_DIR/merged.jsonl"
+if [ "$SKIP_AI" = "1" ]; then
+  echo "=== [4-5/7] SKIP AI role detector (tenant=$INPUT_TENANTS — default LEFT=МЕНЕДЖЕР reliable) ==="
+  cp "$OUT_DIR/whisper.jsonl" "$OUT_DIR/merged.jsonl"
+else
+  echo "=== [4/7] AI role detector (DeepSeek) ==="
+  tsx scripts/detect-channel-roles.ts --input "$OUT_DIR/whisper.jsonl" --out "$OUT_DIR/roles.jsonl" 2>&1 | tail -5
+
+  echo "=== [5/7] Re-merge with AI roles ==="
+  python3 scripts/orchestrate-pipeline.py \
+    --input "$OUT_DIR/whisper.jsonl" \
+    --roles "$OUT_DIR/roles.jsonl" \
+    --output "$OUT_DIR/merged.jsonl"
+fi
 
 # 6. Persist to DB
 echo "=== [6/7] Persist to DB ==="

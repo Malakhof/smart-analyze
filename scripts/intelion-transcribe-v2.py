@@ -36,13 +36,18 @@ LANGUAGE = os.environ.get("WHISPER_LANG", "ru")
 COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE", "float16")
 
 # Word grouping threshold — words from same speaker within this gap = same utterance.
-# Increased from 0.6s → 2.0s after first prod test: slow speakers (elderly clients)
-# pause for 1-2s mid-phrase, and 0.6s threshold split их фразы in 5-10 фрагментов.
-GAP_THRESHOLD = float(os.environ.get("GAP_THRESHOLD", "2.0"))
+# v2.6: 2.0s — slow speakers pause mid-phrase.
+# v2.10: 3.0s — even slower elderly clients pause longer; reduces orphan
+# fragment lines like "Получается, – это" / "в каком возрасте" being split
+# from one mental phrase. Trade-off: adjacent unrelated phrases may glue.
+GAP_THRESHOLD = float(os.environ.get("GAP_THRESHOLD", "3.0"))
 
-# Probability threshold for keeping a word. Cross-channel echo bleed produces
-# words with prob ~0.3-0.5; real voice prob ~0.7-0.95. Drop low-prob words.
-PROB_THRESHOLD = float(os.environ.get("PROB_THRESHOLD", "0.55"))
+# Probability threshold for keeping a word.
+# v2.7: lowered 0.55 → 0.20. The high threshold was killing rare proper nouns
+# (manager names like "Аннель", "Дарья", "Татьяна") that Whisper transcribed
+# with prob 0.30-0.50 — they're real words, not echo. Echo defense now lives
+# entirely in filter_echo_by_energy (RMS cross-channel) + dedup_cross_channel_echo.
+PROB_THRESHOLD = float(os.environ.get("PROB_THRESHOLD", "0.20"))
 
 # Cross-channel dedup window: if same/similar word appears on both channels
 # within this time window — drop the one with lower probability (it's bleed).
@@ -57,6 +62,37 @@ ECHO_ENERGY_RATIO = float(os.environ.get("ECHO_ENERGY_RATIO", "2.5"))
 SSL_CTX = ssl.create_default_context()
 SSL_CTX.check_hostname = False
 SSL_CTX.verify_mode = ssl.CERT_NONE
+
+# Max plausible duration for a single ASR word in seconds. Whisper sometimes
+# emits a single "word" spanning 10-30s on hallucinated halluc segments
+# ("следует..." 2.28→29.98s). Such words glue together with following real
+# speech in merge_channel_first and the whole utterance gets killed by halluc
+# regex — masking real content. Drop them at source.
+MAX_WORD_SPAN_S = float(os.environ.get("MAX_WORD_SPAN_S", "3.0"))
+
+import re as _re
+
+# Known Whisper large-v3 hallucinations on silence/static fragments.
+# v2.6: applied at SEGMENT level in extract_words to prevent halluc-glue bug
+# (long-span halluc word "следует..." 2-30s sticks to following real speech).
+HALLUCINATION_PATTERNS = [
+    r"DimaTorzok", r"redactor.*субтитр", r"редактор.*субтитр",
+    r"субтитр[ыов]?\s*создавал", r"субтитр[ыов]?\s*от", r"субтитры?\s*by",
+    r"корректор\s*субтитр", r"перевод\s*и?\s*субтитры",
+    r"спасибо\s*за\s*просмотр", r"thank.*for.*watching",
+    r"продолжение\s*следует",        # Whisper invents on long silence
+    r"^\s*продолжение\.{0,5}\s*$",   # v2.6: bare "Продолжение..." (Whisper truncated halluc)
+    r"^\s*звонок\s*телефона\s*$",    # ringtone description
+    r"^\s*звонок\s+(дверь|телефон)\s*$",  # v2.4: caps "ЗВОНОК ДВЕРЬ"
+    r"телефонный\s+звонок",          # v2.6: "ТЕЛЕФОННЫЙ ЗВОНОК" caps on dial tone (outbound)
+    r"^\s*(в\s+)?(звонок|дверь)\.{0,5}\s*$",  # v2.7: bare "ЗВОНОК", "В ДВЕРЬ" stragglers
+    r"^\s*звонок\s+в\s+дверь\.{0,5}\s*$",     # v2.7: "ЗВОНОК В ДВЕРЬ" full phrase
+    r"^\s*время\.{0,5}\s*$",                  # v2.7: bare "Время" halluc on silence
+    r"вызываемый\s+абонент\s+не\s+отвечает",  # v2.7: voicemail intro halluc
+    r"оставайтесь\s+на\s+линии",     # v2.7: call-queue announcement
+    r"после\s+(акустического|звукового)\s+сигнала",  # v2.7: voicemail prompt
+]
+_HALLUCINATION_RE = _re.compile("|".join(HALLUCINATION_PATTERNS), _re.IGNORECASE)
 
 
 def resolve_onpbx_url(uuid: str) -> str:
@@ -152,25 +188,100 @@ def split_channels(src: Path, left: Path, right: Path) -> bool:
         return False
 
 
-def transcribe_one_channel(model: WhisperModel, fp: Path):
+_GLOSSARY_CACHE = {}
+
+def load_glossary(tenant: str) -> str:
+    """Load per-tenant initial_prompt glossary.
+
+    v2.7: passed to Whisper as initial_prompt — biases decoder toward known
+    proper nouns (manager names, school name, products). Effect: rare names
+    like "Аннель", "Дарья", "Дива" are recognized correctly instead of
+    "Анель/Анна", "Даша", "Гивы". Effect strongest in first ~30s chunk.
+    """
+    if tenant in _GLOSSARY_CACHE:
+        return _GLOSSARY_CACHE[tenant]
+    # Try docs/glossary/{tenant}.txt — repo path on Intelion is /workspace/docs/glossary
+    candidates = [
+        Path(f"/workspace/docs/glossary/{tenant}.txt"),
+        Path(__file__).parent.parent / "docs" / "glossary" / f"{tenant}.txt",
+    ]
+    for p in candidates:
+        if p.exists():
+            text = p.read_text(encoding="utf-8").strip()
+            # Whisper initial_prompt has token cap (~224 tokens ≈ 1000 chars Russian).
+            if len(text) > 1000:
+                text = text[:1000]
+            _GLOSSARY_CACHE[tenant] = text
+            return text
+    _GLOSSARY_CACHE[tenant] = ""
+    return ""
+
+
+def transcribe_one_channel(model: WhisperModel, fp: Path, initial_prompt: str = ""):
     """Returns (segments_with_words, info).
 
     KEY: word_timestamps=True, vad_filter=False, condition_on_previous_text=False.
-    v2.4: repetition guards (no_repeat_ngram_size + repetition_penalty) — prevents
-    Whisper looping into "вот, вот, вот ×80" on monotone segments (seen on long calls).
+    v2.5: repetition guards REMOVED — they ate first 15-20s of audio.
+    v2.7: initial_prompt for per-tenant glossary biasing (manager names, brand,
+    products). Effect strongest on first ~30s; weakens later because
+    condition_on_previous_text=False (intentional — prevents Whisper hallucinating
+    from prior context).
     """
-    segments_iter, info = model.transcribe(
-        str(fp),
+    kwargs = dict(
         language=LANGUAGE,
-        word_timestamps=True,           # ← пословные таймстемпы
-        vad_filter=False,                # ← НЕ режем тихую речь
-        condition_on_previous_text=False,  # ← без галлюцинаций
+        word_timestamps=True,
+        vad_filter=False,
+        condition_on_previous_text=False,
         beam_size=5,
-        temperature=[0.0, 0.2, 0.4],     # температура fallback (стандарт OpenAI)
-        no_repeat_ngram_size=3,          # v2.4: prevent "вот, вот, вот..." loops
-        repetition_penalty=1.1,          # v2.4: discourage immediate repeats
+        temperature=[0.0, 0.2, 0.4],
     )
+    # Experimental aggressive mode (env WHISPER_AGGRESSIVE=1):
+    # tries to recover speech in problematic first 20-30s of 8kHz telephony where
+    # default settings produce only halluc patterns ("Продолжение следует").
+    # - temperature=[0.0] only: no fallback temps that cause halluc
+    # - compression_ratio_threshold=3.0: less strict halluc detection
+    # - logprob_threshold=-2.0: keep less-confident segments
+    # - no_speech_threshold=0.3: more sensitive to quiet speech
+    # - hallucination_silence_threshold=2.0: skip tail silence
+    if os.environ.get("WHISPER_AGGRESSIVE", "0") == "1":
+        kwargs["temperature"] = [0.0]
+        kwargs["compression_ratio_threshold"] = 3.0
+        kwargs["log_prob_threshold"] = -2.0
+        kwargs["no_speech_threshold"] = 0.3
+        kwargs["hallucination_silence_threshold"] = 2.0
+    if initial_prompt:
+        kwargs["initial_prompt"] = initial_prompt
+    segments_iter, info = model.transcribe(str(fp), **kwargs)
     return list(segments_iter), info
+
+
+def filter_repetition_loops(words, max_repeats: int = 5, window_s: float = 10.0):
+    """Drop runs of >max_repeats same word within window_s seconds (post-process
+    safety net against Whisper looping into "вот, вот, вот ×80" on monotone audio).
+
+    Replaces v2.4 decoder-level repetition_penalty + no_repeat_ngram_size, which
+    incorrectly suppressed normal speech in first 15-20s.
+    """
+    if not words:
+        return words
+    keep = [True] * len(words)
+    for i, (s_i, _, _, t_i, _) in enumerate(words):
+        if not keep[i]:
+            continue
+        norm_i = t_i.lower().strip(".,!?;:—-")
+        if len(norm_i) > 8:
+            continue  # only short tokens loop ("вот", "да", "ага")
+        run = [i]
+        for j in range(i + 1, len(words)):
+            s_j, _, _, t_j, _ = words[j]
+            if s_j - s_i > window_s:
+                break
+            if t_j.lower().strip(".,!?;:—-") == norm_i:
+                run.append(j)
+        if len(run) > max_repeats:
+            for idx in run[max_repeats:]:
+                keep[idx] = False
+    return [w for w, k in zip(words, keep) if k]
 
 
 def extract_words(segments, label: str):
@@ -180,13 +291,20 @@ def extract_words(segments, label: str):
     from the OTHER channel (manager's mic picks up client's voice through speakers
     with ~50-100ms delay and -20dB attenuation; Whisper sees the bleed and produces
     low-confidence transcription).
+
+    v2.6: drop entire segment if its text matches a halluc pattern (otherwise
+    its long-span words like "следует..." 2-30s glue to following real speech in
+    merge_channel_first, and halluc regex kills the whole giant utterance —
+    masking real content). Also drop individual words spanning > MAX_WORD_SPAN_S.
     """
     words = []
     for seg in segments:
+        # v2.6: skip halluc segments at source
+        if _HALLUCINATION_RE.search(seg.text):
+            continue
         if not seg.words:
             # Fallback: если без word_timestamps — берём весь сегмент с avg prob
             prob = getattr(seg, "avg_logprob", -1.0)
-            # convert avg_logprob to probability-ish (rough)
             est_prob = 1.0 if prob > -0.3 else 0.5 if prob > -0.7 else 0.3
             if est_prob >= PROB_THRESHOLD:
                 words.append((seg.start, seg.end, label, seg.text.strip(), est_prob))
@@ -198,6 +316,9 @@ def extract_words(segments, label: str):
             prob = getattr(w, "probability", 1.0)
             if prob < PROB_THRESHOLD:
                 continue  # likely cross-channel bleed
+            # v2.6: drop suspiciously-long word spans (halluc artifact)
+            if (w.end - w.start) > MAX_WORD_SPAN_S:
+                continue
             words.append((w.start, w.end, label, text, prob))
     return words
 
@@ -362,31 +483,116 @@ def merge_channel_first(mgr_words, cli_words, gap_threshold: float = GAP_THRESHO
     mgr_utts = build_channel_utterances(mgr_words)
     cli_utts = build_channel_utterances(cli_words)
 
-    # Interleave by start time. Each utterance is now atomic — neither channel's
-    # turn can be split by the other channel's words.
-    all_utts = mgr_utts + cli_utts
+    # v2.8: DROP all short backchannels ("угу"/"ага"/"да"/"мм-хмм"/"так").
+    # Industry standard for sales analytics (Gong, Chorus, Aircall) — backchannels
+    # carry no semantic value for compliance scoring or insight extraction; they
+    # only clutter the transcript. Manager listening = expected baseline.
+    # Only drop SHORT (<2s) utterances that consist entirely of ack tokens.
+    BACKCHANNEL_RE = _re.compile(r"^\s*(угу|ага|да|мм-?хмм|м-?м|так|ну\s*да)[\s.,!?]*$", _re.IGNORECASE)
+
+    def drop_backchannels(utts):
+        """v2.9: drop if all words are ack tokens — regardless of duration.
+        Previous v2.8 had `<2.0s` constraint which missed "Угу. Угу." spanning ~3s
+        (slow speaker / long pause between aks).
+        """
+        out = []
+        for u in utts:
+            us, ue, lbl, txt = u
+            cleaned = _re.sub(r'[.,!?]+', ' ', txt.strip()).split()
+            if cleaned and all(BACKCHANNEL_RE.match(w) for w in cleaned):
+                continue
+            out.append(u)
+        return out
+
+    mgr_utts = drop_backchannels(mgr_utts)
+    cli_utts = drop_backchannels(cli_utts)
+
+    # v2.9: split_overlapping disabled by default. It was cutting manager
+    # monologues into multiple lines around short client interjections like
+    # "и вообще подача материала, поэтому вот." (6 words), which broke
+    # readability. Keeping monologues whole; client's short interjections appear
+    # as separate lines after the monologue (chronologically slightly off but
+    # cleaner). Set USE_SPLIT_OVERLAPPING=1 to re-enable for experiments.
+    if os.environ.get("USE_SPLIT_OVERLAPPING", "0") == "1":
+        all_utts = split_overlapping_utterances(mgr_utts + cli_utts)
+    else:
+        all_utts = mgr_utts + cli_utts
     all_utts.sort(key=lambda u: u[0])
 
     return [(s, label, text) for s, e, label, text in all_utts]
 
 
+def split_overlapping_utterances(utts):
+    """Split host utterance A if a guest utterance B (different speaker) starts
+    inside A. Splits A's text proportionally by time at B.start.
+
+    Why: channel-first merge correctly groups per-channel words into utterances,
+    but interleave-by-start-time fails when one speaker talks 30s and the other
+    inserts a 3s reply at the 15s mark — host shows whole then guest, instead of
+    host-up-to-15s, guest, host-from-15s.
+
+    Algorithm:
+      1. Sort utts by start.
+      2. For each utt A, find any utt B where A.start < B.start < A.end and A.label != B.label.
+      3. Estimate the "word boundary" closest to B.start within A by linear
+         interpolation (A's words are already merged into one text — we don't
+         have per-word timings here, so we split the text proportionally).
+      4. Replace A with (A.start, B.start, A.label, text_part1) and
+         (B.end, A.end, A.label, text_part2). Iterate.
+    """
+    if not utts:
+        return utts
+    utts = sorted(list(utts), key=lambda u: u[0])
+    result = []
+    queue = list(utts)
+    while queue:
+        a = queue.pop(0)
+        a_s, a_e, a_lbl, a_text = a
+        # Find first B that starts inside A and is not host's own backchannel-followup
+        b = None
+        for cand in queue:
+            cs, ce, clbl, ctext = cand
+            if cs >= a_e:
+                break
+            if cs > a_s and clbl != a_lbl:
+                b = cand
+                break
+        if b is None:
+            result.append(a)
+            continue
+        # Split A around B.start
+        b_s, b_e, _, _ = b
+        a_dur = max(a_e - a_s, 0.001)
+        ratio = (b_s - a_s) / a_dur
+        ratio = max(0.05, min(0.95, ratio))
+        words = a_text.split()
+        cut = max(1, min(len(words) - 1, int(round(len(words) * ratio))))
+        # v2.8: don't split if either part would have < 5 words
+        # (otherwise leaves 1-2 word "fragment" lines like "днях" or "поближе")
+        MIN_PART_WORDS = 5
+        if cut < MIN_PART_WORDS or (len(words) - cut) < MIN_PART_WORDS:
+            result.append(a)
+            continue
+        text1 = " ".join(words[:cut])
+        text2 = " ".join(words[cut:])
+        result.append((a_s, b_s, a_lbl, text1))
+        # Re-queue: B keeps its place, then second half of A goes after B.end
+        # We insert second half so it gets re-checked for further overlaps.
+        new_a = (b_e, a_e, a_lbl, text2)
+        # Insert new_a into queue keeping sort order
+        inserted = False
+        for i, q in enumerate(queue):
+            if q[0] >= new_a[0]:
+                queue.insert(i, new_a)
+                inserted = True
+                break
+        if not inserted:
+            queue.append(new_a)
+    return result
+
+
 # Module-level mutable state for end-times (used by merge func above)
 utterances_end = []
-
-
-# Known Whisper large-v3 hallucinations on silence/static fragments.
-# Filter these out from final transcript so they don't confuse downstream AI.
-HALLUCINATION_PATTERNS = [
-    r"DimaTorzok", r"redactor.*субтитр", r"редактор.*субтитр",
-    r"субтитр[ыов]?\s*создавал", r"субтитр[ыов]?\s*от", r"субтитры?\s*by",
-    r"корректор\s*субтитр", r"перевод\s*и?\s*субтитры",
-    r"спасибо\s*за\s*просмотр", r"thank.*for.*watching",
-    r"продолжение\s*следует",        # Whisper invents on long silence at end of call
-    r"^\s*звонок\s*телефона\s*$",    # ringtone description (single-line dial tone)
-    r"^\s*звонок\s+(дверь|телефон)\s*$",  # v2.4: caps "ЗВОНОК ДВЕРЬ" hallucination
-]
-import re as _re
-_HALLUCINATION_RE = _re.compile("|".join(HALLUCINATION_PATTERNS), _re.IGNORECASE)
 
 
 def filter_whisper_hallucinations(utterances):
@@ -399,14 +605,54 @@ def filter_whisper_hallucinations(utterances):
     return out
 
 
+LATE_START_THRESHOLD_S = 25.0  # v2.10: 20→25, reduce false positives on slow pickups
+
 def format_transcript(utterances) -> str:
-    """Pretty format with [LABEL MM:SS] timestamps."""
+    """Pretty format with [LABEL MM:SS] timestamps.
+
+    v2.7: long monologues (>60 words) get soft-wrapped at sentence boundaries.
+    v2.8: continuation lines have NO indent.
+    v2.10: insert placeholder if first utterance starts > LATE_START_THRESHOLD_S
+    (Whisper missed beginning — typically greeting/introduction with personal data
+    like name/manager intro). Marker doubles as NDA signal: "тут были ПД".
+    """
     lines = []
+    if utterances and utterances[0][0] > LATE_START_THRESHOLD_S:
+        lines.append("[МЕНЕДЖЕР 00:00] (Приветствие. ПД. ФИО)")
     for start, label, text in utterances:
         mm = int(start // 60)
         ss = int(start % 60)
-        lines.append(f"[{label} {mm:02d}:{ss:02d}] {text.strip()}")
+        text = text.strip()
+        prefix = f"[{label} {mm:02d}:{ss:02d}] "
+        word_count = len(text.split())
+        if word_count <= 60:
+            lines.append(prefix + text)
+            continue
+        chunks = _split_at_sentences(text, target_words=45)
+        lines.append(prefix + chunks[0])
+        for chunk in chunks[1:]:
+            lines.append(chunk)
     return "\n".join(lines)
+
+
+def _split_at_sentences(text: str, target_words: int = 45):
+    """Split text at . ! ? boundaries, aiming for ~target_words per chunk."""
+    parts = _re.split(r"(?<=[.!?])\s+", text)
+    chunks = []
+    current = []
+    current_words = 0
+    for p in parts:
+        wc = len(p.split())
+        if current and current_words + wc > target_words:
+            chunks.append(" ".join(current))
+            current = [p]
+            current_words = wc
+        else:
+            current.append(p)
+            current_words += wc
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
 
 
 def serialize_raw_segments(segments, label: str):
@@ -458,10 +704,20 @@ def process_one(model: WhisperModel, row: dict) -> dict:
     utterances_end = []
 
     try:
+        # v2.7: initial_prompt is OFF by default. Enabling it via comma-separated
+        # glossary causes Whisper to hallucinate the glossary words on silence/dial-tone
+        # (verified L2 27.04 — "Месяц Дива", "Программа Подбородок" appearing on
+        # silent intros). Names are restored via PROB_THRESHOLD=0.20 instead, and
+        # mistranscriptions get fixed downstream by repair-transcripts.ts (DeepSeek).
+        # To re-enable for an experiment: set USE_INITIAL_PROMPT=1.
+        tenant = (row.get("tenant") or "").lower()
+        use_prompt = os.environ.get("USE_INITIAL_PROMPT", "0") == "1"
+        glossary = load_glossary(tenant) if (tenant and use_prompt) else ""
+
         if channels == 2 and split_channels(src, left, right):
             # ── STEREO PATH (100% role accuracy) ──
-            ls, l_info = transcribe_one_channel(model, left)
-            rs, _ = transcribe_one_channel(model, right)
+            ls, l_info = transcribe_one_channel(model, left, initial_prompt=glossary)
+            rs, _ = transcribe_one_channel(model, right, initial_prompt=glossary)
 
             # v2.4: provider-aware role mapping.
             # Default convention (onPBX, Sipuni inbound): LEFT=МЕНЕДЖЕР, RIGHT=КЛИЕНТ.
@@ -477,6 +733,11 @@ def process_one(model: WhisperModel, row: dict) -> dict:
             else:
                 mgr_words = extract_words(ls, "МЕНЕДЖЕР")
                 cli_words = extract_words(rs, "КЛИЕНТ")
+
+            # v2.5: post-process loop filter (replaces v2.4 decoder-level guards
+            # that ate first 15-20s of audio).
+            mgr_words = filter_repetition_loops(mgr_words)
+            cli_words = filter_repetition_loops(cli_words)
 
             # v2.2: ENERGY-based echo filter — open both channel WAVs, drop words
             # where the OTHER channel was loud (means this channel just heard echo).
@@ -514,13 +775,13 @@ def process_one(model: WhisperModel, row: dict) -> dict:
                     "sipuni_outbound": sipuni_outbound,
                 },
             }
-            mode = "stereo_channel_first_v24"
+            mode = "stereo_channel_first_v210"
             duration = l_info.duration
             language = l_info.language
             prob = l_info.language_probability
         else:
             # ── MONO PATH (no role accuracy) ──
-            segments, info = transcribe_one_channel(model, src)
+            segments, info = transcribe_one_channel(model, src, initial_prompt=glossary)
             text = " ".join(s.text.strip() for s in segments)
             raw = {"mono_segments": serialize_raw_segments(segments, "")}
             mode = "mono_no_roles_v2"

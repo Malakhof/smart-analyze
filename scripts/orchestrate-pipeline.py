@@ -61,11 +61,20 @@ HALLUCINATION_PATTERNS = [
     r"корректор\s*субтитр", r"перевод\s*и?\s*субтитры",
     r"спасибо\s*за\s*просмотр", r"thank.*for.*watching",
     r"продолжение\s*следует",
+    r"^\s*продолжение\.{0,5}\s*$",        # v2.6: bare "Продолжение..."
     r"^\s*звонок\s*телефона\s*$",
     r"^\s*звонок\s+(дверь|телефон)\s*$",
+    r"телефонный\s+звонок",               # v2.6: "ТЕЛЕФОННЫЙ ЗВОНОК" caps
+    r"^\s*(в\s+)?(звонок|дверь)\.{0,5}\s*$",   # v2.7: bare stragglers
+    r"^\s*звонок\s+в\s+дверь\.{0,5}\s*$",       # v2.7: "ЗВОНОК В ДВЕРЬ"
+    r"^\s*время\.{0,5}\s*$",                    # v2.7: bare "Время"
+    r"вызываемый\s+абонент\s+не\s+отвечает",   # v2.7
+    r"оставайтесь\s+на\s+линии",                # v2.7
+    r"после\s+(акустического|звукового)\s+сигнала",  # v2.7
 ]
 import re as _re
 _HALLUCINATION_RE = _re.compile("|".join(HALLUCINATION_PATTERNS), _re.IGNORECASE)
+MAX_WORD_SPAN_S = 3.0
 
 
 def filter_hallucinations(utterances):
@@ -82,15 +91,23 @@ def format_transcript(utterances):
 
 
 def extract_words(segments, label):
-    """Convert raw segments into word tuples with assigned label."""
+    """Convert raw segments into word tuples with assigned label.
+
+    v2.6: skip halluc segments at source + drop suspiciously-long word spans.
+    Same fixes as intelion-transcribe-v2.py:extract_words.
+    """
     words = []
     for seg in segments or []:
+        if _HALLUCINATION_RE.search(seg.get("text", "") or ""):
+            continue
         for w in seg.get("words") or []:
             text = (w.get("t") or "").strip()
             if not text:
                 continue
             s = w.get("s") or 0
             e = w.get("e") or s
+            if (e - s) > MAX_WORD_SPAN_S:
+                continue
             words.append((s, e, label, text))
     return words
 

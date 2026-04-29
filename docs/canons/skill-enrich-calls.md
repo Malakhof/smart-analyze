@@ -109,6 +109,7 @@ if callOutcome == "real_conversation" and duration >= 60:
     assert len(keyClientPhrases) >= 4, "keyClientPhrases < 4 цитат — переделать"
     assert purchaseProbability is not None, "purchaseProbability = null для NORMAL — переделать"
     assert len(extractedCommitments) >= 1, "extractedCommitments пуст для NORMAL — переделать (Block 7 killer feature)"
+    assert len(phraseCompliance) >= 12, "phraseCompliance < 12 техник — переделать (новое v8 поле)"
 elif callOutcome == "real_conversation" and duration < 60:
     # Тип E (SHORT_RESCHEDULE) — мягкие проверки, без assert на purchaseProbability/commitments
     assert len(scriptDetails) == 11, "scriptDetails != 11 stages — переделать"
@@ -262,6 +263,68 @@ ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db psql -U sm
    - clientEmotionPeaks — когда клиент включился / закрылся
    - keyClientPhrases — цитаты-триггеры
 
+4.5. **🆕 phraseCompliance (v8 — машинно-читаемая агрегация техник из анкеты)**
+
+   **Цель:** дать РОПу агрегацию «топ-3 фразы которые МОПы чаще всего НЕ используют» (по 100+ звонкам).
+
+   `phraseCompliance` — jsonb, **12 техник из скрипта diva** с boolean + context:
+
+   ```yaml
+   phraseCompliance:
+     программирование_звонка:        # Этап 2 скрипта diva
+       used: true
+       evidence: "несколько вопросов задам, не для решения"
+     искренние_комплименты:          # 2-3 за разговор !!!
+       used: false
+       expected_count: 2-3
+       actual_count: 0
+     эмоциональный_подхват:          # "понимаю", "поняла"
+       used: true
+       examples: ["поняла", "ага"]
+     юмор_забота:                    # "зарядку не буду заставлять"
+       used: false
+     крюк_к_боли:                    # связка с выявленной болью
+       used: false
+       missed_opportunity: "гипотиреоз → диетолог в программе"
+     презентация_под_боль:           # НЕ абстрактно про продукт
+       used: false
+       should: "связать гипотиреоз+12ч с конкретными модулями"
+     попытка_сделки_без_паузы:       # сразу после презентации
+       used: false
+     выбор_без_выбора:               # "полностью или в рассрочку?"
+       used: false
+       missed: "не дошли до этапа закрытия"
+     бонусы_с_дедлайном:             # "до завтра — открою бонусы"
+       used: false
+     повторная_попытка_после_возражения:  # после каждого возражения
+       used: false
+       evidence: "после 'не починю' отступила, не попробовала рассрочку"
+     маленькая_просьба:              # Этап 7 — "пришлите скрин оплаты"
+       used: false
+       context: "не дошли до оплаты"
+     следующий_шаг_с_временем:       # "пишу 4 мая в 19:00" не "позже"
+       used: false
+       evidence: "WhatsApp без точного времени follow-up"
+   ```
+
+   **Правила:**
+   - Все 12 техник ОБЯЗАТЕЛЬНО присутствуют в jsonb (даже если `used: false` — это сигнал РОПу)
+   - `evidence` — точная цитата если used=true, или explanation что упущено если used=false
+   - Для edge-case (Тип A-D) — phraseCompliance может быть null (нечего оценивать)
+   - Для Тип E (короткий перенос) — заполняется только применимое (программирование/следующий_шаг)
+   - Для Тип F (NORMAL) — все 12 техник заполнены
+
+   **Self-check:** для NORMAL `assert len(phraseCompliance) >= 12`.
+
+   **Дашборд РОПа** (Канон #37 Block 7) сможет агрегировать:
+   ```sql
+   SELECT
+     COUNT(*) FILTER (WHERE "phraseCompliance"->'выбор_без_выбора'->>'used' = 'false') AS missing_choice,
+     COUNT(*) FILTER (WHERE "phraseCompliance"->'искренние_комплименты'->>'used' = 'false') AS missing_compliments
+   FROM "CallRecord" WHERE "tenantId"=...
+   ```
+   → видно какую технику тренировать всем МОПам.
+
 5. **ropInsight для РОПа:**
    - 3-5 конкретных action items
    - Указать паттерн МОПа (soft_seller / robot_script / overselling / no_close / etc)
@@ -331,6 +394,7 @@ UPDATE "CallRecord" SET
   "criticalErrors" = '[...]'::jsonb,
   "scriptDetails" = '{...}'::jsonb,
   "psychTriggers" = '{...}'::jsonb,
+  "phraseCompliance" = '{...}'::jsonb,    -- v8: 12 техник из анкеты
   "clientReaction" = '...',
   "managerStyle" = '...',
   "clientEmotionPeaks" = '[...]'::jsonb,

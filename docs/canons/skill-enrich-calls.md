@@ -208,12 +208,88 @@ WHERE cr."tenantId" = '<tenantId>'
   AND cr.transcript IS NOT NULL
   AND cr."startStamp" IS NOT NULL                  -- ⛔ legacy без stamp ИГНОРИРОВАТЬ
   AND cr."startStamp" >= '2026-04-24 00:00:00'    -- ⛔ DIVA CUT-OFF (см. секцию 0)
-  AND (cr."enrichmentStatus" IS NULL OR cr."enrichmentStatus" != 'enriched' OR --rescore)
+  AND (
+    cr."enrichmentStatus" IS NULL
+    OR cr."enrichmentStatus" = 'needs_rerun_v9'    -- v9: помеченные для re-run после cleanup-bug
+    OR (
+      -- v9 concurrent: stale lock recovery (если сессия упала с in_progress)
+      cr."enrichmentStatus" = 'in_progress'
+      AND cr."enrichmentLockedAt" < NOW() - INTERVAL '30 minutes'
+    )
+    OR --rescore
+  )
   AND (--since: cr."startStamp" >= --since)
   AND (--uuids: cr."pbxUuid" IN (--uuids))
 ORDER BY cr."startStamp" ASC                       -- старые-в-периоде первыми (хронология)
 LIMIT --limit
 ```
+
+### 🆕 v9 Concurrent-safe pattern (для запуска N сессий параллельно)
+
+**Каждая сессия Claude Code должна получить уникальный session_id** в начале работы:
+```python
+import uuid
+SESSION_ID = f"session-{uuid.uuid4().hex[:8]}"  # например session-a3f9b2c1
+```
+
+**Шаг 2 v9 — атомарная резервация batch'а** (заменить SELECT на этот pattern):
+
+```sql
+-- Атомарно резервирует 40 строк под текущую сессию
+-- FOR UPDATE SKIP LOCKED — другие сессии skip их и берут следующие 40
+WITH batch_to_claim AS (
+  SELECT id
+  FROM "CallRecord" cr
+  WHERE cr."tenantId" = '<tenantId>'
+    AND cr.transcript IS NOT NULL
+    AND cr."startStamp" IS NOT NULL
+    AND cr."startStamp" >= '2026-04-24 00:00:00'
+    AND (
+      cr."enrichmentStatus" IS NULL
+      OR cr."enrichmentStatus" = 'needs_rerun_v9'
+      OR (cr."enrichmentStatus" = 'in_progress'
+          AND cr."enrichmentLockedAt" < NOW() - INTERVAL '30 minutes')
+    )
+  ORDER BY cr."startStamp" ASC
+  LIMIT <limit>
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE "CallRecord"
+SET "enrichmentStatus" = 'in_progress',
+    "enrichmentLockedAt" = NOW(),
+    "enrichmentLockedBy" = '<SESSION_ID>'
+FROM batch_to_claim
+WHERE "CallRecord".id = batch_to_claim.id
+RETURNING
+  "CallRecord".id, "CallRecord"."pbxUuid", "CallRecord"."clientPhone",
+  "CallRecord"."startStamp", "CallRecord".duration, "CallRecord"."userTalkTime",
+  "CallRecord".transcript, "CallRecord"."transcriptRepaired",
+  "CallRecord"."gcContactId", "CallRecord"."dealId",
+  "CallRecord"."managerId";
+-- + докрутить JOIN'ы для manager_name, dealCrmId, gcSubdomain через дополнительные queries
+```
+
+**После успешного UPSERT карточки:** `enrichmentStatus = 'enriched'` + `enrichmentLockedBy = NULL`.
+
+**Если сессия упала** на конкретном звонке: запись осталась `in_progress` с lockedAt. Через 30 мин любая другая сессия её подхватит автоматически (stale recovery в WHERE clause выше).
+
+### Запуск N сессий параллельно (5 сессий = 5x ускорение)
+
+```bash
+# Терминал 1
+cd /Users/kirillmalahov/smart-analyze && claude --permission-mode bypassPermissions
+# В сессии: /loop /enrich-calls --tenant=diva-school --limit=40
+
+# Терминал 2 (повторить в окнах 3, 4, 5)
+cd /Users/kirillmalahov/smart-analyze && claude --permission-mode bypassPermissions
+# В сессии: /loop /enrich-calls --tenant=diva-school --limit=40
+```
+
+Каждая сессия атомарно берёт свои 40 через `FOR UPDATE SKIP LOCKED` — пересечений нет.
+
+855 pending / 5 сессий / 27 сек на звонок = **~75 минут** вместо 6+ часов.
+
+**Stale recovery:** если одна сессия зависнет/закроется — её 40 in-flight звонков через 30 мин подхватит другая сессия.
 
 **Per-tenant cut-off** (если меняется tenant — обновить):
 - `diva-school`: `>= '2026-04-24'`
@@ -233,12 +309,40 @@ ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db psql -U sm
 
 **Принципы обогащения (КРИТИЧНО):**
 
-1. **Cleanup transcript:**
-   - Удалить эхо/гарбаж (фразы клиента в МОП-канале — "шейфилизировал", "ледяная подворота")
-   - Объединить разорванные фразы одного спикера в логические блоки
-   - Удалить одиночные галлюцинации Whisper ("Толок синий", "наква", "А где наква?")
-   - Восстановить порядок реплик где Whisper ошибся
-   - **НЕ выдумывать** контент — только cleanup существующего
+1. **🔴 Cleanup transcript — ЖЁСТКИЕ ПРАВИЛА (v9, после инцидента 29.04.2026)**
+
+   **КОНТЕКСТ:** Whisper-pipeline СПЕЦИАЛЬНО оптимизирован для дословной транскрипции (params PROB=0.20, GAP=3.0, hotwords из БД). Каждое слово клиента и менеджера — **ценность для анализа**. Cleanup должен **уважать дословность**, не уничтожать её.
+
+   **ЧТО МОЖНО УДАЛИТЬ:**
+   - ✅ Эхо реплик в чужом канале (Whisper транскрибирует фразу клиента в треке менеджера и наоборот — это галлюцинация stereo split)
+   - ✅ Whisper-галлюцинации — бессмысленные слова («творчество на ледяная подворота», «братья-борщики», «шейфилизировал»)
+   - ✅ Повторы Whisper (один и тот же кусок транскрибирован дважды подряд)
+
+   **ЧТО МОЖНО ИСПРАВИТЬ:**
+   - ✅ Имена (Илнура → Эльнура, унификация)
+   - ✅ Термины (гипотериоз → гипотиреоз, плосизма → платизма)
+   - ✅ Восстановить порядок реплик если Whisper склеил неверно
+   - ✅ Использовать hotwords из анкеты для правильной транскрипции
+
+   **🚫 АБСОЛЮТНЫЙ ЗАПРЕТ:**
+   - ❌ **НЕ суммаризировать** диалог — каждое слово сохраняется
+   - ❌ **НЕ заменять** монологи на пересказ типа «клиент рассказала про возраст и боли»
+   - ❌ **НЕ выкидывать** «технические» куски диалога типа «10 минут — попытки доставить ссылку»
+   - ❌ **НЕ сжимать** длинные реплики в короткие фразы
+   - ❌ **НЕ искажать** слова клиента или менеджера
+   - ❌ **НЕ выдумывать** контент которого нет в raw
+
+   **ПРАВИЛО КОМПРЕССИИ (assert):**
+   ```python
+   if duration >= 60:
+       compression = len(cleanedTranscript) / len(transcript)
+       assert compression >= 0.85, f"❌ Cleanup сжал {compression:.0%} — переделать"
+   ```
+   На длинных звонках **85-100% объёма raw должно остаться**. Меньше — это суммаризация, не cleanup.
+
+   **САМОСВЕРКА:** если в raw есть фраза-цитата клиента — она ДОЛЖНА быть в cleaned дословно. Цитаты в `keyClientPhrases`, `psychTriggers.missed.quote_client`, `criticalDialogMoments.client_quote` берутся ИЗ cleaned, не из raw — поэтому cleaned обязан содержать их полностью.
+
+   **Эталон proper cleanup:** `/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-3-proper-cleanup-lara.md` — звонок Лары 12 мин, raw 11642→cleaned 11000+ chars (90%+).
 
 2. **Классификация:**
    - `isCurator` — match по фамилиям из анкеты раздел 2 (для diva — список выше)

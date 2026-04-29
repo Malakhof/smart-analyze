@@ -11,13 +11,20 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
 
 ## 🛑 STEP 0 — ОБЯЗАТЕЛЬНЫЙ ПЕРВЫЙ TOOL-CALL (фикс #1+#2)
 
-**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО:**
+**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО ОБА Read:**
 
 ```
 Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-3-proper-cleanup-lara.md")
+Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-4-strong-closer-tech-block.md")
 ```
 
-**Это ЕДИНСТВЕННЫЙ актуальный эталон** (v9, после cleanup-инцидента 29.04.2026):
+**Два эталона = два архетипа:**
+- **sample-3 (Лариса)** — `empathic_seller`, `closed_lost`, scriptScore 5/9 — учит распознавать **кого тренировать** (упущенные техники, негативные кейсы). phraseCompliance: 2/12 used.
+- **sample-4 (Эльнура)** — `strong_closer + tech_naive`, `objection_unresolved`, scriptScore 18/22 — учит распознавать **успешные техники** (когда МОП правильно делает). phraseCompliance: 8/12 used.
+
+Вместе они покрывают полярные архетипы для proper enrich classification — и закрытые лиды, и почти-выигранные.
+
+**Оба эталона имеют (v9, после cleanup-инцидента 29.04.2026):**
 - ✅ Правильный cleanup (compression ~80%) — только мусор удалён, содержание сохранено
 - ✅ Все markdown-таблицы (психология / скрипт-скоринг / критические ошибки)
 - ✅ Эмодзи в nextStep (📲 📎 🗓️ 💌)

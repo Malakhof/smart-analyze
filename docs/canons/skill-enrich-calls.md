@@ -11,20 +11,22 @@ description: "Master Enrich для звонков SalesGuru. Обогащает 
 
 ## 🛑 STEP 0 — ОБЯЗАТЕЛЬНЫЙ ПЕРВЫЙ TOOL-CALL (фикс #1+#2)
 
-**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО ОБА tool-call:**
+**Перед любым SQL/Bash в этой сессии — выполни БУКВАЛЬНО:**
 
 ```
-Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-2-empathic-win-back-brackets.md")
-Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-1-soft-seller-no-offer.md")
+Read("/Users/kirillmalahov/smart-analyze/docs/canons/master-enrich-samples/sample-3-proper-cleanup-lara.md")
 ```
 
-**Порядок важен:**
-- **sample-2 ПЕРВЫМ** — он TABLE-RICH (markdown таблицы для каждой секции, эмодзи в nextStep). Это **визуальный benchmark** глубины.
-- **sample-1 ВТОРЫМ** — YAML-style для понимания структуры fields. **НЕ копировать YAML стиль**, использовать markdown таблицы как в sample-2.
+**Это ЕДИНСТВЕННЫЙ актуальный эталон** (v9, после cleanup-инцидента 29.04.2026):
+- ✅ Правильный cleanup (compression ~80%) — только мусор удалён, содержание сохранено
+- ✅ Все markdown-таблицы (психология / скрипт-скоринг / критические ошибки)
+- ✅ Эмодзи в nextStep (📲 📎 🗓️ 💌)
+- ✅ phraseCompliance с 12 техниками diva
+- ✅ Block 7 commitments
 
-Без этих двух Read'ов **весь дальнейший вывод считается некорректным**. Не «я знаю эту структуру» — **Read обязателен в каждой новой сессии**, даже если думаешь что помнишь.
+**Старые sample-1 и sample-2 АРХИВИРОВАНЫ** в `docs/canons/master-enrich-samples/archive_v8_with_compression_bug/`. Они имеют дефект сжатия (15-30% компрессии вместо 80%+) — **НЕ читать их**, путают.
 
-⚠️ **Если выдаёшь карточку YAML-style без markdown таблиц — это ошибка. Перечитать sample-2.**
+Без Read sample-3 в новой сессии **весь дальнейший вывод считается некорректным**. Не «я знаю эту структуру» — **Read обязателен**, даже если думаешь что помнишь.
 
 Эталоны лежат **в репо** (не на ~/Desktop) — воспроизводимо на любой машине / production / в worktree.
 

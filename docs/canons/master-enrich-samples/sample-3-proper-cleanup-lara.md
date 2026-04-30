@@ -126,3 +126,13 @@ Whisper артефакты исправлены (имена/термины):
 Восстановлен порядок: 10:15 «Нет, я так не починю» прозвучало РАНЬШЕ чем 10:16 МОП назвала цену 58 800 (Whisper склеил неверно).
 
 Размер: raw 11 642 chars → cleaned 9 200 chars = **компрессия 21%** (только мусор, содержание сохранено)
+
+---
+
+## 🔗 GC Deep-link (v9.3)
+
+🎯 **Карточка звонка в GC:** `https://web.diva.school/user/control/contact/update/id/{gcCallId}`
+🎵 **Аудиозапись:** `audioUrl` (из `<source>` GC HTML, fileservice.getcourse.ru)
+👤 **Профиль клиента:** `https://web.diva.school/user/control/user/update/id/{gcUserId}`
+
+Связка PBX↔GC через `pbxUuid` (см. v9.3 sync-pipeline + sample-4 для деталей).

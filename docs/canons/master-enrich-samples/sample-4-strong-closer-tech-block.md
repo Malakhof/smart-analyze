@@ -1,9 +1,11 @@
 # 📋 ЭТАЛОН — Звонок `c4fe3358` (Эльнура, 36 лет, Кыргызстан)
 
 **Менеджер:** Наталья → **Клиент:** Эльнура (36 лет послезавтра, Кыргызстан, 158 см / 59-60 кг)
-**Длительность:** 13:45 (825 sec) | **Дата:** 2026-04-25 | **Этап воронки:** Диагностика после мастер-класса → попытка закрытия в звонке
+**Длительность записи:** 13:45 (825 sec) | **Длительность разговора:** ~12:00 (≈720 sec) | **Дата:** 2026-04-25 | **Этап воронки:** Диагностика после мастер-класса → попытка закрытия в звонке
 
-`pbxUuid: c4fe3358-a886-48b8-a280-6cc9269287d1` | `gcContactId: 208995833` | `scriptScore: 18/22 (82%)` | `hotLead: true`
+`pbxUuid: c4fe3358-a886-48b8-a280-6cc9269287d1` | `gcCallId: 208995833` | `gcUserId: <запрашивается из grid>` | `scriptScore: 18/22 (82%)` | `hotLead: true`
+
+> 💡 **v9.3:** ранее в этом поле стояло `gcContactId` — это была семантическая путаница (туда писался userId клиента из GC). Правильно: `gcCallId` — ID **карточки звонка** в GC, основа для deep-link `/user/control/contact/update/id/{gcCallId}`. Match с PBX-стороной по pbxUuid (точный, single-key).
 
 ---
 
@@ -452,11 +454,23 @@ phraseCompliance:
 
 ---
 
-## 🔗 GC Deep-link
+## 🔗 GC Deep-link (v9.3 — правильный путь к карточке звонка)
 
-🔗 https://web.diva.school/pl/user/contact/update/id/208995833
+🎯 **Карточка звонка в GC** (НЕ карточка контакта!):
+🔗 https://web.diva.school/user/control/contact/update/id/{gcCallId}
 
-`gcDeepLinkType: contact_fallback`
+Где `gcCallId` (например `208612058`) — ID карточки звонка в GC. **Связка с PBX через `pbxUuid`** который GC хранит plain text в HTML деталки: «Уникальный идентификатор звонка: 7cfad40d-...». Заполняется sync-pipeline'ом до Master Enrich (см. `scripts/sync-gc-call-details.ts`).
+
+`gcDeepLinkType: 'call_card'` (если `gcCallId IS NOT NULL`)
+
+**Опционально** — карточка клиента в GC (для контекста профиля):
+🔗 https://web.diva.school/user/control/user/update/id/{gcUserId}
+
+**🚫 НЕ использовать пути:**
+- ❌ `/pl/user/contact/update/id/...` (это grid лента контактов)
+- ❌ `/sales/control/deal/update/id/...` (это карточка СДЕЛКИ, не звонка)
+
+**В UI карточки звонка:** три отдельных deep-link'а в шапке — на звонок, на клиента, на сделку (если связана). Плеер `<audio src={audioUrl}>` рендерится из `audioUrl` в БД (заполняется sync-pipeline из `<source>` тега GC HTML деталки).
 
 ---
 

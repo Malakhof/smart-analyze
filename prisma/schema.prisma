@@ -172,6 +172,16 @@ model Manager {
   talkRatio       Float?
   avgResponseTime Float?
   status          ManagerStatus?
+
+  // PBX SIP extension (e.g. "107"). Primary attribution key for CallRecord.managerExt.
+  internalExtension String?
+
+  // GC user_id of this manager (manual-gc-call-link, 2026-04-29) — used for
+  // cross-checking that GC's call attribution matches our PBX-based attribution.
+  gcUserId        String?
+
+  @@unique([internalExtension, tenantId])
+  @@index([gcUserId])
 }
 
 enum ManagerStatus {
@@ -444,10 +454,30 @@ model CallRecord {
   commitmentsCount      Int?
   commitmentsTracked    Boolean? @default(false)
 
+  // v8 — phraseCompliance jsonb (12 техник скрипта diva)
+  phraseCompliance      Json?
+
+  // v9 — concurrent-safe locks for parallel /loop /enrich-calls sessions
+  enrichmentLockedAt    DateTime?
+  enrichmentLockedBy    String?
+
+  // PBX↔GC call linking (manual-gc-call-link migration, 2026-04-29).
+  // gcCallId is the GC entity ID for the call card (e.g. "208612058"),
+  // used to build URL /user/control/contact/update/id/{gcCallId}.
+  // Match key between systems is pbxUuid (stored in GC HTML detail page).
+  // talkDuration is GC's "Продолжительность разговора" (only conversation seconds,
+  // differs from `duration` which is full recording time).
+  gcCallId              String?
+  talkDuration          Int?
+  gcOutcomeLabel        String?
+  gcEndCause            String?
+
   @@index([enrichmentStatus])
   @@index([callOutcome])
   @@index([outcome])
   @@index([commitmentsTracked])
+  @@index([gcCallId])
+  @@index([talkDuration])
 }
 
 enum CallDirection {

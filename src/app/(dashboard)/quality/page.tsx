@@ -47,7 +47,7 @@ export default async function QualityPage(props: {
           ? "week"
           : "month"
 
-    const filters: QualityFilters = {
+    const gcFilters: QualityFilters = {
       period,
       callType: typeof sp.callType === "string" ? sp.callType : undefined,
       callOutcome:
@@ -68,12 +68,30 @@ export default async function QualityPage(props: {
         typeof sp.page === "string" ? Math.max(1, parseInt(sp.page, 10) || 1) : 1,
     }
 
-    const [options, data] = await Promise.all([
+    // Legacy QC queries (charts/donuts/compliance/score distribution) — diva
+    // already uses these via mode="live". Reuse for the rich rendering и
+    // дополним новыми GC-фильтрами + flat-таблицей внизу как drill-down.
+    const legacyFilters = parseQcFiltersFromSearchParams(sp)
+    const [
+      options,
+      data,
+      dashboard,
+      legacyOptions,
+      charts,
+      graphs,
+      recent,
+      callTypeCounts,
+    ] = await Promise.all([
       getQualityFilterOptionsGc(tenantId),
-      getQualityCallsListGc(tenantId, filters),
+      getQualityCallsListGc(tenantId, gcFilters),
+      getQualityDashboard(tenantId, "live", legacyFilters),
+      getQcFilterOptions(tenantId),
+      getQcChartData(tenantId, "live", legacyFilters),
+      getQcGraphData(tenantId, "live", legacyFilters),
+      getRecentCallsEnhanced(tenantId, 20, "live", legacyFilters),
+      getQcCallTypeCounts(tenantId, "live", legacyFilters),
     ])
 
-    // Build serializable searchParams string for pagination links
     const spString = new URLSearchParams(
       Object.entries(sp).flatMap(([k, v]) =>
         typeof v === "string" ? [[k, v]] : []
@@ -88,13 +106,69 @@ export default async function QualityPage(props: {
               Контроль качества
             </h1>
             <p className="mt-1 text-[13px] text-text-tertiary">
-              Список звонков с фильтрами по 7 типам diva. Кураторы исключены.
+              {dashboard.totalCalls} {callsWord(dashboard.totalCalls)}{" "}
+              проанализировано · кураторы исключены
             </p>
           </div>
-          <PeriodFilterGc />
+          <div className="flex items-center gap-2">
+            <PeriodFilterGc />
+            <AiBadge text="AI оценка" />
+          </div>
         </header>
-        <QualityFiltersGc options={options} />
-        <QualityListGc data={data} searchParamsString={spString} />
+
+        <QcFilters
+          categories={legacyOptions.categories}
+          tags={legacyOptions.tags}
+          managers={legacyOptions.managers}
+          scriptItems={legacyOptions.scriptItems}
+        />
+
+        <QcVoicemailFilter
+          filteredCount={callTypeCounts.filtered}
+          totalCount={callTypeCounts.total}
+        />
+
+        {dashboard.totalCalls > 0 && (
+          <>
+            <QcSummary
+              totalCalls={charts.totalCalls}
+              totalCallsChange={charts.totalCallsChange}
+              avgScore={charts.avgScore}
+              avgScoreChange={charts.avgScoreChange}
+              bestManager={charts.bestManager}
+              worstManager={charts.worstManager}
+            />
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <QcDonutCharts
+                categoryBreakdown={charts.categoryBreakdown}
+                tagBreakdown={charts.tagBreakdown}
+              />
+              <QcScoreDistribution data={graphs.scoreDistribution} />
+            </div>
+
+            <QcComplianceChart data={graphs.complianceByStep} />
+
+            <QcManagerTable managers={dashboard.managers} />
+
+            <QcRecentCalls calls={recent} />
+          </>
+        )}
+
+        {/* Расширенный фильтр + flat-список (GC drill-down с 7 типами diva) */}
+        <section className="space-y-4 border-t border-border-default pt-6">
+          <div>
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-text-primary">
+              Расширенный поиск звонков
+            </h2>
+            <p className="mt-1 text-[12px] text-text-tertiary">
+              7 типов diva: callType / callOutcome / МОП / hadRealConversation
+              + sort. Drill-down → карточка звонка по эталону sample-3/4.
+            </p>
+          </div>
+          <QualityFiltersGc options={options} />
+          <QualityListGc data={data} searchParamsString={spString} />
+        </section>
       </div>
     )
   }

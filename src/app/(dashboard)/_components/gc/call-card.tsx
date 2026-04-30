@@ -715,19 +715,19 @@ function ScriptBlock({ call }: { call: CallDetail }) {
       })
     : []
 
-  // Denominator = total stages (always 11 for diva). N/A stages count as
-  // "not scored" — РОП видит правду «5 этапов не выполнены», а серый
-  // визуал N/A объясняет почему конкретно (легитимный пропуск vs упущение).
-  let total = 0
+  // Denominator = ALWAYS 11 for diva (даже если в jsonb меньше ключей —
+  // отсутствующие считаются как "не выполнено"). Числитель = score > 0.
+  // N/A строки попадают в total как 0 — РОП видит правду 6/11 — 55%.
+  const SCRIPT_TOTAL = 11
   let scored = 0
   if (details) {
     for (const k of sortedKeys) {
       const v = details[k] ?? {}
-      total++
       if (typeof v.score === "number" && v.score > 0) scored++
     }
   }
-  const pct = total > 0 ? Math.round((scored / total) * 100) : 0
+  const total = SCRIPT_TOTAL
+  const pct = Math.round((scored / total) * 100)
   const callTypeLabel = call.callType ?? "—"
   const outcomeLabel = call.outcome ?? call.callOutcome ?? "—"
 
@@ -736,11 +736,9 @@ function ScriptBlock({ call }: { call: CallDetail }) {
       <CardHeader>
         <CardTitle title={`${scored} из ${total} этапов выполнены`}>
           📊 Скрипт-скоринг{" "}
-          {total > 0 && (
-            <span className="text-text-secondary">
-              ({scored}/{total} — {pct}%)
-            </span>
-          )}
+          <span className="text-text-secondary">
+            ({scored}/{total} — {pct}%)
+          </span>
         </CardTitle>
         <CardDescription>
           11 этапов скрипта diva. N/A строки — легитимные пропуски (не

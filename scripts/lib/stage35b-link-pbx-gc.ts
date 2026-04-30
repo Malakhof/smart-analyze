@@ -34,6 +34,12 @@ export interface Stage35bInput {
   windowEnd: Date
   rateLimitMs?: number        // default 1000
   perPage?: number            // default 50
+  maxPages?: number           // default 200 — GC streamContactsByDateRange ignores
+                              //   date filter on later pages and walks the entire
+                              //   history. Cap protects cron cycle from running 30+ min.
+  saturationStopAfter?: number // default 30 — stop early when matched count hasn't
+                               //   grown for N consecutive pages (page-by-page
+                               //   processing of unrelated rows past our window)
 }
 
 export interface Stage35bResult {
@@ -60,7 +66,13 @@ export async function linkPbxCallsToGc(input: Stage35bInput): Promise<Stage35bRe
     managerCrossCheck: { ok: 0, mismatch: 0 },
   }
 
-  await adapter.streamContactsByDateRange(
+  const saturationLimit = input.saturationStopAfter ?? 30
+  let lastMatchedSeen = 0
+  let pagesWithoutNewMatch = 0
+  const stopErr = new Error("STAGE_7_5B_STOP")
+
+  try {
+    await adapter.streamContactsByDateRange(
     input.windowStart,
     input.windowEnd,
     async (rows, pageNum) => {
@@ -92,10 +104,10 @@ export async function linkPbxCallsToGc(input: Stage35bInput): Promise<Stage35bRe
           stats.unmatched++
           continue
         }
-        if (pbxRow.gcCallId === gcCallId) {
-          stats.alreadyLinked++
-          continue
-        }
+        // Don't short-circuit even when gcCallId already matches — Stage 7.5
+        // phone-resolve historically wrote a wrong gcContactId, so we must
+        // re-parse and overwrite. Track 'alreadyLinked' for telemetry only.
+        if (pbxRow.gcCallId === gcCallId) stats.alreadyLinked++
 
         if (parsed.managerGcUserId && pbxRow.managerId) {
           const mgr = await db.manager.findFirst({ where: { id: pbxRow.managerId } })
@@ -148,9 +160,33 @@ export async function linkPbxCallsToGc(input: Stage35bInput): Promise<Stage35bRe
         `unmatched=${stats.unmatched} already=${stats.alreadyLinked} ` +
         `failed=${stats.detailsFailed}`
       )
+
+      // Saturation early-stop: if we've made no new PBX matches for N pages,
+      // remaining grid rows are GC calls that don't belong to this window.
+      // GC ignores date filter on later pages, so without this guard the cron
+      // cycle runs for 30+ min walking the entire account history.
+      if (stats.matched > lastMatchedSeen) {
+        lastMatchedSeen = stats.matched
+        pagesWithoutNewMatch = 0
+      } else {
+        pagesWithoutNewMatch++
+        if (pagesWithoutNewMatch >= saturationLimit) {
+          console.log(
+            `[3.5b] saturation: ${saturationLimit} consecutive pages without new matches — stopping early`
+          )
+          throw stopErr
+        }
+      }
     },
-    { perPage: input.perPage ?? 50, rateLimitMs: input.rateLimitMs ?? 1000 }
+    {
+      perPage: input.perPage ?? 50,
+      rateLimitMs: input.rateLimitMs ?? 1000,
+      maxPages: input.maxPages ?? 200,
+    }
   )
+  } catch (e) {
+    if (e !== stopErr) throw e
+  }
 
   return stats
 }

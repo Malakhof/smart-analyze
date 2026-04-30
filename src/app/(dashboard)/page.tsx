@@ -12,7 +12,20 @@ import {
   getDealStatSnapshot,
   getDuplicateStats,
 } from "@/lib/queries/dashboard"
-import { getTenantMode } from "@/lib/queries/active-window"
+import { getCrmProvider, getTenantMode } from "@/lib/queries/active-window"
+import {
+  getDailyActivityPerManager,
+  getWorstCallsToday,
+  getTopMissingPhrases,
+  getDepartmentTopWeakSpots,
+  getDepartmentTopCriticalErrors,
+  getUnfulfilledCommitments,
+  getCallHeatmap,
+  getOpenDealsByStage,
+  getLastSyncTimestamp,
+  getPipelineGapPct,
+  type GcPeriod,
+} from "@/lib/queries/dashboard-gc"
 import { PeriodFilter } from "./_components/period-filter"
 import { FunnelChart } from "./_components/funnel-chart"
 import { SuccessFailCards } from "./_components/success-fail-cards"
@@ -23,6 +36,8 @@ import { ManagerRatingTable } from "./_components/manager-rating-table"
 import { AiInsights } from "./_components/ai-insights"
 import { DealStatSnapshotWidget } from "./_components/dealstat-snapshot"
 import { DuplicateBadge } from "./_components/duplicate-badge"
+import { DashboardRop } from "./_components/gc/dashboard-rop"
+import { PeriodFilterGc } from "./_components/gc/period-filter-gc"
 
 export default async function DashboardPage({
   searchParams,
@@ -31,6 +46,86 @@ export default async function DashboardPage({
 }) {
   const tenantId = await requireTenantId()
   const sp = (await searchParams) ?? {}
+  const provider = await getCrmProvider(tenantId)
+
+  if (provider === "GETCOURSE") {
+    return <GcDashboardPage tenantId={tenantId} period={sp.period} />
+  }
+
+  return <LegacyDashboardPage tenantId={tenantId} sp={sp} />
+}
+
+async function GcDashboardPage({
+  tenantId,
+  period,
+}: {
+  tenantId: string
+  period?: string
+}) {
+  const gcPeriod: GcPeriod =
+    period === "week" ? "week" : period === "month" ? "month" : "today"
+
+  const [
+    daily,
+    worstCalls,
+    missingPhrases,
+    topWeakSpots,
+    topCriticalErrors,
+    unfulfilledCommitments,
+    heatmap,
+    funnelStages,
+    lastSync,
+    pipelineGap,
+  ] = await Promise.all([
+    getDailyActivityPerManager(tenantId, gcPeriod),
+    getWorstCallsToday(tenantId, gcPeriod, 10),
+    getTopMissingPhrases(tenantId, gcPeriod, 3),
+    getDepartmentTopWeakSpots(tenantId, gcPeriod, 5),
+    getDepartmentTopCriticalErrors(tenantId, gcPeriod, 5),
+    getUnfulfilledCommitments(tenantId, 10),
+    getCallHeatmap(tenantId),
+    getOpenDealsByStage(tenantId),
+    getLastSyncTimestamp(tenantId),
+    getPipelineGapPct(tenantId, gcPeriod),
+  ])
+
+  return (
+    <div className="space-y-6 p-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
+            Дашборд РОПа
+          </h1>
+          <p className="mt-1 text-[13px] text-text-tertiary">
+            Канон #37 — контроль качества разговоров. Деньги/выручку смотри в
+            CRM.
+          </p>
+        </div>
+        <PeriodFilterGc />
+      </header>
+      <DashboardRop
+        daily={daily}
+        worstCalls={worstCalls}
+        missingPhrases={missingPhrases}
+        topWeakSpots={topWeakSpots}
+        topCriticalErrors={topCriticalErrors}
+        unfulfilledCommitments={unfulfilledCommitments}
+        heatmap={heatmap}
+        funnelStages={funnelStages}
+        lastSync={lastSync}
+        pipelineGap={pipelineGap}
+      />
+    </div>
+  )
+}
+
+async function LegacyDashboardPage({
+  tenantId,
+  sp,
+}: {
+  tenantId: string
+  sp: { funnel?: string; period?: string }
+}) {
   const selectedFunnelId = sp.funnel
   const mode = await getTenantMode(tenantId)
   const period = (sp.period ?? "all") as

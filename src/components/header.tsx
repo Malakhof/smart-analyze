@@ -19,10 +19,20 @@ const NAV_ITEMS_WITH_RETRO = [
   ...NAV_ITEMS_BASE,
 ] as const
 
+// GC-tenants get a focused 4-item nav under canon #37 (no retro, no patterns,
+// no deals — all of those are amoCRM-era constructs).
+const NAV_ITEMS_GC = [
+  { label: "Главная", href: "/" },
+  { label: "Менеджеры", href: "/managers" },
+  { label: "Контроль качества", href: "/quality" },
+  { label: "Настройки", href: "/settings" },
+] as const
+
 const TENANTS_WITH_RETRO = new Set(["diva-school"])
 
 interface HeaderProps {
   tenantName?: string
+  crmProvider?: "GETCOURSE" | "AMOCRM" | "BITRIX24" | null
 }
 
 const TENANT_DISPLAY_NAMES: Record<string, string> = {
@@ -31,15 +41,17 @@ const TENANT_DISPLAY_NAMES: Record<string, string> = {
   "diva-school": "Diva School",
 }
 
-export function Header({ tenantName }: HeaderProps = {}) {
+export function Header({ tenantName, crmProvider }: HeaderProps = {}) {
   const pathname = usePathname()
   const displayName = tenantName
     ? TENANT_DISPLAY_NAMES[tenantName] ?? tenantName
     : "Организация"
   const navItems =
-    tenantName && TENANTS_WITH_RETRO.has(tenantName)
-      ? NAV_ITEMS_WITH_RETRO
-      : NAV_ITEMS_BASE
+    crmProvider === "GETCOURSE"
+      ? NAV_ITEMS_GC
+      : tenantName && TENANTS_WITH_RETRO.has(tenantName)
+        ? NAV_ITEMS_WITH_RETRO
+        : NAV_ITEMS_BASE
 
   return (
     <header className="sticky top-0 z-50 flex h-[52px] items-center gap-8 border-b border-border-default bg-header-bg px-8 backdrop-blur-[20px]">

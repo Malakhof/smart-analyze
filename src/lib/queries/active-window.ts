@@ -13,6 +13,20 @@ export async function getTenantMode(tenantId: string): Promise<"live" | "all"> {
   return tenant && TENANTS_WITH_LIVE_MODE.has(tenant.name) ? "live" : "all"
 }
 
+/**
+ * Returns the active CRM provider for the tenant. Tenants with provider=GETCOURSE
+ * see the new RОП dashboard UI (canon #37); others (AMOCRM/BITRIX24) keep the legacy UI.
+ */
+export async function getCrmProvider(
+  tenantId: string
+): Promise<"GETCOURSE" | "AMOCRM" | "BITRIX24" | null> {
+  const cfg = await db.crmConfig.findFirst({
+    where: { tenantId, isActive: true },
+    select: { provider: true },
+  })
+  return cfg?.provider ?? null
+}
+
 export function liveWindowStart(days = LIVE_WINDOW_DAYS): Date {
   return new Date(Date.now() - days * 86_400_000)
 }

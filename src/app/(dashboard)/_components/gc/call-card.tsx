@@ -704,46 +704,48 @@ function ScriptBlock({ call }: { call: CallDetail }) {
   >(call.scriptDetails)
   if (!details && call.scriptScorePct === null) return null
 
+  // Always sort stages by numeric prefix (1..11) — jsonb key order is not
+  // guaranteed when Postgres reads the field, so different cards rendered
+  // stages in random order.
   const sortedKeys = details
     ? Object.keys(details).sort((a, b) => {
-        const na = parseInt(a.split("_")[0] ?? "0", 10)
-        const nb = parseInt(b.split("_")[0] ?? "0", 10)
+        const na = parseInt(a.match(/^\d+/)?.[0] ?? "0", 10)
+        const nb = parseInt(b.match(/^\d+/)?.[0] ?? "0", 10)
         return na - nb
       })
     : []
 
-  // Compute "X из Y применимых выполнены": exclude N/A (na=true OR score=null)
-  // and count score > 0 against total applicable.
-  let applicable = 0
+  // Denominator = total stages (always 11 for diva). N/A stages count as
+  // "not scored" — РОП видит правду «5 этапов не выполнены», а серый
+  // визуал N/A объясняет почему конкретно (легитимный пропуск vs упущение).
+  let total = 0
   let scored = 0
   if (details) {
     for (const k of sortedKeys) {
       const v = details[k] ?? {}
-      const isNA = v.na === true || v.score === null || v.score === undefined
-      if (isNA) continue
-      applicable++
+      total++
       if (typeof v.score === "number" && v.score > 0) scored++
     }
   }
-  const pct = applicable > 0 ? Math.round((scored / applicable) * 100) : 0
+  const pct = total > 0 ? Math.round((scored / total) * 100) : 0
   const callTypeLabel = call.callType ?? "—"
   const outcomeLabel = call.outcome ?? call.callOutcome ?? "—"
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle title={`${scored} из ${applicable} применимых этапов выполнены`}>
+        <CardTitle title={`${scored} из ${total} этапов выполнены`}>
           📊 Скрипт-скоринг{" "}
-          {applicable > 0 && (
+          {total > 0 && (
             <span className="text-text-secondary">
-              ({scored}/{applicable} — {pct}%)
+              ({scored}/{total} — {pct}%)
             </span>
           )}
         </CardTitle>
         <CardDescription>
-          11 этапов скрипта diva. Не применимые этапы (N/A) исключены из
-          знаменателя — это не упущения МОПа, а легитимные пропуски для
-          данного типа звонка.
+          11 этапов скрипта diva. N/A строки — легитимные пропуски (не
+          применимы для этого типа звонка), но в общий процент они входят
+          как «не выполнено» — так РОП видит реальную картину.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -96,14 +96,17 @@ function normalizeCriticalErrors(
 const SCRIPT_STAGE_LABELS: Record<string, string> = {
   "1_приветствие": "1. Приветствие",
   "2_причина": "2. Причина звонка",
+  "2_причина_звонка": "2. Причина звонка",
   "3_программирование": "3. Программирование",
   "4_квалификация": "4. Квалификация",
   "5_крюк": "5. Вбивание крюка / выявление",
+  "5_выявление_потребностей": "5. Выявление потребностей",
   "6_презентация": "6. Презентация",
   "7_возражения": "7. Работа с возражениями",
   "8_закрытие": "8. Закрытие сделки",
   "9_следующий_шаг": "9. Следующий шаг",
   "10_ответы": "10. Ответы на вопросы",
+  "10_ответы_на_вопросы": "10. Ответы на вопросы",
   "11_прощание": "11. Прощание",
 }
 
@@ -696,9 +699,9 @@ function PsychBlock({ call }: { call: CallDetail }) {
 }
 
 function ScriptBlock({ call }: { call: CallDetail }) {
-  const details = asObject<Record<string, { score?: number; comment?: string }>>(
-    call.scriptDetails
-  )
+  const details = asObject<
+    Record<string, { score?: number | null; comment?: string; na?: boolean }>
+  >(call.scriptDetails)
   if (!details && call.scriptScorePct === null) return null
 
   const sortedKeys = details
@@ -709,19 +712,39 @@ function ScriptBlock({ call }: { call: CallDetail }) {
       })
     : []
 
+  // Compute "X из Y применимых выполнены": exclude N/A (na=true OR score=null)
+  // and count score > 0 against total applicable.
+  let applicable = 0
+  let scored = 0
+  if (details) {
+    for (const k of sortedKeys) {
+      const v = details[k] ?? {}
+      const isNA = v.na === true || v.score === null || v.score === undefined
+      if (isNA) continue
+      applicable++
+      if (typeof v.score === "number" && v.score > 0) scored++
+    }
+  }
+  const pct = applicable > 0 ? Math.round((scored / applicable) * 100) : 0
+  const callTypeLabel = call.callType ?? "—"
+  const outcomeLabel = call.outcome ?? call.callOutcome ?? "—"
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
+        <CardTitle title={`${scored} из ${applicable} применимых этапов выполнены`}>
           📊 Скрипт-скоринг{" "}
-          {call.scriptScore !== null && (
+          {applicable > 0 && (
             <span className="text-text-secondary">
-              ({call.scriptScore}/22 —{" "}
-              {Math.round((call.scriptScorePct ?? 0) * 100)}%)
+              ({scored}/{applicable} — {pct}%)
             </span>
           )}
         </CardTitle>
-        <CardDescription>11 этапов скрипта diva</CardDescription>
+        <CardDescription>
+          11 этапов скрипта diva. Не применимые этапы (N/A) исключены из
+          знаменателя — это не упущения МОПа, а легитимные пропуски для
+          данного типа звонка.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {details ? (
@@ -729,21 +752,56 @@ function ScriptBlock({ call }: { call: CallDetail }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Этап</TableHead>
-                <TableHead className="w-24 text-right">Балл</TableHead>
+                <TableHead className="w-32 text-right">Балл</TableHead>
                 <TableHead>Комментарий</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedKeys.map((key) => {
                 const v = details[key] ?? {}
+                const isNA =
+                  v.na === true || v.score === null || v.score === undefined
                 const score = typeof v.score === "number" ? v.score : null
-                const icon = score === 1 ? "✅" : score === 0.5 ? "⚠️" : score === 0 ? "❌" : "—"
+
+                if (isNA) {
+                  const tooltip = `Этот этап не применим к данному типу звонка (тип: ${callTypeLabel}, outcome: ${outcomeLabel})`
+                  return (
+                    <TableRow key={key} className="text-text-tertiary">
+                      <TableCell className="font-medium">
+                        {SCRIPT_STAGE_LABELS[key] ?? key}
+                      </TableCell>
+                      <TableCell
+                        className="text-right tabular-nums text-text-muted"
+                        title={tooltip}
+                      >
+                        ◯ Не применимо
+                      </TableCell>
+                      <TableCell
+                        className="text-text-tertiary"
+                        title={tooltip}
+                      >
+                        {v.comment ?? "—"}
+                      </TableCell>
+                    </TableRow>
+                  )
+                }
+
+                const icon =
+                  score === 1 ? "✅" : score === 0.5 ? "⚠️" : score === 0 ? "❌" : "—"
+                const cls =
+                  score === 1
+                    ? "text-status-green"
+                    : score === 0.5
+                      ? "text-status-amber"
+                      : score === 0
+                        ? "text-status-red"
+                        : ""
                 return (
                   <TableRow key={key}>
                     <TableCell className="font-medium">
                       {SCRIPT_STAGE_LABELS[key] ?? key}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className={`text-right tabular-nums ${cls}`}>
                       {icon} {score !== null ? `${score}/1` : ""}
                     </TableCell>
                     <TableCell className="text-text-secondary">

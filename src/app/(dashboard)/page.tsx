@@ -62,8 +62,10 @@ async function GcDashboardPage({
   tenantId: string
   period?: string
 }) {
+  // Default = month: backfill 24-29 апреля + новый поток. "today" даёт
+  // пустоту до того как cron накопит свежие данные.
   const gcPeriod: GcPeriod =
-    period === "week" ? "week" : period === "month" ? "month" : "today"
+    period === "today" ? "today" : period === "week" ? "week" : "month"
 
   const [
     daily,

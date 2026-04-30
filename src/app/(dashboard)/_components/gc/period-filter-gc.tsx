@@ -11,7 +11,7 @@ const PERIODS = [
 export function PeriodFilterGc() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const current = searchParams.get("period") ?? "today"
+  const current = searchParams.get("period") ?? "month"
 
   function handleClick(value: string) {
     const params = new URLSearchParams(searchParams.toString())

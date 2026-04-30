@@ -88,7 +88,7 @@ export async function getDailyActivityPerManager(
       COUNT(*)::bigint AS dialed,
       COUNT(*) FILTER (WHERE c."callOutcome" = 'real_conversation')::bigint AS real,
       COUNT(*) FILTER (WHERE c."callOutcome" IN ('no_answer', 'hung_up'))::bigint AS ndz,
-      COUNT(*) FILTER (WHERE c."callOutcome" = 'voicemail')::bigint AS voicemail,
+      COUNT(*) FILTER (WHERE c."callOutcome" IN ('voicemail', 'ivr'))::bigint AS voicemail,
       SUM(COALESCE(c."talkDuration", c."userTalkTime"))
         FILTER (WHERE c."callOutcome" = 'real_conversation')::float AS talk_seconds,
       COUNT(*) FILTER (WHERE c.transcript IS NULL AND c."audioUrl" IS NULL)::bigint AS pipeline_gap,
@@ -282,6 +282,9 @@ export async function getDepartmentTopCriticalErrors(
   topN = 5
 ): Promise<CriticalErrorAgg[]> {
   const since = gcPeriodToCutoff(period)
+  // criticalErrors is jsonb array — items can be either strings or objects
+  // {error, evidence, severity}. Normalize via CASE so we extract `.error` from
+  // objects and the value itself from string elements.
   const rows = await db.$queryRaw<
     Array<{ err: string; count: bigint; total: bigint }>
   >`
@@ -293,14 +296,25 @@ export async function getDepartmentTopCriticalErrors(
         AND "callOutcome" = 'real_conversation'
         AND duration >= 60
         AND "criticalErrors" IS NOT NULL
+        AND jsonb_array_length("criticalErrors") > 0
     ),
-    total_calls AS (SELECT COUNT(*)::bigint AS total FROM base)
+    total_calls AS (SELECT COUNT(*)::bigint AS total FROM base),
+    flat AS (
+      SELECT
+        CASE
+          WHEN jsonb_typeof(elem) = 'string' THEN elem #>> '{}'
+          WHEN jsonb_typeof(elem) = 'object' THEN elem ->> 'error'
+          ELSE NULL
+        END AS err
+      FROM base, jsonb_array_elements(base."criticalErrors") AS elem
+    )
     SELECT
-      err.value::text AS err,
+      err,
       COUNT(*)::bigint AS count,
       (SELECT total FROM total_calls) AS total
-    FROM base, jsonb_array_elements_text(base."criticalErrors") AS err(value)
-    GROUP BY err.value
+    FROM flat
+    WHERE err IS NOT NULL
+    GROUP BY err
     ORDER BY count DESC
     LIMIT ${topN}
   `
@@ -469,9 +483,15 @@ export async function getLastSyncTimestamp(
 export async function getPipelineGapPct(
   tenantId: string,
   period: GcPeriod
-): Promise<{ total: number; gap: number; pct: number }> {
+): Promise<{
+  total: number
+  gap: number
+  pct: number
+  pendingEnrich: number
+  pendingPct: number
+}> {
   const since = gcPeriodToCutoff(period)
-  const [total, gap] = await Promise.all([
+  const [total, gap, pendingEnrich] = await Promise.all([
     db.callRecord.count({ where: { tenantId, createdAt: { gte: since } } }),
     db.callRecord.count({
       where: {
@@ -481,6 +501,21 @@ export async function getPipelineGapPct(
         audioUrl: null,
       },
     }),
+    db.callRecord.count({
+      where: {
+        tenantId,
+        createdAt: { gte: since },
+        callOutcome: null,
+        // Pending = synced but not yet enriched. Excludes pipeline_gap (no audio).
+        OR: [{ transcript: { not: null } }, { audioUrl: { not: null } }],
+      },
+    }),
   ])
-  return { total, gap, pct: total > 0 ? gap / total : 0 }
+  return {
+    total,
+    gap,
+    pct: total > 0 ? gap / total : 0,
+    pendingEnrich,
+    pendingPct: total > 0 ? pendingEnrich / total : 0,
+  }
 }

@@ -61,6 +61,25 @@ function scoreColorClass(pct: number | null): string {
   return "text-status-red"
 }
 
+/**
+ * criticalErrors is a jsonb array where items may be either bare strings
+ * (legacy) or objects {error, evidence, severity} (v9+). Normalize to a list
+ * of strings for badge rendering.
+ */
+function normalizeCriticalErrors(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item === "string") {
+      out.push(item)
+    } else if (item && typeof item === "object" && "error" in item) {
+      const e = (item as { error: unknown }).error
+      if (typeof e === "string") out.push(e)
+    }
+  }
+  return out
+}
+
 const DOW_LABELS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
 
 interface Props {
@@ -73,7 +92,13 @@ interface Props {
   heatmap: HeatmapCell[]
   funnelStages: FunnelStageCount[]
   lastSync: Date | null
-  pipelineGap: { total: number; gap: number; pct: number }
+  pipelineGap: {
+    total: number
+    gap: number
+    pct: number
+    pendingEnrich: number
+    pendingPct: number
+  }
 }
 
 export function DashboardRop(props: Props) {
@@ -290,9 +315,7 @@ function Block3WorstCalls({ calls }: { calls: WorstCall[] }) {
       <CardContent className="space-y-2">
         {calls.map((c) => {
           const pct = c.scriptScorePct ?? 0
-          const errors = Array.isArray(c.criticalErrors)
-            ? (c.criticalErrors as string[]).slice(0, 2)
-            : []
+          const errors = normalizeCriticalErrors(c.criticalErrors).slice(0, 2)
           return (
             <Link
               key={c.id}
@@ -321,9 +344,9 @@ function Block3WorstCalls({ calls }: { calls: WorstCall[] }) {
                     </p>
                   )}
                   <div className="mt-1 flex flex-wrap gap-1.5">
-                    {errors.map((e) => (
+                    {errors.map((e, i) => (
                       <span
-                        key={e}
+                        key={`${c.id}-err-${i}`}
                         className="rounded-md bg-status-red-dim px-2 py-0.5 text-[11px] text-status-red"
                       >
                         {e}
@@ -486,8 +509,8 @@ function Block5UnfulfilledCommitments({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Block 5 — Невыполненные обещания (24ч+)</CardTitle>
-          <CardDescription>Все обещания выполнены или нет данных.</CardDescription>
+          <CardTitle>Block 5 — Обещания за период</CardTitle>
+          <CardDescription>Нет открытых обещаний за период.</CardDescription>
         </CardHeader>
       </Card>
     )
@@ -495,9 +518,11 @@ function Block5UnfulfilledCommitments({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 5 — Невыполненные обещания (24ч+)</CardTitle>
+        <CardTitle>Block 5 — Обещания за период (требуют follow-up в CRM)</CardTitle>
         <CardDescription>
-          extractedCommitments где commitmentsTracked=false и звонок старше 24ч.
+          extractedCommitments из звонков старше 24ч. Статус «выполнено/нет»
+          доступен после интеграции с CRM tasks — пока показываем сами обещания
+          для ручного follow-up'а.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -512,13 +537,13 @@ function Block5UnfulfilledCommitments({
                 ⏰ {fmtAgo(it.createdAt)} — {it.managerName ?? "—"} →{" "}
                 {it.clientName ?? "—"}
               </span>
-              <span className="text-status-red">
-                ❌ не выполнено ({it.commitments.length}+)
+              <span className="text-text-tertiary">
+                {it.commitments.length} обещание(й)
               </span>
             </div>
             <ul className="mt-2 space-y-1 text-[12px] text-text-tertiary">
               {it.commitments.map((c, i) => (
-                <li key={i} className="line-clamp-1">
+                <li key={`${it.callId}-c-${i}`} className="line-clamp-1">
                   «{c.quote ?? c.target ?? c.action}»{" "}
                   {c.timestamp && (
                     <span className="text-text-muted">{c.timestamp}</span>
@@ -672,7 +697,13 @@ function FooterStatus({
   pipelineGap,
 }: {
   lastSync: Date | null
-  pipelineGap: { total: number; gap: number; pct: number }
+  pipelineGap: {
+    total: number
+    gap: number
+    pct: number
+    pendingEnrich: number
+    pendingPct: number
+  }
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-default pt-3 text-[11px] text-text-muted">
@@ -680,15 +711,21 @@ function FooterStatus({
         Последняя синхронизация:{" "}
         {lastSync ? `${fmtAgo(lastSync)} (${fmtMsk(lastSync)} МСК)` : "—"}
       </span>
-      <span>
-        pipeline_gap: {pipelineGap.gap}/{pipelineGap.total}
-        {pipelineGap.pct > 0 && ` (${Math.round(pipelineGap.pct * 100)}%)`}
-        {pipelineGap.pct > 0.1 && (
-          <span className="ml-1 text-status-red">
-            ⚠️ проверить тех. отдел
+      <div className="flex flex-wrap gap-3">
+        <span>
+          pipeline_gap: {pipelineGap.gap}/{pipelineGap.total}
+          {pipelineGap.pct > 0 && ` (${Math.round(pipelineGap.pct * 100)}%)`}
+          {pipelineGap.pct > 0.1 && (
+            <span className="ml-1 text-status-red">⚠️ проверить тех. отдел</span>
+          )}
+        </span>
+        {pipelineGap.pendingEnrich > 0 && (
+          <span className="text-status-amber">
+            ⏳ ожидают Master Enrich: {pipelineGap.pendingEnrich} (
+            {Math.round(pipelineGap.pendingPct * 100)}%)
           </span>
         )}
-      </span>
+      </div>
     </div>
   )
 }

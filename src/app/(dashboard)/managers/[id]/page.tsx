@@ -2,7 +2,14 @@ export const dynamic = "force-dynamic"
 
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { requireTenantId } from "@/lib/auth"
 import { getManagerDetail } from "@/lib/queries/manager-detail"
+import { getCrmProvider } from "@/lib/queries/active-window"
+import { getManagerDetailGc } from "@/lib/queries/managers-gc"
+import {
+  getCallHeatmap,
+  type GcPeriod,
+} from "@/lib/queries/dashboard-gc"
 import { ManagerStats } from "./_components/manager-stats"
 import { DealCard } from "./_components/deal-card"
 import { DealsList } from "./_components/deals-list"
@@ -11,6 +18,8 @@ import { ClientTypeChart } from "./_components/client-type-chart"
 import { DealLossAnalysis } from "./_components/deal-loss-analysis"
 import { ConversionChart } from "../../_components/conversion-chart"
 import { AiInsights } from "../../_components/ai-insights"
+import { ManagerDetailGc } from "../../_components/gc/manager-detail"
+import { PeriodFilterGc } from "../../_components/gc/period-filter-gc"
 
 const AVATAR_CLASSES = [
   "bg-gradient-to-br from-ai-1 to-ai-2",
@@ -54,10 +63,57 @@ function getStatusPill(status: string | null) {
 
 export default async function ManagerDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ period?: string }>
 }) {
   const { id } = await params
+  const tenantId = await requireTenantId()
+  const provider = await getCrmProvider(tenantId)
+
+  if (provider === "GETCOURSE") {
+    const sp = (await searchParams) ?? {}
+    const period: GcPeriod =
+      sp.period === "today"
+        ? "today"
+        : sp.period === "week"
+          ? "week"
+          : "month"
+    const [detail, heatmap] = await Promise.all([
+      getManagerDetailGc(tenantId, id, period),
+      getCallHeatmap(tenantId, id),
+    ])
+    if (!detail) notFound()
+    return (
+      <div className="space-y-6 p-6">
+        <nav className="text-[12px] text-text-tertiary">
+          <Link href="/" className="hover:text-text-secondary">
+            🏠 Дашборд
+          </Link>
+          <span className="mx-1.5">›</span>
+          <Link href="/managers" className="hover:text-text-secondary">
+            Менеджеры
+          </Link>
+          <span className="mx-1.5">›</span>
+          <span>{detail.managerName}</span>
+        </nav>
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
+              {detail.managerName}
+            </h1>
+            <p className="mt-1 text-[13px] text-text-tertiary">
+              Карточка МОПа: счётчики анкеты diva, паттерны, heatmap, клиенты.
+            </p>
+          </div>
+          <PeriodFilterGc />
+        </header>
+        <ManagerDetailGc detail={detail} heatmap={heatmap} />
+      </div>
+    )
+  }
+
   const manager = await getManagerDetail(id)
 
   if (!manager) notFound()

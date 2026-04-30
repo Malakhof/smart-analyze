@@ -2,11 +2,49 @@ import { requireTenantId } from "@/lib/auth"
 export const dynamic = "force-dynamic"
 
 import { getManagersList } from "@/lib/queries/managers"
-import { getTenantMode } from "@/lib/queries/active-window"
+import { getCrmProvider, getTenantMode } from "@/lib/queries/active-window"
+import { getManagersListGc } from "@/lib/queries/managers-gc"
+import type { GcPeriod } from "@/lib/queries/dashboard-gc"
 import { ManagerCards } from "./_components/manager-cards"
+import { ManagersListGc } from "../_components/gc/managers-list"
+import { PeriodFilterGc } from "../_components/gc/period-filter-gc"
 
-export default async function ManagersPage() {
+export default async function ManagersPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ period?: string }>
+}) {
   const tenantId = await requireTenantId()
+  const provider = await getCrmProvider(tenantId)
+
+  if (provider === "GETCOURSE") {
+    const sp = (await searchParams) ?? {}
+    const period: GcPeriod =
+      sp.period === "today"
+        ? "today"
+        : sp.period === "week"
+          ? "week"
+          : "month"
+    const rows = await getManagersListGc(tenantId, period)
+    return (
+      <div className="space-y-6 p-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
+              Менеджеры
+            </h1>
+            <p className="mt-1 text-[13px] text-text-tertiary">
+              {rows.length} {managersWord(rows.length)} с звонками за период.
+              Кураторы исключены.
+            </p>
+          </div>
+          <PeriodFilterGc />
+        </header>
+        <ManagersListGc rows={rows} />
+      </div>
+    )
+  }
+
   const mode = await getTenantMode(tenantId)
   const { managers, summary } = await getManagersList(tenantId, mode)
 

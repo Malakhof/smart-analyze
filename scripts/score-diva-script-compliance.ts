@@ -39,8 +39,10 @@ function parseArgs() {
     writeBack: false,
     rescore: false,
     tenant: "diva-school",
-    scriptPath:
-      "/Users/kirillmalahov/smart-analyze/docs/demo/2026-04-22-diva-sales-script.md",
+    // Default to repo-relative path so the script works on any host (Mac, prod
+    // docker, CI). Override with --script=PATH or env DIVA_SALES_SCRIPT_PATH.
+    scriptPath: process.env.DIVA_SALES_SCRIPT_PATH
+      ?? path.resolve(process.cwd(), "docs/demo/2026-04-22-diva-sales-script.md"),
     concurrency: 3,
   }
   for (const a of args) {

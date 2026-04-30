@@ -117,10 +117,12 @@ async function main() {
           continue
         }
 
-        if (pbxRow.gcCallId === gcCallId) {
-          stats.alreadyLinked++
-          continue
-        }
+        // NOTE: previously this short-circuited when gcCallId already matched
+        // — but Stage 7.5 phone-resolve historically wrote a wrong gcContactId,
+        // so we MUST re-parse the call card and overwrite. Track 'alreadyLinked'
+        // for telemetry but do not skip.
+        const wasAlreadyLinked = pbxRow.gcCallId === gcCallId
+        if (wasAlreadyLinked) stats.alreadyLinked++
 
         // Cross-check manager attribution (informational only — we trust
         // PBX ext as primary source per Manager.internalExtension)
@@ -151,18 +153,22 @@ async function main() {
         // Build correct gcCallCardUrl now that we have the right ID
         const gcCallCardUrl = `${baseUrl}/user/control/contact/update/id/${gcCallId}`
 
-        await db.callRecord.update({
-          where: { id: pbxRow.id },
-          data: {
-            gcCallId,
-            audioUrl: parsed.audioUrl ?? pbxRow.audioUrl,
-            talkDuration: parsed.talkDuration,
-            gcOutcomeLabel: row.outcomeLabel ?? null,
-            gcEndCause: parsed.endCause,
-            gcCallCardUrl,
-            gcDeepLinkType: "call_card",
-          },
-        })
+        // gcContactId from call-detail HTML is the AUTHORITATIVE source —
+        // overwrite the wrong value Stage 7.5 phone-resolve put in earlier.
+        const updateData: Record<string, unknown> = {
+          gcCallId,
+          audioUrl: parsed.audioUrl ?? pbxRow.audioUrl,
+          talkDuration: parsed.talkDuration,
+          gcOutcomeLabel: row.outcomeLabel ?? null,
+          gcEndCause: parsed.endCause,
+          gcCallCardUrl,
+          gcDeepLinkType: "call_card",
+        }
+        if (parsed.clientGcUserId) {
+          updateData.gcContactId = parsed.clientGcUserId
+          if (parsed.clientName) updateData.clientName = parsed.clientName
+        }
+        await db.callRecord.update({ where: { id: pbxRow.id }, data: updateData })
         stats.matched++
       }
 

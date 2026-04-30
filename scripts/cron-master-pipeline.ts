@@ -48,6 +48,7 @@ import { runStage1PbxDelta } from "./lib/stage1-pbx-delta"
 import { linkPbxCallsToGc } from "./lib/stage35b-link-pbx-gc"
 import { runStage9Reconcile } from "./lib/stage9-reconcile"
 import { updateLastSync, getLastSync } from "./lib/stage11-last-sync"
+import { StageLogger } from "./lib/stage-timestamps"
 import { decrypt } from "../src/lib/crypto"
 
 // ───────────────────────────── CLI ─────────────────────────────
@@ -119,7 +120,15 @@ async function main() {
 
     try {
       const tenant = await loadTenantWithPbx(db, TENANT)
-      console.log(`[0] tenant=${tenant.name} pbx=${tenant.pbxProvider} cap=$${tenant.dailyGpuCapUsd}/day`)
+      const cycleId = `${TENANT}-${new Date().toISOString().replace(/[:.]/g, "-")}`
+      const stageLog = new StageLogger(
+        `/tmp/cron-${TENANT}-timeline.log`,
+        `/tmp/cron-${TENANT}-events.jsonl`,
+        cycleId,
+        tenant.id,
+      )
+      await stageLog.start("preflight", { freePct, cleanupDeleted: cleanup.deleted })
+      console.log(`[0] tenant=${tenant.name} pbx=${tenant.pbxProvider} cap=$${tenant.dailyGpuCapUsd}/day cycleId=${cycleId}`)
 
       const cfg = await db.crmConfig.findFirst({
         where: { tenantId: tenant.id, provider: "GETCOURSE", isActive: true },
@@ -143,59 +152,103 @@ async function main() {
       console.log(`[0] window ${windowStart.toISOString()} → ${windowEnd.toISOString()}`)
 
       if (DRY_RUN) {
+        await stageLog.skip("preflight", "dry-run mode")
         console.log(`[0] dry-run — exit before mutations`)
         return
       }
+      await stageLog.done("preflight")
 
       // Stage 1: PBX delta
+      await stageLog.start("stage-1-pbx-delta", { windowStart, windowEnd })
       const stage1 = await runStage1PbxDelta(db, tenant, windowStart, windowEnd)
+      await stageLog.done("stage-1-pbx-delta", stage1.fetched, {
+        inserted: stage1.inserted, updated: stage1.updated,
+        unmatchedExt: [...stage1.unmatchedExt],
+      })
 
       // Stage 2-6: download + Whisper (shell out — gated)
       if (!SKIP_GPU && stage1.fetched > 0) {
-        console.log(`[2-6] GPU pipeline gated by --skip-gpu=false: would invoke smart-download + whisper. ` +
-                    `Currently invoke manually until v2 (see scripts/orchestrate-pipeline.py).`)
+        await stageLog.skip("stage-2-6-gpu",
+          `would invoke smart-download + whisper. Currently invoke manually via scripts/run-full-pipeline.sh until v2.`)
+        console.log(`[2-6] GPU pipeline shell-out: see scripts/run-full-pipeline.sh`)
       } else {
-        console.log(`[2-6] skipped (skip-gpu=${SKIP_GPU} fetched=${stage1.fetched})`)
+        await stageLog.skip("stage-2-6-gpu", `skip-gpu=${SKIP_GPU} fetched=${stage1.fetched}`)
       }
 
       // Stage 7: DeepSeek (shell out — gated)
       if (!SKIP_DEEPSEEK) {
-        console.log(`[7] DeepSeek gated by --skip-deepseek=false: invoke detect-call-type + repair + score-* manually.`)
+        await stageLog.skip("stage-7-deepseek",
+          `gated: invoke detect-call-type + repair + score-* manually for now`)
       } else {
-        console.log(`[7] skipped`)
+        await stageLog.skip("stage-7-deepseek", "skip-deepseek=true")
       }
 
       // Stage 7.5: phone resolve (inline — uses GC cookie)
       if (cookie && baseUrl) {
+        await stageLog.start("stage-7.5-phone-resolve")
         const resolved = await runPhoneResolve(db, tenant.id, cookie, baseUrl)
-        console.log(`[7.5] phone-resolve resolved=${resolved.resolved} linkedDeals=${resolved.linkedDeals}`)
+        await stageLog.done("stage-7.5-phone-resolve", resolved.resolved, { linkedDeals: resolved.linkedDeals })
       } else {
-        console.log(`[7.5] skipped — no GC cookie/baseUrl`)
+        await stageLog.skip("stage-7.5-phone-resolve", "no GC cookie/baseUrl")
       }
 
-      // Stage 7.5b: PBX↔GC linking
+      // Stage 7.5b: PBX↔GC linking + AUTHORITATIVE gcContactId from call-detail HTML
       if (!SKIP_STAGE35B && cookie && baseUrl) {
+        await stageLog.start("stage-7.5b-pbx-gc-link")
         const linked = await linkPbxCallsToGc({
           db, tenantId: tenant.id, baseUrl, cookie,
           windowStart, windowEnd,
         })
-        console.log(`[7.5b] PBX↔GC matched=${linked.matched} unmatched=${linked.unmatched} already=${linked.alreadyLinked}`)
+        await stageLog.done("stage-7.5b-pbx-gc-link", linked.matched, {
+          unmatched: linked.unmatched, already: linked.alreadyLinked,
+          mgrCrossOk: linked.managerCrossCheck.ok,
+          mgrCrossMismatch: linked.managerCrossCheck.mismatch,
+        })
+
+        // Re-run Deal JOIN with the now-corrected gcContactId values. Stage 7.5
+        // earlier wrote dealId based on phone-resolve gcContactId (which was
+        // wrong for diva — 3 generic IDs across 3378 rows). Re-JOIN now picks
+        // the right Deal per client.
+        await stageLog.start("stage-7.5c-deal-rejoin")
+        const relinked = await db.$executeRawUnsafe(
+          `UPDATE "CallRecord" cr
+           SET "dealId" = (
+             SELECT d.id FROM "Deal" d
+             WHERE d."tenantId" = cr."tenantId" AND d."clientCrmId" = cr."gcContactId"
+             ORDER BY d."createdAt" DESC LIMIT 1
+           )
+           WHERE cr."tenantId" = $1
+             AND cr."gcContactId" IS NOT NULL
+             AND cr."startStamp" >= $2
+             AND cr."startStamp" <= $3`,
+          tenant.id, windowStart, windowEnd
+        )
+        await stageLog.done("stage-7.5c-deal-rejoin", Number(relinked))
       } else {
-        console.log(`[7.5b] skipped (skip=${SKIP_STAGE35B} hasCookie=${!!cookie})`)
+        await stageLog.skip("stage-7.5b-pbx-gc-link",
+          `skip=${SKIP_STAGE35B} hasCookie=${!!cookie}`)
       }
 
       // Stage 9: reconcile
+      await stageLog.start("stage-9-reconcile")
       const recon = await runStage9Reconcile({
         db, tenant,
         pbxCount: stage1.fetched,
-        pbxUuids: [], // TODO: pass UUID list once Stage 1 returns it
+        pbxUuids: [],
         baseUrl: baseUrl ?? undefined,
         cookie: cookie ?? undefined,
         windowStart, windowEnd,
       })
+      await stageLog.done("stage-9-reconcile", undefined, {
+        pbx: recon.pbxCount, db: recon.dbCount, crm: recon.crmCount,
+        discrepancyPct: recon.discrepancyPct,
+        missingInDb: recon.missingInDb.length,
+        duplicates: recon.duplicates.length,
+      })
 
       // Stage 10: alert
       if (recon.discrepancyPct > ALERT_THRESHOLD) {
+        await stageLog.start("stage-10-alert")
         await alertTenant(
           db, tenant.id,
           `🚨 ${tenant.name}: discrepancy ${(recon.discrepancyPct * 100).toFixed(1)}% ` +
@@ -205,10 +258,16 @@ async function main() {
         await db.$executeRawUnsafe(
           `UPDATE "ReconciliationCheck" SET "alertSent" = true WHERE id = $1`, recon.id
         )
+        await stageLog.done("stage-10-alert", undefined, { discrepancyPct: recon.discrepancyPct })
+      } else {
+        await stageLog.skip("stage-10-alert",
+          `discrepancy ${(recon.discrepancyPct * 100).toFixed(2)}% < threshold ${(ALERT_THRESHOLD * 100).toFixed(2)}%`)
       }
 
       // Stage 11: bump watermark
+      await stageLog.start("stage-11-last-sync")
       await updateLastSync(db, tenant.id, `PBX_${tenant.pbxProvider}`, windowEnd)
+      await stageLog.done("stage-11-last-sync")
 
       const dt = ((Date.now() - t0) / 1000).toFixed(1)
       console.log(`✓ done in ${dt}s (fetched=${stage1.fetched} discrepancy=${(recon.discrepancyPct * 100).toFixed(2)}%)`)

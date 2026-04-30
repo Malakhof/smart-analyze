@@ -23,6 +23,8 @@ export interface ParsedCallDetail {
   endCause: string | null
   managerGcUserId: string | null
   managerName: string | null
+  clientGcUserId: string | null  // GC user_id of the client — correct source for CallRecord.gcContactId
+  clientName: string | null      // displayed name from <span class="text">
 }
 
 const PBX_UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
@@ -174,10 +176,50 @@ export function extractManagerFromCallDetail(html: string): {
 }
 
 /**
+ * Extract client (the customer being called) from the call detail page.
+ * GC renders the client as the first <a class="user-profile-link"> WITHOUT
+ * the "worker" sub-class (the manager link has "user-profile-link worker").
+ *
+ * Pattern (verified diva 30.04.2026):
+ *   Пользователь: <a class="user-profile-link" href="/user/control/user/update/id/454724704"
+ *                    data-user-id="454724704" ...>
+ *                   <span class="text">Rita Vinnik</span> ...
+ *
+ * Returns the GC user_id of the client (CORRECT source for CallRecord.gcContactId)
+ * — this fixes the Stage 7.5 phone-resolve bug where /pl/user/contact/index?phone=X
+ * was returning 1 of 3 generic IDs for the entire diva tenant.
+ */
+export function extractClientFromCallDetail(html: string): {
+  clientGcUserId: string | null
+  clientName: string | null
+} {
+  // Match a non-worker user-profile-link (no `worker` token in class list).
+  // We ban "worker" in the same class attr to skip the МОП anchor.
+  const re = /<a\b[^>]*\bclass=["']([^"']*\buser-profile-link\b[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+  while ((match = re.exec(html)) !== null) {
+    const classAttr = match[1]
+    if (/\bworker\b/.test(classAttr)) continue   // skip manager link
+    const linkTag = match[0]
+    const idMatch = linkTag.match(/\bdata-user-id=["'](\d+)["']/)
+      ?? linkTag.match(/\/user\/control\/user\/update\/id\/(\d+)/)
+    const nameMatch = match[2].match(/<span\b[^>]*\bclass=["'][^"']*\btext\b[^"']*["'][^>]*>([^<]+)<\/span>/i)
+    if (idMatch) {
+      return {
+        clientGcUserId: idMatch[1],
+        clientName: nameMatch ? nameMatch[1].trim() : null,
+      }
+    }
+  }
+  return { clientGcUserId: null, clientName: null }
+}
+
+/**
  * Parse all relevant fields from the call detail HTML in one pass.
  */
 export function parseCallDetail(html: string): ParsedCallDetail {
   const { managerGcUserId, managerName } = extractManagerFromCallDetail(html)
+  const { clientGcUserId, clientName } = extractClientFromCallDetail(html)
   return {
     pbxUuid: extractPbxUuid(html),
     audioUrl: extractAudioUrl(html),
@@ -186,5 +228,7 @@ export function parseCallDetail(html: string): ParsedCallDetail {
     endCause: extractEndCause(html),
     managerGcUserId,
     managerName,
+    clientGcUserId,
+    clientName,
   }
 }

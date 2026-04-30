@@ -121,18 +121,24 @@ export async function linkPbxCallsToGc(input: Stage35bInput): Promise<Stage35bRe
 
         const gcCallCardUrl = `${baseUrl}/user/control/contact/update/id/${gcCallId}`
 
-        await db.callRecord.update({
-          where: { id: pbxRow.id },
-          data: {
-            gcCallId,
-            audioUrl: parsed.audioUrl ?? pbxRow.audioUrl,
-            talkDuration: parsed.talkDuration,
-            gcOutcomeLabel: row.outcomeLabel ?? null,
-            gcEndCause: parsed.endCause,
-            gcCallCardUrl,
-            gcDeepLinkType: "call_card",
-          },
-        })
+        // gcContactId from call-detail HTML is the AUTHORITATIVE source.
+        // Stage 7.5 phone-resolve via /pl/user/contact/index returns wrong
+        // (generic) IDs for diva (3 IDs spread across 3378 calls), so we
+        // OVERWRITE gcContactId here whenever the parser found a real client.
+        const updateData: Record<string, unknown> = {
+          gcCallId,
+          audioUrl: parsed.audioUrl ?? pbxRow.audioUrl,
+          talkDuration: parsed.talkDuration,
+          gcOutcomeLabel: row.outcomeLabel ?? null,
+          gcEndCause: parsed.endCause,
+          gcCallCardUrl,
+          gcDeepLinkType: "call_card",
+        }
+        if (parsed.clientGcUserId) {
+          updateData.gcContactId = parsed.clientGcUserId
+          if (parsed.clientName) updateData.clientName = parsed.clientName
+        }
+        await db.callRecord.update({ where: { id: pbxRow.id }, data: updateData })
         stats.matched++
       }
 

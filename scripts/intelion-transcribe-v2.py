@@ -704,7 +704,11 @@ def serialize_raw_segments(segments, label: str):
 
 def process_one(model: WhisperModel, row: dict) -> dict:
     cid = row["id"]
-    url = row["url"]
+    # url may be omitted when the orchestrator wants the pod itself to resolve
+    # via onPBX API (option-C path: env ON_PBX_DOMAIN/KEY_ID/KEY).
+    url = row.get("url") or resolve_onpbx_url(cid)
+    if not url:
+        return {"id": cid, "error": "no_url_and_resolve_failed"}
     src = WORK_DIR / f"{cid}.bin"
     left = WORK_DIR / f"{cid}.L.wav"
     right = WORK_DIR / f"{cid}.R.wav"

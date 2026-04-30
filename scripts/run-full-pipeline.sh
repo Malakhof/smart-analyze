@@ -95,14 +95,38 @@ for i in range(chunks):
 }
 
 run_whisper_on_server() {
-  local idx=$1 ip=${SERVER_IPS[$idx]}
+  local idx=$1
+  local ip="${SERVER_IPS[$idx]}"
   local chunk="$OUT_DIR/chunk-$idx.jsonl"
   local result="$OUT_DIR/whisper-$idx.jsonl"
   echo "  [$idx] Whisper → $ip ..."
   sshpass -p "$SERVER_PW" scp $SSH_OPTS "$chunk" root@$ip:/workspace/batch.jsonl
   sshpass -p "$SERVER_PW" scp $SSH_OPTS scripts/intelion-transcribe-v2.py root@$ip:/workspace/scripts/
+  # Pass onPBX creds so intelion-transcribe-v2.py can resolve_onpbx_url() per uuid (option-C path).
+  # ON_PBX_* values come from caller env (set when launching this script) — fail loud if missing.
+  : "${ON_PBX_DOMAIN:?ON_PBX_DOMAIN not set in caller env}"
+  : "${ON_PBX_KEY_ID:?ON_PBX_KEY_ID not set in caller env}"
+  : "${ON_PBX_KEY:?ON_PBX_KEY not set in caller env}"
+  # nohup setsid — full session detachment (canon feedback-ssh-intelion-quirks).
+  # Redirection order: > run.log 2>&1 (NOT 2>&1 > run.log).
+  # < /dev/null detaches stdin so ssh client returns immediately.
+  # Whisper duration filter: MIN_DURATION/MAX_DURATION. Diva regularly has
+  # 60-180 min selling calls, so cap at 3h. Override via env if needed.
+  local min_dur="${WHISPER_MIN_DURATION:-60}"
+  local max_dur="${WHISPER_MAX_DURATION:-10800}"
   sshpass -p "$SERVER_PW" ssh $SSH_OPTS root@$ip "
-nohup bash -c 'source /opt/whisper-env/bin/activate; export LD_LIBRARY_PATH=/opt/whisper-env/lib/python3.10/site-packages/nvidia/cudnn/lib:\$LD_LIBRARY_PATH; cd /workspace; ECHO_ENERGY_RATIO=2.5 python3 scripts/intelion-transcribe-v2.py batch.jsonl results.jsonl 2>&1 > run.log' &
+nohup setsid bash -c '
+source /opt/whisper-env/bin/activate
+export LD_LIBRARY_PATH=/opt/whisper-env/lib/python3.10/site-packages/nvidia/cudnn/lib:\$LD_LIBRARY_PATH
+export ON_PBX_DOMAIN=\"$ON_PBX_DOMAIN\"
+export ON_PBX_KEY_ID=\"$ON_PBX_KEY_ID\"
+export ON_PBX_KEY=\"$ON_PBX_KEY\"
+export MIN_DURATION=$min_dur
+export MAX_DURATION=$max_dur
+cd /workspace
+ECHO_ENERGY_RATIO=2.5 python3 scripts/intelion-transcribe-v2.py batch.jsonl results.jsonl > run.log 2>&1
+' < /dev/null > /workspace/launch.out 2>&1 &
+sleep 2
 "
 }
 

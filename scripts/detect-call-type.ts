@@ -83,7 +83,43 @@ const ai = new OpenAI({
 })
 const AI_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat"
 
-// --- DB helpers (SSH + psql) ------------------------------------------------
+// --- DB helpers ------------------------------------------------
+//
+// Two paths:
+//   1. Direct Prisma (when DATABASE_URL is set — e.g. running INSIDE prod docker
+//      container or persist-pipeline-results.ts orchestrator). This is the
+//      cron-friendly path — no ssh key required.
+//   2. SSH + psql fallback (when running from Mac / dev laptop). Requires
+//      SSH_KEY (~/.ssh/timeweb) reachable.
+//
+// Decision: USE_DIRECT_DB env var OR DATABASE_URL set + ssh key absent.
+
+import { PrismaClient } from "../src/generated/prisma/client"
+import { PrismaPg } from "@prisma/adapter-pg"
+import { existsSync as _existsSync } from "node:fs"
+
+let _prisma: PrismaClient | null = null
+function getPrisma(): PrismaClient {
+  if (_prisma) return _prisma
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error("DATABASE_URL not set — cannot use direct mode")
+  const adapterPg = new PrismaPg({ connectionString: url })
+  _prisma = new PrismaClient({ adapter: adapterPg })
+  return _prisma
+}
+
+function shouldUseDirectDb(): boolean {
+  if (process.env.USE_DIRECT_DB === "1") return true
+  if (process.env.USE_DIRECT_DB === "0") return false
+  // Auto: prefer direct when DATABASE_URL set AND ssh key absent
+  return Boolean(process.env.DATABASE_URL) && !_existsSync(SSH_KEY)
+}
+
+async function runSqlDirect<T = unknown>(sql: string): Promise<T> {
+  const wrapped = `SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) AS data FROM (${sql.replace(/;\s*$/, "")}) t`
+  const rows = await getPrisma().$queryRawUnsafe<{ data: T }[]>(wrapped)
+  return (rows[0]?.data ?? ([] as unknown as T))
+}
 
 function runSshPsql(sql: string): string {
   // Use psql -A -t to get unaligned tuples-only output. Wrap query in a row_to_json
@@ -119,7 +155,7 @@ interface CallRow {
   transcript: string
 }
 
-function fetchCalls(limit: number, tenants: string[]): CallRow[] {
+async function fetchCalls(limit: number, tenants: string[]): Promise<CallRow[]> {
   const tenantList = tenants.map((t) => `'${t.replace(/'/g, "''")}'`).join(",")
   const sql = `
     SELECT cr.id,
@@ -130,15 +166,19 @@ function fetchCalls(limit: number, tenants: string[]): CallRow[] {
     JOIN "Tenant" tn ON tn.id = cr."tenantId"
     WHERE cr.transcript IS NOT NULL
       AND tn.name IN (${tenantList})
+      AND cr."callType" IS NULL
     ORDER BY cr."createdAt" DESC
     LIMIT ${Number(limit)}
   `
+  if (shouldUseDirectDb()) {
+    return await runSqlDirect<CallRow[]>(sql)
+  }
   const raw = runSshPsql(sql)
   if (!raw) return []
   return JSON.parse(raw) as CallRow[]
 }
 
-function checkCallTypeColumnExists(): boolean {
+async function checkCallTypeColumnExists(): Promise<boolean> {
   const sql = `
     SELECT 1
     FROM information_schema.columns
@@ -146,6 +186,10 @@ function checkCallTypeColumnExists(): boolean {
       AND table_name='CallRecord'
       AND column_name='callType'
   `
+  if (shouldUseDirectDb()) {
+    const arr = await runSqlDirect<unknown[]>(sql)
+    return arr.length > 0
+  }
   const raw = runSshPsql(sql)
   if (!raw) return false
   try {
@@ -156,7 +200,14 @@ function checkCallTypeColumnExists(): boolean {
   }
 }
 
-function writeBackCallType(id: string, callType: string): void {
+async function writeBackCallType(id: string, callType: string): Promise<void> {
+  if (shouldUseDirectDb()) {
+    await getPrisma().$executeRawUnsafe(
+      `UPDATE "CallRecord" SET "callType" = $1 WHERE id = $2`,
+      callType, id
+    )
+    return
+  }
   const sql = `UPDATE "CallRecord" SET "callType" = '${callType}' WHERE id = '${id.replace(/'/g, "''")}' RETURNING id`
   runSshPsql(sql)
 }
@@ -300,7 +351,7 @@ async function main() {
   let canWriteBack = false
   if (WRITE_BACK) {
     try {
-      canWriteBack = checkCallTypeColumnExists()
+      canWriteBack = await checkCallTypeColumnExists()
     } catch (e) {
       console.error(`[warn] could not probe schema: ${(e as Error).message}`)
     }
@@ -311,10 +362,10 @@ async function main() {
     }
   }
 
-  console.error(`[fetch] querying prod DB for up to ${LIMIT} calls...`)
+  console.error(`[fetch] querying prod DB for up to ${LIMIT} calls (mode=${shouldUseDirectDb() ? "direct-prisma" : "ssh-psql"})...`)
   let rows: CallRow[]
   try {
-    rows = fetchCalls(LIMIT, TENANTS)
+    rows = await fetchCalls(LIMIT, TENANTS)
   } catch (e) {
     console.error(`[fatal] DB fetch failed: ${(e as Error).message}`)
     process.exit(3)
@@ -364,17 +415,16 @@ async function main() {
         )
       }
 
-      // Optional write-back
+      // Optional write-back (await — function is async now)
       if (canWriteBack && !r.error && VALID_TYPES.has(r.type)) {
-        try {
-          writeBackCallType(r.id, r.type)
-          writtenBack++
-        } catch (e) {
-          writeBackErrors++
-          console.error(
-            `  [write-back] failed for ${r.id}: ${(e as Error).message.slice(0, 120)}`
-          )
-        }
+        writeBackCallType(r.id, r.type)
+          .then(() => { writtenBack++ })
+          .catch((e: Error) => {
+            writeBackErrors++
+            console.error(
+              `  [write-back] failed for ${r.id}: ${e.message.slice(0, 120)}`
+            )
+          })
       }
     }
   )

@@ -11,13 +11,7 @@ import {
   getQcCallTypeCounts,
   parseQcFiltersFromSearchParams,
 } from "@/lib/queries/quality"
-import { getCrmProvider, getTenantMode } from "@/lib/queries/active-window"
-import {
-  getQualityFilterOptionsGc,
-  getQualityCallsListGc,
-  type QualityFilters,
-} from "@/lib/queries/quality-gc"
-import type { GcPeriod } from "@/lib/queries/dashboard-gc"
+import { getTenantMode } from "@/lib/queries/active-window"
 import { QcSummary } from "./_components/qc-summary"
 import { QcDonutCharts } from "./_components/qc-donut-charts"
 import { QcComplianceChart } from "./_components/qc-compliance-chart"
@@ -26,9 +20,6 @@ import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
 import { QcFilters } from "./_components/qc-filters"
 import { QcVoicemailFilter } from "./_components/qc-voicemail-filter"
-import { PeriodFilterGc } from "../_components/gc/period-filter-gc"
-import { QualityFiltersGc } from "../_components/gc/quality-filters"
-import { QualityListGc } from "../_components/gc/quality-list"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -37,69 +28,6 @@ export default async function QualityPage(props: {
 }) {
   const sp = await props.searchParams
   const tenantId = await requireTenantId()
-  const provider = await getCrmProvider(tenantId)
-
-  if (provider === "GETCOURSE") {
-    const period: GcPeriod =
-      sp.period === "today"
-        ? "today"
-        : sp.period === "week"
-          ? "week"
-          : "month"
-
-    const filters: QualityFilters = {
-      period,
-      callType: typeof sp.callType === "string" ? sp.callType : undefined,
-      callOutcome:
-        typeof sp.callOutcome === "string" ? sp.callOutcome : undefined,
-      managerId: typeof sp.managerId === "string" ? sp.managerId : undefined,
-      hadRealConversation:
-        sp.realOnly === "true"
-          ? true
-          : sp.realOnly === "false"
-            ? false
-            : undefined,
-      sortBy:
-        sp.sortBy === "score" || sp.sortBy === "duration"
-          ? sp.sortBy
-          : "date",
-      sortDir: "desc",
-      page:
-        typeof sp.page === "string" ? Math.max(1, parseInt(sp.page, 10) || 1) : 1,
-    }
-
-    const [options, data] = await Promise.all([
-      getQualityFilterOptionsGc(tenantId),
-      getQualityCallsListGc(tenantId, filters),
-    ])
-
-    // Build serializable searchParams string for pagination links
-    const spString = new URLSearchParams(
-      Object.entries(sp).flatMap(([k, v]) =>
-        typeof v === "string" ? [[k, v]] : []
-      ) as [string, string][]
-    ).toString()
-
-    return (
-      <div className="space-y-6 p-6">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-text-primary">
-              Контроль качества
-            </h1>
-            <p className="mt-1 text-[13px] text-text-tertiary">
-              Список звонков с фильтрами по 7 типам diva. Кураторы исключены.
-            </p>
-          </div>
-          <PeriodFilterGc />
-        </header>
-        <QualityFiltersGc options={options} />
-        <QualityListGc data={data} searchParamsString={spString} />
-      </div>
-    )
-  }
-
-  // Legacy amoCRM path
   const mode = await getTenantMode(tenantId)
   const qcFilters = parseQcFiltersFromSearchParams(sp)
   const [dashboard, filters, charts, graphs, recent, callTypeCounts] =

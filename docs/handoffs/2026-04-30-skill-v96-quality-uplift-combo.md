@@ -479,3 +479,93 @@ Test:
 примени 4 фикса (E + D + A + B). Каждый фикс отдельным коммитом.
 После применения — verify по чек-листу в конце документа.
 ```
+
+---
+
+## 🛑 STATUS: ЗАМОРОЖЕНО (30.04.2026 вечер)
+
+**НЕ применять без обновления.** Этот handoff заморожен после pivot-решения работать через UI-driven contract (см. `2026-04-30-evening-pivot-ui-driven-contract.md`).
+
+Финальная форма этих фиксов будет понятна **после** утверждения наполнения платформы (inventory UI → эталоны 7 категорий → contract). Часть фиксов (особенно B — validator) переедет в skill v10 в адаптированном виде.
+
+---
+
+## 📌 Risk review & доработки (от 30.04 вечер) — учесть при разморозке
+
+Сессия-ревьюер прислала 3 нюанса перед применением. Зафиксированы здесь чтобы не потерять.
+
+### 🟡 Нюанс 1 — Фикс A (self-review) дополняет B, не заменяет
+
+**Опасность:** если skill сам проверяет свой SQL и сам говорит «всё ОК» — это echo chamber. LLM плохо ловит свои же ошибки если использует ту же логику reasoning. Self-review с тем же контекстом который генерил SQL — Opus подтвердит свой output как правильный.
+
+**Решение:**
+- A (self-review в промпте) — слабая защита, дополнение
+- **B (external validator validate-enrich-sql.ts)** — сильная защита, **обязательная**
+- При интеграции в skill v10: B обязательно, A опционально как «попытка #1 фикса до validator'а»
+
+Если B убран в пользу только A — защита слабее.
+
+### 🟡 Нюанс 2 — Фикс D (auto-detect partial): точные SQL-критерии обязательны
+
+**Опасность:** если SQL-условие partial detection слишком широкое — пометит и edge-cases (voicemail/no_speech) для перегона = пустая трата лимитов. Если слишком узкое — пропустит реальные partial.
+
+**Минимальное условие для NORMAL ≥60s:**
+```sql
+WHERE callOutcome = 'real_conversation'
+  AND duration >= 60
+  AND (
+    cleanedTranscript IS NULL
+    OR LENGTH(cleanedTranscript)::float / LENGTH(transcript) < 0.85
+    OR phraseCompliance IS NULL
+    OR psychTriggers IS NULL
+  )
+```
+
+Для skill v10 — условия будут разные **per category** (NORMAL / SHORT / VOICEMAIL / etc.), потому что обязательные поля у категорий разные. Без UI-contract'а правильное условие написать нельзя — отсюда логика заморозки.
+
+### 🟡 Нюанс 3 — Фикс B (validator): где именно вызывается?
+
+**Опасность:** если validator запускается отдельным cron'ом утром — поздно, плохой SQL уже в БД.
+
+**Правильный flow:**
+```
+Skill генерирует SQL → /tmp/batch.sql
+↓
+tsx scripts/validate-enrich-sql.ts /tmp/batch.sql
+  → если invalid: exit ≠ 0, SQL не применяется,
+    enrichmentStatus возвращается в pool
+↓ (только если valid)
+psql -f /tmp/batch.sql
+↓
+UPDATE СallRecord SET enrichmentStatus='enriched'
+```
+
+Validator должен быть **встроен в skill flow между SQL generation и `psql -f`**. Не post-hoc отчёт, не утренний cron.
+
+В skill v10 — это runtime gate, не optional review.
+
+---
+
+## 🛡️ Pre-apply safety checklist (когда разморозим)
+
+Перед запуском любой версии этого handoff:
+
+1. **Backup БД** (30 секунд):
+   ```bash
+   ssh -i ~/.ssh/timeweb root@80.76.60.130 "docker exec smart-analyze-db pg_dump -U smartanalyze smartanalyze | gzip > /root/backup-pre-v96-$(date +%F-%H%M).sql.gz"
+   ```
+   Если фикс D перетрёт лишнее (broad partial detection) — откат.
+
+2. **Покажи точное SQL-условие D** до запуска. Если слишком широкое (захватывает edge-cases) — поправь до применения.
+
+3. **Verify B вызывается ВНУТРИ skill flow** перед UPDATE, не как post-hoc cron.
+
+4. **После применения — verify-чек-лист обязателен.** Если хоть один пункт красный → `git revert` этого коммита.
+
+---
+
+## 🔗 Связано
+
+- Master pivot: `2026-04-30-evening-pivot-ui-driven-contract.md`
+- Баги: `2026-04-30-known-bugs-and-fixes.md`
+- Memory: `feedback-skill-iteration-pivot.md`

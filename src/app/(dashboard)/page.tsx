@@ -21,7 +21,7 @@ import {
   getDepartmentTopCriticalErrors,
   getUnfulfilledCommitments,
   getCallHeatmap,
-  getOpenDealsByStage,
+  getDealStagesAfterCalls,
   getLastSyncTimestamp,
   getPipelineGapPct,
   type GcPeriod,
@@ -86,7 +86,7 @@ async function GcDashboardPage({
     getDepartmentTopCriticalErrors(tenantId, gcPeriod, 5),
     getUnfulfilledCommitments(tenantId, 10),
     getCallHeatmap(tenantId),
-    getOpenDealsByStage(tenantId),
+    getDealStagesAfterCalls(tenantId, gcPeriod),
     getLastSyncTimestamp(tenantId),
     getPipelineGapPct(tenantId, gcPeriod),
   ])

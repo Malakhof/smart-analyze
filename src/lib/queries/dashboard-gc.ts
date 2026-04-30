@@ -69,6 +69,10 @@ export async function getDailyActivityPerManager(
   const curatorIds = await getCuratorManagerIds(tenantId)
   const curatorList = Array.from(curatorIds)
 
+  // Block 1 — counts only over rows with callOutcome IS NOT NULL for the
+  // dialed/real/ndz/voicemail columns. Synced-but-not-yet-enriched rows
+  // (transcript ready, classifier pending) are tracked separately via
+  // `pendingEnrich` in getPipelineGapPct so the UI can flag them.
   const rows = await db.$queryRaw<
     Array<{
       managerId: string
@@ -85,7 +89,7 @@ export async function getDailyActivityPerManager(
     SELECT
       m.id AS "managerId",
       m.name AS "managerName",
-      COUNT(*)::bigint AS dialed,
+      COUNT(*) FILTER (WHERE c."callOutcome" IS NOT NULL)::bigint AS dialed,
       COUNT(*) FILTER (WHERE c."callOutcome" = 'real_conversation')::bigint AS real,
       COUNT(*) FILTER (WHERE c."callOutcome" IN ('no_answer', 'hung_up'))::bigint AS ndz,
       COUNT(*) FILTER (WHERE c."callOutcome" IN ('voicemail', 'ivr'))::bigint AS voicemail,
@@ -105,6 +109,8 @@ export async function getDailyActivityPerManager(
           : Prisma.empty
       }
     GROUP BY m.id, m.name
+    HAVING COUNT(*) FILTER (WHERE c."callOutcome" IS NOT NULL) > 0
+        OR COUNT(*) FILTER (WHERE c.transcript IS NULL AND c."audioUrl" IS NULL) > 0
     ORDER BY dialed DESC
   `
 
@@ -438,35 +444,48 @@ export interface FunnelStageCount {
   stageName: string
   stageCrmId: string | null
   count: number
+  pct: number
 }
 
-export async function getOpenDealsByStage(
-  tenantId: string
+/**
+ * Block 7 — «Куда движутся клиенты после наших звонков за период».
+ * Только сделки у которых был хотя бы один звонок в период (JOIN CallRecord).
+ * Группирует по `currentStageCrmId → FunnelStage.name`. Fallback name = «Этап #{crmId}».
+ */
+export async function getDealStagesAfterCalls(
+  tenantId: string,
+  period: GcPeriod
 ): Promise<FunnelStageCount[]> {
+  const since = gcPeriodToCutoff(period)
   const rows = await db.$queryRaw<
     Array<{ stageName: string | null; stageCrmId: string | null; count: bigint }>
   >`
     SELECT
       fs.name AS "stageName",
-      fs."crmId" AS "stageCrmId",
-      COUNT(*)::bigint AS count
+      d."currentStageCrmId" AS "stageCrmId",
+      COUNT(DISTINCT d.id)::bigint AS count
     FROM "Deal" d
-    LEFT JOIN "Funnel" f ON d."funnelId" = f.id
-    LEFT JOIN "FunnelStage" fs
-      ON fs."funnelId" = f.id AND fs."crmId" = d."currentStageCrmId"
-    WHERE d."tenantId" = ${tenantId}
-      AND d.status = 'OPEN'
-    GROUP BY fs.name, fs."crmId"
+    JOIN "CallRecord" cr ON cr."dealId" = d.id
+    LEFT JOIN "FunnelStage" fs ON fs."crmId" = d."currentStageCrmId"
+    WHERE cr."tenantId" = ${tenantId}
+      AND cr."createdAt" >= ${since}
+    GROUP BY fs.name, d."currentStageCrmId"
     ORDER BY count DESC
     LIMIT 20
   `
-  return rows
-    .filter((r) => r.stageName)
-    .map((r) => ({
-      stageName: r.stageName as string,
+  const total = rows.reduce((s, r) => s + Number(r.count), 0)
+  return rows.map((r) => {
+    const count = Number(r.count)
+    const fallbackName = r.stageCrmId
+      ? `Этап #${r.stageCrmId}`
+      : "Этап не указан"
+    return {
+      stageName: r.stageName ?? fallbackName,
       stageCrmId: r.stageCrmId,
-      count: Number(r.count),
-    }))
+      count,
+      pct: total > 0 ? count / total : 0,
+    }
+  })
 }
 
 export async function getLastSyncTimestamp(

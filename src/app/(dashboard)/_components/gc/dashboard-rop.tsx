@@ -144,7 +144,7 @@ function Block1DailyActivity({ rows }: { rows: DailyActivityRow[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Активность по менеджерам</CardTitle>
+          <CardTitle>Активность за период</CardTitle>
           <CardDescription>Нет звонков за выбранный период</CardDescription>
         </CardHeader>
       </Card>
@@ -153,7 +153,7 @@ function Block1DailyActivity({ rows }: { rows: DailyActivityRow[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 1 — Активность по менеджерам</CardTitle>
+        <CardTitle>Активность за период</CardTitle>
         <CardDescription>
           Наборы / дозвоны / НДЗ / автоответчики / минут разговора (talkDuration) /
           без аудио. Click МОПа → drill-down.
@@ -232,7 +232,7 @@ function Block2QualityScore({ rows }: { rows: DailyActivityRow[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Block 2 — Quality score per МОП</CardTitle>
+          <CardTitle>Оценка скрипта</CardTitle>
           <CardDescription>
             Нет звонков с оценкой за период (нужны real_conversation ≥ 60s).
           </CardDescription>
@@ -247,7 +247,7 @@ function Block2QualityScore({ rows }: { rows: DailyActivityRow[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 2 — Quality score per МОП</CardTitle>
+        <CardTitle>Оценка скрипта</CardTitle>
         <CardDescription>
           AVG `scriptScorePct` среди real_conversation ≥ 60s. Зелёный = top 30%,
           красный = bottom 30%.
@@ -298,7 +298,7 @@ function Block3WorstCalls({ calls }: { calls: WorstCall[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Block 3 — Топ-10 худших звонков</CardTitle>
+          <CardTitle>Топ-10 проблемных звонков</CardTitle>
           <CardDescription>Нет проблемных звонков за период.</CardDescription>
         </CardHeader>
       </Card>
@@ -307,7 +307,7 @@ function Block3WorstCalls({ calls }: { calls: WorstCall[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 3 — Топ-10 худших звонков сегодня</CardTitle>
+        <CardTitle>Топ-10 проблемных звонков</CardTitle>
         <CardDescription>
           Сортировка по `scriptScorePct ASC` среди real_conversation ≥ 60s.
         </CardDescription>
@@ -391,7 +391,7 @@ function Block4MissingPhrases({ rows }: { rows: MissingPhrase[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Block 4 — Топ-3 не-используемых техник</CardTitle>
+          <CardTitle>Упущенные техники</CardTitle>
           <CardDescription>
             Нет данных по `phraseCompliance` за период.
           </CardDescription>
@@ -402,9 +402,10 @@ function Block4MissingPhrases({ rows }: { rows: MissingPhrase[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 4 — Топ-3 фразы которые НЕ используют</CardTitle>
+        <CardTitle>Упущенные техники</CardTitle>
         <CardDescription>
-          Из 12 техник скрипта diva. Агрегат `phraseCompliance.used=false`.
+          Топ-3 фразы из 12 техник скрипта diva, которые МОПы НЕ используют.
+          Агрегат `phraseCompliance.used=false`.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -442,7 +443,7 @@ function Block4bDepartmentPatterns({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Block 4b — Топ-5 weakSpot отдела</CardTitle>
+          <CardTitle>Системные паттерны отдела — Топ-5 weakSpot</CardTitle>
           <CardDescription>
             Что системно повторяется среди МОПов (managerWeakSpot agg).
           </CardDescription>
@@ -469,9 +470,9 @@ function Block4bDepartmentPatterns({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Топ-5 критических ошибок</CardTitle>
+          <CardTitle>Системные паттерны отдела — Топ-5 ошибок</CardTitle>
           <CardDescription>
-            Какая ошибка чаще всего у отдела. Из 6 enum diva.
+            Какая критическая ошибка чаще всего у отдела (criticalErrors agg).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -509,7 +510,7 @@ function Block5UnfulfilledCommitments({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Block 5 — Обещания за период</CardTitle>
+          <CardTitle>Обещания требующие follow-up</CardTitle>
           <CardDescription>Нет открытых обещаний за период.</CardDescription>
         </CardHeader>
       </Card>
@@ -518,7 +519,7 @@ function Block5UnfulfilledCommitments({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 5 — Обещания за период (требуют follow-up в CRM)</CardTitle>
+        <CardTitle>Обещания требующие follow-up</CardTitle>
         <CardDescription>
           extractedCommitments из звонков старше 24ч. Статус «выполнено/нет»
           доступен после интеграции с CRM tasks — пока показываем сами обещания
@@ -583,9 +584,10 @@ function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 6 — Тепловая карта дозвонов</CardTitle>
+        <CardTitle>Когда лучше звонить</CardTitle>
         <CardDescription>
-          7 дней × 24 часа МСК, цвет = success rate за 30д.
+          Тепловая карта 7 дней × 24 часа МСК. Цвет = success rate
+          (real_conversation %) за последние 30 дней.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -644,9 +646,9 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Block 7 — Этапы воронки сейчас</CardTitle>
+          <CardTitle>Куда движутся клиенты после наших звонков</CardTitle>
           <CardDescription>
-            Нет открытых сделок или у звонков нет связки с FunnelStage.
+            Нет сделок со звонками за период.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -656,21 +658,34 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Block 7 — Этапы воронки сейчас</CardTitle>
+        <CardTitle>Куда движутся клиенты после наших звонков</CardTitle>
         <CardDescription>
-          Открытые сделки по `Deal.currentStageCrmId → FunnelStage.name`. Без %
-          конверсий.
+          Сделки у которых был хотя бы один звонок за период, сгруппированные
+          по текущему этапу воронки. Без % конверсий между стадиями — только
+          распределение «где они сейчас».
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         {stages.map((s, i) => {
           const w = (s.count / max) * 100
           return (
-            <div key={`${s.stageCrmId}-${i}`} className="text-sm">
-              <div className="flex items-center justify-between">
-                <span>{s.stageName}</span>
-                <span className="tabular-nums text-text-secondary">
+            <div key={`${s.stageCrmId ?? "none"}-${i}`} className="text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, var(--ai-1), var(--ai-2))",
+                    }}
+                  />
+                  <span>{s.stageName}</span>
+                </span>
+                <span className="shrink-0 tabular-nums text-text-secondary">
                   {s.count}
+                  <span className="ml-2 text-text-tertiary">
+                    {Math.round(s.pct * 100)}%
+                  </span>
                 </span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
@@ -678,7 +693,8 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
                   className="h-full rounded-full"
                   style={{
                     width: `${w}%`,
-                    background: "linear-gradient(135deg, var(--ai-1), var(--ai-2))",
+                    background:
+                      "linear-gradient(135deg, var(--ai-1), var(--ai-2))",
                   }}
                 />
               </div>

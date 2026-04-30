@@ -62,6 +62,16 @@ function asArray<T = unknown>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : []
 }
 
+/**
+ * Some enriched fields store literal `\n` (backslash+n) instead of real
+ * newline characters — Master Enrich writes JSON-encoded strings via Prisma.
+ * Convert literal escapes back to real whitespace so <pre> + whitespace-pre-wrap
+ * lay them out as paragraphs.
+ */
+function unescapeNewlines(s: string): string {
+  return s.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\t/g, "\t")
+}
+
 function normalizeCriticalErrors(
   raw: unknown
 ): Array<{ error: string; evidence?: string; severity?: string }> {
@@ -371,7 +381,7 @@ function TypeSpecificContent({ call, type }: { call: CallDetail; type: CallType 
         {call.transcript && (
           <CardContent>
             <pre className="whitespace-pre-wrap text-[12px] text-text-tertiary">
-              {call.transcript}
+              {unescapeNewlines(call.transcript)}
             </pre>
           </CardContent>
         )}
@@ -392,7 +402,7 @@ function TypeSpecificContent({ call, type }: { call: CallDetail; type: CallType 
         {call.transcript && (
           <CardContent>
             <pre className="whitespace-pre-wrap text-[12px] text-text-tertiary">
-              {call.transcript}
+              {unescapeNewlines(call.transcript)}
             </pre>
           </CardContent>
         )}
@@ -415,7 +425,7 @@ function TypeSpecificContent({ call, type }: { call: CallDetail; type: CallType 
           {call.cleanedTranscript && (
             <CardContent>
               <pre className="whitespace-pre-wrap text-[12px] text-text-secondary">
-                {call.cleanedTranscript}
+                {unescapeNewlines(call.cleanedTranscript)}
               </pre>
             </CardContent>
           )}
@@ -503,7 +513,7 @@ function TranscriptBlock({ call }: { call: CallDetail }) {
       </CardHeader>
       <CardContent>
         <pre className="max-h-[600px] overflow-y-auto whitespace-pre-wrap rounded-md bg-surface-2 p-3 text-[12px] leading-relaxed">
-          {tr}
+          {unescapeNewlines(tr)}
         </pre>
         {cleanupNotes && (
           <details className="mt-2 text-[11px] text-text-tertiary">
@@ -527,7 +537,7 @@ function SummaryBlock({ call }: { call: CallDetail }) {
       </CardHeader>
       <CardContent>
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary">
-          {call.callSummary}
+          {unescapeNewlines(call.callSummary)}
         </p>
         {call.managerWeakSpot && (
           <p className="mt-3 text-[13px] text-status-amber">
@@ -935,7 +945,7 @@ function RopInsightBlock({ call }: { call: CallDetail }) {
       </CardHeader>
       <CardContent>
         <pre className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary">
-          {call.ropInsight}
+          {unescapeNewlines(call.ropInsight)}
         </pre>
       </CardContent>
     </Card>
@@ -951,7 +961,7 @@ function NextStepBlock({ call }: { call: CallDetail }) {
       </CardHeader>
       <CardContent>
         <pre className="whitespace-pre-wrap text-sm leading-relaxed text-text-primary">
-          {call.nextStepRecommendation}
+          {unescapeNewlines(call.nextStepRecommendation)}
         </pre>
       </CardContent>
     </Card>

@@ -161,18 +161,19 @@ export async function linkPbxCallsToGc(input: Stage35bInput): Promise<Stage35bRe
         `failed=${stats.detailsFailed}`
       )
 
-      // Saturation early-stop: if we've made no new PBX matches for N pages,
-      // remaining grid rows are GC calls that don't belong to this window.
-      // GC ignores date filter on later pages, so without this guard the cron
-      // cycle runs for 30+ min walking the entire account history.
-      if (stats.matched > lastMatchedSeen) {
-        lastMatchedSeen = stats.matched
+      // Saturation early-stop: track FIRST-TIME matches only (rows where the
+      // call was not already linked). 'matched' increments for every overwrite
+      // too, so it grows on every page and would never plateau. The newly-
+      // linked count plateaus once we've covered all PBX rows for the window.
+      const newlyLinkedNow = stats.matched - stats.alreadyLinked
+      if (newlyLinkedNow > lastMatchedSeen) {
+        lastMatchedSeen = newlyLinkedNow
         pagesWithoutNewMatch = 0
       } else {
         pagesWithoutNewMatch++
         if (pagesWithoutNewMatch >= saturationLimit) {
           console.log(
-            `[3.5b] saturation: ${saturationLimit} consecutive pages without new matches — stopping early`
+            `[3.5b] saturation: ${saturationLimit} consecutive pages without NEW pbx matches — stopping early`
           )
           throw stopErr
         }

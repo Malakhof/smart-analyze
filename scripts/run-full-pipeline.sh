@@ -131,8 +131,28 @@ sleep 2
 }
 
 poll_whisper_done() {
+  # pgrep -f matches its OWN process when our remote command line contains
+  # the substring "intelion-transcribe". Use python3 with explicit cmdline
+  # check + skip our own PID so the loop actually terminates.
   local ip=$1
-  while sshpass -p "$SERVER_PW" ssh $SSH_OPTS root@$ip "pgrep -f intelion-transcribe > /dev/null"; do
+  while sshpass -p "$SERVER_PW" ssh $SSH_OPTS root@$ip 'python3 -c "
+import os, re
+mypid = os.getpid()
+running = False
+for d in os.listdir(\"/proc\"):
+    if not d.isdigit(): continue
+    pid = int(d)
+    if pid == mypid: continue
+    try:
+        with open(f\"/proc/{d}/cmdline\", \"rb\") as f:
+            cmd = f.read().decode(errors=\"ignore\")
+    except OSError:
+        continue
+    if \"intelion-transcribe\" in cmd and \"python3\" in cmd:
+        running = True; break
+import sys
+sys.exit(0 if running else 1)
+"'; do
     sleep 30
   done
 }

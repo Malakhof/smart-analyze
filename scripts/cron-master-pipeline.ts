@@ -43,12 +43,13 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { acquireLock } from "./lib/cron-lock"
 import { cleanupOldFiles, getDiskFreePct } from "./lib/disk-cleanup"
 import { alertTenant } from "./lib/telegram-alert"
-import { loadTenantWithPbx } from "./lib/load-tenant-pbx"
+import { loadTenantWithPbx, type LoadedTenant } from "./lib/load-tenant-pbx"
 import { runStage1PbxDelta } from "./lib/stage1-pbx-delta"
 import { linkPbxCallsToGc } from "./lib/stage35b-link-pbx-gc"
 import { runStage9Reconcile } from "./lib/stage9-reconcile"
 import { updateLastSync, getLastSync } from "./lib/stage11-last-sync"
 import { StageLogger } from "./lib/stage-timestamps"
+import { assertUnderCap } from "./lib/gpu-cost-tracker"
 import { decrypt } from "../src/lib/crypto"
 
 // ───────────────────────────── CLI ─────────────────────────────
@@ -78,6 +79,15 @@ const DRY_RUN = arg("dry-run") === "true"
 const ALERT_THRESHOLD = Number(arg("alert-threshold") ?? "0.05")
 const WINDOW_FROM_RAW = arg("window-from")
 const WINDOW_TO_RAW = arg("window-to")
+// Stage 4-6 GPU/Whisper trigger threshold — skip GPU spin-up unless we have
+// at least this many real_pending rows. Cost-saving: short cycles with 1-2
+// new calls just wait for the next cycle when more accumulate.
+const MIN_FOR_GPU = Number(arg("min-for-gpu") ?? "10")
+// Hard wall-clock cap for Stage 4-7 inside one cron cycle. Realistic budget
+// for 30-file Whisper batch + DeepSeek persist on a single RTX 3090 is
+// 15-20 min. The lockfile (canon) prevents overlapping cycles when one runs
+// long, so we can exceed the */15 crontab interval without race conditions.
+const MAX_CYCLE_MIN = Number(arg("max-cycle-min") ?? "25")
 
 const KILL_SWITCH = "/tmp/disable-cron-pipeline"
 const LOCK_PATH = `/tmp/cron-pipeline-${TENANT}.lock`
@@ -158,6 +168,29 @@ async function main() {
       }
       await stageLog.done("preflight")
 
+      // Stage 0.6: proactive PBX key refresh — onPBX KEY_ID:KEY have ~7-9d TTL,
+      // we refresh every 5d to never hit the expiry mid-cycle. Idempotent
+      // (returns false when last refresh < 5d ago).
+      try {
+        // OnPbxAdapter has refreshIfStale; other adapters can be no-op.
+        const ad = tenant.adapter as { refreshIfStale?: (days?: number) => Promise<boolean> }
+        if (ad.refreshIfStale) {
+          await stageLog.start("stage-0.6-pbx-key-refresh")
+          const refreshed = await ad.refreshIfStale(5)
+          await stageLog.done("stage-0.6-pbx-key-refresh", undefined, { refreshed })
+        }
+      } catch (e) {
+        const err = e as Error
+        await stageLog.error("stage-0.6-pbx-key-refresh", err)
+        // OnPbxAuthFatalError → authKey itself rejected; alert and abort early
+        // (continuing would just produce empty results forever).
+        if (err.name === "OnPbxAuthFatalError") {
+          await alertTenant(db, tenant.id,
+            `🚨 ${tenant.name}: PBX authKey REJECTED — manual intervention required. ${err.message}`)
+          throw err
+        }
+      }
+
       // Stage 1: PBX delta
       await stageLog.start("stage-1-pbx-delta", { windowStart, windowEnd })
       const stage1 = await runStage1PbxDelta(db, tenant, windowStart, windowEnd)
@@ -166,22 +199,26 @@ async function main() {
         unmatchedExt: [...stage1.unmatchedExt],
       })
 
-      // Stage 2-6: download + Whisper (shell out — gated)
-      if (!SKIP_GPU && stage1.fetched > 0) {
-        await stageLog.skip("stage-2-6-gpu",
-          `would invoke smart-download + whisper. Currently invoke manually via scripts/run-full-pipeline.sh until v2.`)
-        console.log(`[2-6] GPU pipeline shell-out: see scripts/run-full-pipeline.sh`)
-      } else {
-        await stageLog.skip("stage-2-6-gpu", `skip-gpu=${SKIP_GPU} fetched=${stage1.fetched}`)
-      }
-
-      // Stage 7: DeepSeek (shell out — gated)
-      if (!SKIP_DEEPSEEK) {
-        await stageLog.skip("stage-7-deepseek",
-          `gated: invoke detect-call-type + repair + score-* manually for now`)
-      } else {
-        await stageLog.skip("stage-7-deepseek", "skip-deepseek=true")
-      }
+      // Stage 1.5: canon-#8 filter — split fresh rows into 'pending' (Whisper-bound)
+      // vs 'no_speech' (NDZ/voicemail/short — counted in metrics but skipped from GPU).
+      // Curators (ext 117/118) and the fired user (124) are excluded by hangup+talk
+      // filter even before reaching Master Enrich.
+      await stageLog.start("stage-1.5-canon8-filter")
+      const filtered = await db.$executeRawUnsafe(
+        `UPDATE "CallRecord" SET "transcriptionStatus" = CASE
+           WHEN "userTalkTime" > 30
+            AND "hangupCause" = 'NORMAL_CLEARING'
+            AND "managerExt" NOT IN ('117','118','124')
+           THEN 'pending'
+           ELSE 'no_speech'
+         END
+         WHERE "tenantId" = $1
+           AND "startStamp" BETWEEN $2 AND $3
+           AND transcript IS NULL
+           AND "transcriptionStatus" IS DISTINCT FROM 'transcribed'`,
+        tenant.id, windowStart, windowEnd
+      )
+      await stageLog.done("stage-1.5-canon8-filter", Number(filtered))
 
       // Stage 7.5: phone resolve (inline — uses GC cookie)
       if (cookie && baseUrl) {
@@ -227,6 +264,45 @@ async function main() {
       } else {
         await stageLog.skip("stage-7.5b-pbx-gc-link",
           `skip=${SKIP_STAGE35B} hasCookie=${!!cookie}`)
+      }
+
+      // Stages 2-7 — Whisper + DeepSeek (shells out to existing pipeline)
+      // Gates:
+      //   --skip-gpu                  → stages 2-6 skip
+      //   --skip-deepseek             → stage 7 skip
+      //   real_pending < MIN_FOR_GPU  → batch too small, defer to next cycle
+      //   GPU cost cap reached        → skip + telegram alert
+      //   tenant.intelionToken absent → skip
+      if (!SKIP_GPU) {
+        const realPending = await db.$queryRawUnsafe<{ n: number }[]>(
+          `SELECT COUNT(*)::int AS n FROM "CallRecord"
+           WHERE "tenantId" = $1
+             AND "transcriptionStatus" = 'pending'
+             AND "audioUrl" IS NOT NULL`,
+          tenant.id
+        )
+        const pendingCount = realPending[0]?.n ?? 0
+        if (pendingCount < MIN_FOR_GPU) {
+          await stageLog.skip("stage-2-6-gpu",
+            `real_pending=${pendingCount} < MIN_FOR_GPU=${MIN_FOR_GPU} — wait next cycle`)
+        } else if (!tenant.intelionToken) {
+          await stageLog.skip("stage-2-6-gpu", "tenant has no intelionToken")
+        } else {
+          const cap = await assertUnderCap(db, tenant.id, tenant.dailyGpuCapUsd)
+          if (!cap.ok) {
+            await alertTenant(
+              db, tenant.id,
+              `💰 ${tenant.name}: GPU cap $${tenant.dailyGpuCapUsd.toFixed(2)} reached today (spent $${cap.spentUsd.toFixed(2)}) — skip Whisper`
+            )
+            await stageLog.skip("stage-2-6-gpu",
+              `cap reached: spent=$${cap.spentUsd.toFixed(2)} cap=$${tenant.dailyGpuCapUsd.toFixed(2)}`)
+          } else {
+            const ok = await runWhisperAndPersist(db, tenant, stageLog, pendingCount)
+            if (!ok) console.warn("[2-7] Whisper/persist had failures — see prior logs")
+          }
+        }
+      } else {
+        await stageLog.skip("stage-2-6-gpu", "skip-gpu=true")
       }
 
       // Stage 9: reconcile
@@ -342,6 +418,103 @@ async function runPhoneResolve(
     tenantId
   )
   return { resolved, linkedDeals: Number(linkedDeals) }
+}
+
+// ───────── Whisper + DeepSeek shell-out (Stages 2-7) ──────────
+//
+// Why shell-out and not in-process: the Whisper pipeline already exists as
+// a battle-tested bash + python combo (run-full-pipeline.sh +
+// intelion-transcribe-v2.py). Re-implementing in TS would duplicate logic
+// that's been tuned over 24-27 backfill of 1786 calls.
+//
+// Self-healing:
+//   * audioUrl is taken from CallRecord (Stage 7.5b filled it from GC
+//     fileservice). The Whisper script falls back to onPBX resolve via env
+//     creds when the row has no url, but the BD-derived jsonl supplies url
+//     directly so the cycle succeeds even if onPBX API is down.
+//   * MAX_DURATION=10800 (3h) for diva long calls.
+//   * GPU is started inside run-full-pipeline.sh and stopped at [7/7] —
+//     orchestrator does not hold the pod across cron cycles.
+async function runWhisperAndPersist(
+  db: PrismaClient,
+  tenant: LoadedTenant,
+  stageLog: StageLogger,
+  pendingCount: number,
+): Promise<boolean> {
+  await stageLog.start("stage-2-6-gpu", { pendingCount, maxCycleMin: MAX_CYCLE_MIN })
+  const repoRoot = process.env.REPO_ROOT ?? "/root/smart-analyze"
+  const runDir = `${repoRoot}/tmp/runs/${tenant.name}-${Date.now()}`
+  const batchPath = `${runDir}/batch.jsonl`
+
+  // Generate batch.jsonl with the GC fileservice url so the pod doesn't
+  // need to call onPBX to resolve a download URL (onPBX has been flaky).
+  await fs.mkdir(runDir, { recursive: true })
+  const rows = await db.$queryRawUnsafe<{
+    id: string; uuid: string; url: string | null; dur: number | null
+    manager_ext: string | null
+  }[]>(
+    `SELECT "pbxUuid" AS id, "pbxUuid" AS uuid, "audioUrl" AS url,
+            duration AS dur, "managerExt" AS manager_ext
+     FROM "CallRecord"
+     WHERE "tenantId" = $1 AND "transcriptionStatus" = 'pending'
+       AND "audioUrl" IS NOT NULL
+     ORDER BY "startStamp"
+     LIMIT 30`,                              // 30 calls × ~15s each ≈ 8 min on RTX 3090,
+                                              // fits the MAX_CYCLE_MIN=12 budget. Backlog
+                                              // shrinks one chunk per cycle until empty.
+    tenant.id
+  )
+  const lines = rows.map((r) =>
+    JSON.stringify({ id: r.id, uuid: r.uuid, url: r.url, dur: r.dur,
+                     manager_ext: r.manager_ext, tenant: tenant.name })
+  )
+  await fs.writeFile(batchPath, lines.join("\n") + "\n")
+  console.log(`[2] batch ${rows.length} files → ${batchPath}`)
+
+  // Stages 3-6 — invoke run-full-pipeline.sh which handles GPU start, tar,
+  // Whisper transcribe, fetch results, GPU stop. Pass onPBX creds so the
+  // script's env-guard passes; Whisper itself prefers the url from jsonl.
+  const env: Record<string, string> = {
+    ...process.env,
+    ON_PBX_DOMAIN: process.env.ON_PBX_DOMAIN ?? "pbx1720.onpbx.ru",
+    ON_PBX_KEY_ID: process.env.ON_PBX_KEY_ID ?? "",
+    ON_PBX_KEY:    process.env.ON_PBX_KEY    ?? "",
+    WHISPER_MAX_DURATION: "10800",
+  }
+  const wp = spawnSync("bash", [
+    `${repoRoot}/scripts/run-full-pipeline.sh`, batchPath, runDir, "--gpus=1",
+  ], { env, encoding: "utf8", stdio: "inherit", timeout: MAX_CYCLE_MIN * 60 * 1000 })
+  const whisperOk = wp.status === 0
+  await stageLog.done("stage-2-6-gpu", rows.length, {
+    exitCode: wp.status, durationMs: wp.error ? 0 : -1,
+  })
+  if (!whisperOk) {
+    console.error(`[2-6] run-full-pipeline.sh exit=${wp.status} (timeout=${MAX_CYCLE_MIN}min)`)
+    return false
+  }
+
+  // Stage 7: persist (apply transcripts + DeepSeek repair/detect/score).
+  if (SKIP_DEEPSEEK) {
+    await stageLog.skip("stage-7-deepseek", "--skip-deepseek")
+    return true
+  }
+  const resultsPath = `${runDir}/whisper-0.jsonl`
+  if (!existsSync(resultsPath)) {
+    await stageLog.error("stage-7-deepseek",
+      new Error(`results.jsonl missing at ${resultsPath}`))
+    return false
+  }
+  await stageLog.start("stage-7-deepseek")
+  const pp = spawnSync("node_modules/.bin/tsx", [
+    "scripts/persist-pipeline-results.ts",
+    resultsPath, tenant.name, `--limit=10000`,
+  ], { cwd: repoRoot, env, encoding: "utf8", stdio: "inherit",
+       timeout: 3 * 60 * 60 * 1000 })
+  const persistOk = pp.status === 0
+  await stageLog.done("stage-7-deepseek", undefined, {
+    exitCode: pp.status, persistOk,
+  })
+  return whisperOk && persistOk
 }
 
 main().catch((e) => {

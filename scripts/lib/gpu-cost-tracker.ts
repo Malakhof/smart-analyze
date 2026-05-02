@@ -19,15 +19,26 @@ function startOfMskDay(d = new Date()): Date {
   return mskMidnight
 }
 
+interface GpuRunRow {
+  startedAt: Date
+  stoppedAt: Date | null
+  ratePerHour: number
+  actualCost: number | null
+}
+
 export async function getTodaySpendUsd(
   db: PrismaClient,
   tenantId: string
 ): Promise<number> {
+  // Raw SQL — GpuRun was added by manual-cron-pipeline.sql migration after
+  // the Prisma client was last generated, so it's not in the typed client.
   const since = startOfMskDay()
-  const runs = await db.gpuRun.findMany({
-    where: { tenantId, startedAt: { gte: since } },
-    select: { startedAt: true, stoppedAt: true, ratePerHour: true, actualCost: true, outcome: true },
-  })
+  const runs = await db.$queryRawUnsafe<GpuRunRow[]>(
+    `SELECT "startedAt", "stoppedAt", "ratePerHour", "actualCost"
+     FROM "GpuRun"
+     WHERE "tenantId" = $1 AND "startedAt" >= $2`,
+    tenantId, since
+  )
   let total = 0
   const now = Date.now()
   for (const r of runs) {
@@ -35,8 +46,8 @@ export async function getTodaySpendUsd(
       total += r.actualCost
       continue
     }
-    const started = r.startedAt.getTime()
-    const stopped = r.stoppedAt ? r.stoppedAt.getTime() : now
+    const started = new Date(r.startedAt).getTime()
+    const stopped = r.stoppedAt ? new Date(r.stoppedAt).getTime() : now
     const hours = Math.max(0, (stopped - started) / 3_600_000)
     total += hours * r.ratePerHour
   }

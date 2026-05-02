@@ -55,7 +55,9 @@ export async function loadTenantWithPbx(
   let adapter: PbxAdapter
   if (t.pbxProvider === "ONPBX") {
     const auth = loadOnPbxAuth(t.pbxConfig as OnPbxConfig)
-    adapter = new OnPbxAdapter(auth)
+    // Pass db + tenantId so adapter can self-heal: refresh KEY_ID:KEY via
+    // permanent authKey when /mongo_history returns API_KEY_CHECK_FAILED.
+    adapter = new OnPbxAdapter(auth, db, t.id)
   } else {
     throw new Error(`PBX provider ${t.pbxProvider} not implemented yet (only ONPBX for v1)`)
   }

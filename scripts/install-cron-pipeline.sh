@@ -46,16 +46,16 @@ docker build -q -t salesguru-cron:latest -f /tmp/Dockerfile.cron /tmp/ >/dev/nul
 echo "[install]   ✓ image $(docker images salesguru-cron --format '{{.Tag}} {{.Size}}')"
 
 # ───── 2. Producer cron (managed block) ─────
-# All credentials live in $REPO/.env (chmod 600 root-only). Docker --env-file
-# loads them; we add ONLY runtime knobs that are not secret. NEVER hardcode
-# DATABASE_URL / ENCRYPTION_KEY / INTELION_API_TOKEN / ON_PBX_* here —
-# this file is committed to git.
+# Secrets live in $REPO/.env (chmod 600 root-only). We use sh wrapper +
+# `set -a; . .env; set +a` rather than docker --env-file because
+# --env-file does NOT strip quotes around values (e.g. DATABASE_URL="...")
+# and Prisma then tries to resolve a hostname with a literal " in it.
+# bash source handles quoting correctly. NEVER hardcode secrets here.
 RUN_TSX="docker run --rm --network smart-analyze_default \
 -v $REPO:/app -w /app \
 -v $LOG_DIR:$LOG_DIR \
---env-file $REPO/.env \
 -e USE_DIRECT_DB=1 \
-salesguru-cron:latest node_modules/.bin/tsx"
+salesguru-cron:latest sh -c 'set -a && . /app/.env && set +a && exec node_modules/.bin/tsx'"
 
 if crontab -l 2>/dev/null | grep -qF "$MARK_BEGIN"; then
   echo "[install] removing previous managed block"
@@ -74,7 +74,7 @@ $MARK_BEGIN
 # Hourly GC cookie probe — refreshes ONLY when age > 5d OR probe fails.
 # Uses Playwright image because refresh-gc-cookie.ts logs into web UI.
 # Credentials inherited from $REPO/.env via --env-file (NOT hardcoded).
-0 * * * * docker run --rm --network smart-analyze_default -v $REPO:/app -w /app -v $LOG_DIR:$LOG_DIR --env-file $REPO/.env mcr.microsoft.com/playwright:v1.59.1-jammy sh -c 'set -a && . /app/.env && set +a && ./node_modules/.bin/tsx scripts/cron-gc-cookie-check.ts' >> $LOG_DIR/gc-cookie.log 2>&1
+0 * * * * docker run --rm --network smart-analyze_default -v $REPO:/app -w /app -v $LOG_DIR:$LOG_DIR mcr.microsoft.com/playwright:v1.59.1-jammy sh -c 'set -a && . /app/.env && set +a && ./node_modules/.bin/tsx scripts/cron-gc-cookie-check.ts' >> $LOG_DIR/gc-cookie.log 2>&1
 $MARK_END
 EOF
 )
@@ -103,9 +103,8 @@ Environment=REPO_ROOT=/root/smart-analyze
 ExecStart=/usr/bin/docker run --rm --name whisper-worker-%i --network smart-analyze_default \
   -v /root/smart-analyze:/app -w /app \
   -v /var/log/smart-analyze:/var/log/smart-analyze \
-  --env-file /root/smart-analyze/.env \
   -e USE_DIRECT_DB=1 -e REPO_ROOT=/app \
-  salesguru-cron:latest node_modules/.bin/tsx scripts/whisper-worker.ts %i
+  salesguru-cron:latest sh -c "set -a && . /app/.env && set +a && exec node_modules/.bin/tsx scripts/whisper-worker.ts %i"
 ExecStop=/usr/bin/docker stop -t 60 whisper-worker-%i
 Restart=always
 RestartSec=30

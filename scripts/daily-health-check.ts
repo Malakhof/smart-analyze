@@ -158,7 +158,9 @@ async function main() {
        VALUES (gen_random_uuid()::text, $1, $2, $3, $4::jsonb)`,
       t.id, r.ok, r.summary, JSON.stringify(r.details),
     )
-    if (!r.ok) await alertTenant(db, t.id, r.summary)
+    // Always send the daily summary so the operator sees the daily heartbeat —
+    // not just on red. Silence = uncertainty (was the cron killed?).
+    await alertTenant(db, t.id, r.summary)
   }
 
   await db.$disconnect()

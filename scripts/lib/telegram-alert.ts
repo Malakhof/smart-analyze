@@ -26,6 +26,7 @@ export async function alertTenant(
   // 1. Try per-tenant config first (raw query — TelegramConfig may not be in
   //    Prisma client when models drift; safer than db.telegramConfig.findUnique).
   let perTenantSent = false
+  let perTenantChatId: string | null = null
   try {
     const rows = await db.$queryRawUnsafe<TenantTelegramRow[]>(
       `SELECT "isActive", "botToken", "chatId" FROM "TelegramConfig"
@@ -36,16 +37,20 @@ export async function alertTenant(
     if (cfg?.isActive && cfg.botToken && cfg.chatId) {
       await sendTelegramMessage(cfg.botToken, cfg.chatId, text)
       perTenantSent = true
+      perTenantChatId = cfg.chatId
     }
   } catch (e) {
     console.warn(`[telegram-tenant-cfg-fail ${tenantId}] ${(e as Error).message}`)
   }
 
   // 2. ALWAYS also send to admin (env-based) — operator wants visibility on
-  //    every tenant alert. Skips silently when env vars absent.
+  //    every tenant alert. Skips silently when env vars absent OR when the
+  //    admin chat is identical to the tenant chat we just sent to (avoids
+  //    duplicate notification for solo-tenant setups like diva).
   const adminToken = process.env.TELEGRAM_BOT_TOKEN
   const adminChat = process.env.TELEGRAM_ADMIN_CHAT_ID
-  if (adminToken && adminChat) {
+  const adminEqualsTenant = perTenantChatId && adminChat === perTenantChatId
+  if (adminToken && adminChat && !adminEqualsTenant) {
     try {
       const tenantPrefix = perTenantSent ? `[also→admin tenant=${tenantId}] ` : `[tenant=${tenantId}] `
       await sendTelegramMessage(adminToken, adminChat, tenantPrefix + text)

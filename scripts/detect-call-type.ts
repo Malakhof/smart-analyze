@@ -51,6 +51,9 @@ const TENANTS = (parseArg("tenants") || "diva-school,vastu")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean)
+// --uuids=u1,u2,...  When set, only these CallRecord.pbxUuid rows are
+// classified — overrides --limit. Worker passes its just-transcribed batch.
+const UUIDS_ARG = parseArg("uuids")
 
 // --- Load .env (lightweight, no dependency) ---------------------------------
 
@@ -155,8 +158,13 @@ interface CallRow {
   transcript: string
 }
 
-async function fetchCalls(limit: number, tenants: string[]): Promise<CallRow[]> {
+async function fetchCalls(limit: number, tenants: string[], uuids: string[] | null): Promise<CallRow[]> {
   const tenantList = tenants.map((t) => `'${t.replace(/'/g, "''")}'`).join(",")
+  // --uuids: exact pbxUuid set, ignore --limit (worker controls scope).
+  const uuidClause = uuids && uuids.length > 0
+    ? `AND cr."pbxUuid" IN (${uuids.map((u) => `'${u.replace(/'/g, "''")}'`).join(",")})`
+    : `AND cr."callType" IS NULL`
+  const limitClause = uuids && uuids.length > 0 ? "" : `LIMIT ${Number(limit)}`
   const sql = `
     SELECT cr.id,
            tn.name AS tenant_name,
@@ -166,9 +174,9 @@ async function fetchCalls(limit: number, tenants: string[]): Promise<CallRow[]> 
     JOIN "Tenant" tn ON tn.id = cr."tenantId"
     WHERE cr.transcript IS NOT NULL
       AND tn.name IN (${tenantList})
-      AND cr."callType" IS NULL
+      ${uuidClause}
     ORDER BY cr."createdAt" DESC
-    LIMIT ${Number(limit)}
+    ${limitClause}
   `
   if (shouldUseDirectDb()) {
     return await runSqlDirect<CallRow[]>(sql)
@@ -362,10 +370,11 @@ async function main() {
     }
   }
 
-  console.error(`[fetch] querying prod DB for up to ${LIMIT} calls (mode=${shouldUseDirectDb() ? "direct-prisma" : "ssh-psql"})...`)
+  const uuids = UUIDS_ARG ? UUIDS_ARG.split(",").map((s) => s.trim()).filter(Boolean) : null
+  console.error(`[fetch] mode=${shouldUseDirectDb() ? "direct-prisma" : "ssh-psql"} ${uuids ? `uuids=${uuids.length}` : `limit=${LIMIT}`}`)
   let rows: CallRow[]
   try {
-    rows = await fetchCalls(LIMIT, TENANTS)
+    rows = await fetchCalls(LIMIT, TENANTS, uuids)
   } catch (e) {
     console.error(`[fatal] DB fetch failed: ${(e as Error).message}`)
     process.exit(3)

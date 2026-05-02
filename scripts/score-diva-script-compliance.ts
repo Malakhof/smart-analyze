@@ -39,11 +39,11 @@ function parseArgs() {
     writeBack: false,
     rescore: false,
     tenant: "diva-school",
-    // Default to repo-relative path so the script works on any host (Mac, prod
-    // docker, CI). Override with --script=PATH or env DIVA_SALES_SCRIPT_PATH.
     scriptPath: process.env.DIVA_SALES_SCRIPT_PATH
       ?? path.resolve(process.cwd(), "docs/demo/2026-04-22-diva-sales-script.md"),
     concurrency: 3,
+    // --uuids=u1,u2,...  Worker passes its just-transcribed batch.
+    uuids: null as string[] | null,
   }
   for (const a of args) {
     if (a.startsWith("--limit=")) out.limit = Number(a.slice("--limit=".length))
@@ -51,11 +51,12 @@ function parseArgs() {
     else if (a === "--rescore") out.rescore = true
     else if (a.startsWith("--tenant=")) out.tenant = a.slice("--tenant=".length)
     else if (a.startsWith("--script=")) out.scriptPath = a.slice("--script=".length)
+    else if (a.startsWith("--uuids=")) out.uuids = a.slice("--uuids=".length).split(",").map((s) => s.trim()).filter(Boolean)
     else if (a.startsWith("--concurrency="))
       out.concurrency = Math.max(1, Number(a.slice("--concurrency=".length)))
     else if (a === "--help" || a === "-h") {
       console.log(
-        "Usage: score-diva-script-compliance.ts [--limit=N] [--write-back] [--rescore] [--tenant=NAME] [--script=PATH] [--concurrency=N]",
+        "Usage: score-diva-script-compliance.ts [--limit=N] [--write-back] [--rescore] [--tenant=NAME] [--script=PATH] [--concurrency=N] [--uuids=u1,u2,...]",
       )
       process.exit(0)
     }
@@ -277,17 +278,30 @@ async function main() {
     alreadyScoredIds = new Set(rows.map((r) => r.id))
   }
 
-  const candidates = await db.callRecord.findMany({
-    where: {
-      tenantId: tenant.id,
-      transcript: { not: null },
-      duration: { gt: 60 },
-      ...(alreadyScoredIds.size > 0 ? { id: { notIn: [...alreadyScoredIds] } } : {}),
-    },
-    select: { id: true, duration: true, transcript: true, managerId: true },
-    orderBy: { createdAt: "desc" },
-    take: ARGS.limit,
-  })
+  // --uuids: process EXACTLY these pbxUuid rows (worker batch). Otherwise
+  // legacy "newest unscored up to LIMIT" — only for ad-hoc CLI use.
+  const candidates = ARGS.uuids
+    ? await db.callRecord.findMany({
+        where: {
+          tenantId: tenant.id,
+          pbxUuid: { in: ARGS.uuids },
+          transcript: { not: null },
+          // Idempotency: skip already-scored unless --rescore.
+          ...(!ARGS.rescore && alreadyScoredIds.size > 0 ? { id: { notIn: [...alreadyScoredIds] } } : {}),
+        },
+        select: { id: true, duration: true, transcript: true, managerId: true },
+      })
+    : await db.callRecord.findMany({
+        where: {
+          tenantId: tenant.id,
+          transcript: { not: null },
+          duration: { gt: 60 },
+          ...(alreadyScoredIds.size > 0 ? { id: { notIn: [...alreadyScoredIds] } } : {}),
+        },
+        select: { id: true, duration: true, transcript: true, managerId: true },
+        orderBy: { createdAt: "desc" },
+        take: ARGS.limit,
+      })
 
   if (candidates.length === 0) {
     console.error(`No eligible calls for tenant ${ARGS.tenant}`)

@@ -45,6 +45,11 @@ const TENANT_ARG = getArg("tenant", "all")!
 const LIMIT = Number(getArg("limit", "10"))
 const WRITE_BACK = getArg("write-back") === "true"
 const OUT_PATH = getArg("out", "/tmp/tuning/repaired-transcripts.jsonl")!
+// --uuids=u1,u2,...  When set, EXACTLY these CallRecord.pbxUuid rows are
+// processed (no SELECT ... LIMIT 10 newest unscored guess). Worker passes
+// the batch it just transcribed — this is the only way to guarantee that
+// repair touches the rows we expect (canon-call-record-states).
+const UUIDS_ARG = getArg("uuids")
 
 // -------- Glossary --------
 type Glossary = {
@@ -237,15 +242,21 @@ async function main() {
       continue
     }
 
-    const calls = await db.callRecord.findMany({
-      where: {
-        tenantId: tenant.id,
-        transcript: { not: null },
-      },
-      orderBy: { createdAt: "desc" },
-      take: LIMIT,
-      select: { id: true, transcript: true },
-    })
+    // --uuids takes precedence: exactly these pbxUuid rows. Otherwise legacy
+    // behaviour (newest unrepaired transcripts up to LIMIT). The worker MUST
+    // use --uuids; legacy SELECT is left only for ad-hoc CLI runs.
+    const uuidList = UUIDS_ARG ? UUIDS_ARG.split(",").map((s) => s.trim()).filter(Boolean) : null
+    const calls = uuidList
+      ? await db.callRecord.findMany({
+          where: { tenantId: tenant.id, pbxUuid: { in: uuidList }, transcript: { not: null } },
+          select: { id: true, transcript: true, transcriptRepaired: true },
+        })
+      : await db.callRecord.findMany({
+          where: { tenantId: tenant.id, transcript: { not: null } },
+          orderBy: { createdAt: "desc" },
+          take: LIMIT,
+          select: { id: true, transcript: true, transcriptRepaired: true },
+        })
 
     console.log(
       `\n=== ${tenantName} (tenantId=${tenant.id}) — picked ${calls.length} call(s) ===`,
@@ -254,6 +265,10 @@ async function main() {
     for (const call of calls) {
       const original = (call.transcript ?? "").trim()
       if (!original) continue
+      // Idempotency: skip rows that already have a non-suspicious repaired
+      // transcript. Worker may re-call this on retry — we don't want to
+      // re-pay DeepSeek + re-roll the dice on suspicious=true filter.
+      if (call.transcriptRepaired && call.transcriptRepaired.length > 5) continue
 
       const prompt = buildPrompt(cfg.display, cfg.glossary, original)
       let repaired = ""

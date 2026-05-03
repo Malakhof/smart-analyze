@@ -62,6 +62,84 @@ export interface CallDetail {
   stageName: string | null
   currentStageCrmId: string | null
   subdomain: string | null
+  // Computed talk metrics (Task 37)
+  talkRatio: number | null
+  longestMonologSec: number | null
+  interactivityScore: number | null
+}
+
+/**
+ * Compute talk metrics from a speaker-labeled transcript.
+ *
+ * Production format (diva): `[МЕНЕДЖЕР HH:MM] текст` / `[КЛИЕНТ HH:MM] текст`.
+ * Also accepts spec aliases: `[МОП]`, `[Manager]`, `[Client]`, and `Manager:`,
+ * `Client:` prefixes. Lines tagged `[ОПЕРАТОР …]` (IVR voicemail) are excluded.
+ *
+ * Some transcripts come with literal `\n` escapes instead of real newlines —
+ * we split on both real and escaped newlines.
+ *
+ * Returns:
+ *   talkRatio          — 0..1, manager chars / (manager + client chars)
+ *   longestMonologSec  — longest contiguous run of same speaker, ~15 chars/sec
+ *   interactivityScore — exchanges (lines) per minute of speech
+ */
+export function computeTalkMetrics(transcript: string | null): {
+  talkRatio: number | null
+  longestMonologSec: number | null
+  interactivityScore: number | null
+} {
+  if (!transcript) {
+    return { talkRatio: null, longestMonologSec: null, interactivityScore: null }
+  }
+  const normalized = transcript.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n")
+  const lines = normalized.split(/\n+/).map((l) => l.trim()).filter(Boolean)
+  let mopChars = 0
+  let clientChars = 0
+  const monologRuns: number[] = []
+  let currentRun = 0
+  let lastSpeaker: "mop" | "client" | null = null
+  let speakerLineCount = 0
+  for (const line of lines) {
+    const isMop =
+      /^\[(?:МОП|МЕНЕДЖЕР|MANAGER)(?:\s[^\]]*)?\]/i.test(line) ||
+      /^(?:МОП|МЕНЕДЖЕР|MANAGER):/i.test(line)
+    const isClient =
+      /^\[(?:КЛИЕНТ|CLIENT)(?:\s[^\]]*)?\]/i.test(line) ||
+      /^(?:КЛИЕНТ|CLIENT):/i.test(line)
+    const speaker: "mop" | "client" | null = isMop ? "mop" : isClient ? "client" : null
+    if (speaker === null) {
+      // Skip IVR/operator/unlabeled lines — they don't count toward either side.
+      continue
+    }
+    speakerLineCount++
+    const cleaned = line
+      .replace(/^\[(?:МОП|МЕНЕДЖЕР|MANAGER|КЛИЕНТ|CLIENT)(?:\s[^\]]*)?\]:?\s*/i, "")
+      .replace(/^(?:МОП|МЕНЕДЖЕР|MANAGER|КЛИЕНТ|CLIENT):\s*/i, "")
+      .trim()
+    if (speaker === "mop") mopChars += cleaned.length
+    else clientChars += cleaned.length
+    if (speaker === lastSpeaker) {
+      currentRun += cleaned.length
+    } else {
+      if (lastSpeaker !== null) monologRuns.push(currentRun)
+      currentRun = cleaned.length
+      lastSpeaker = speaker
+    }
+  }
+  if (lastSpeaker !== null) monologRuns.push(currentRun)
+
+  const totalChars = mopChars + clientChars
+  if (totalChars === 0 || speakerLineCount === 0) {
+    return { talkRatio: null, longestMonologSec: null, interactivityScore: null }
+  }
+  const talkRatio = mopChars / totalChars
+  // Approx speaking pace: 15 chars/sec.
+  const longestMonologSec =
+    monologRuns.length > 0 ? Math.round(Math.max(...monologRuns) / 15) : null
+  const totalMinutes = totalChars / 15 / 60
+  const interactivityScore =
+    totalMinutes > 0 && speakerLineCount > 1 ? speakerLineCount / totalMinutes : null
+  return { talkRatio, longestMonologSec, interactivityScore }
 }
 
 export async function getCallDetailByPbxUuid(
@@ -149,6 +227,9 @@ export async function getCallDetailByPbxUuid(
     stageName,
     currentStageCrmId: call.deal?.currentStageCrmId ?? null,
     subdomain: crmConfig?.subdomain ?? null,
+    ...computeTalkMetrics(
+      call.cleanedTranscript ?? call.transcriptRepaired ?? call.transcript
+    ),
   }
 }
 

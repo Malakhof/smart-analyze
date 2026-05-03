@@ -146,6 +146,7 @@ export function CallCard({ call, type }: Props) {
   return (
     <div className="space-y-6">
       <Header call={call} type={type} />
+      <CategoryHero call={call} type={type} />
       <Player call={call} />
       <TypeSpecificContent call={call} type={type} />
     </div>
@@ -300,6 +301,27 @@ function TypeBadge({ type }: { type: CallType }) {
     <span className={`inline-block rounded px-2 py-0.5 text-[11px] ${s.bg} ${s.fg}`}>
       {s.label}
     </span>
+  )
+}
+
+function CategoryHero({ call, type }: { call: CallDetail; type: CallType }) {
+  const messages: Record<CallType, string> = {
+    NO_SPEECH: "🤐 Whisper не нашёл речь — звонок не оценивается. При сомнении послушать вручную.",
+    VOICEMAIL_IVR: "🎙 Автоответчик/IVR — НДЗ. Контролируй частоту повторных попыток.",
+    HUNG_UP: "☎️ Клиент сбросил/не ответил. НДЗ. Если повторяется в одно время — оптимизируй расписание.",
+    TECHNICAL_ISSUE: "🚨 Тех. сбой — алерт тех. отделу. Не оценка МОПа. >3/неделя — гарнитура.",
+    SHORT_RESCHEDULE: call.nextStepRecommendation
+      ? "🕐 Короткий перенос. Callback назначен."
+      : "🕐 Короткий перенос. Callback не назначен — проверь.",
+    NORMAL: call.managerWeakSpot
+      ? `Главный инсайт: ${call.managerWeakSpot}`
+      : (call.outcome ?? "Полный AI-разбор ниже."),
+    PIPELINE_GAP: "🛠 Pipeline gap: транскрипт/аудио ещё не получены. Это инфра, не МОП.",
+  }
+  return (
+    <div className="rounded-md border border-border-default bg-surface-2 p-3 text-sm text-text-secondary">
+      {messages[type]}
+    </div>
   )
 }
 

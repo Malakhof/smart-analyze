@@ -548,6 +548,78 @@ export async function getDepartmentAvgScriptScore(
   return result._avg.scriptScorePct
 }
 
+/**
+ * Hero metrics — single-row aggregate for the above-the-fold compact card.
+ * Exposes 5 «at-a-glance» numbers (Q5 Option C):
+ *   - totalCalls (ANY callRecord with startStamp in period)
+ *   - realConvCount (callOutcome = real_conversation)
+ *   - avgScript (0..1; same filters as getDepartmentAvgScriptScore — real_conv ≥ 60s)
+ *   - redZoneManagers (count of managers whose avg pct < 0.5)
+ *   - won (Deal.status=WON, closedAt in period)
+ *
+ * Uses startStamp instead of createdAt for call-level filters (matches «когда
+ * звонок реально состоялся», consistent with getCallHeatmap). Deal.WON uses
+ * closedAt (matches getWonDealsCountForPeriod semantics).
+ */
+export async function getDashboardHeroMetrics(
+  tenantId: string,
+  period: GcPeriod
+): Promise<{
+  totalCalls: number
+  realConvCount: number
+  avgScript: number
+  redZoneManagers: number
+  won: number
+}> {
+  const since = gcPeriodToCutoff(period)
+  const [totalCalls, realConvCount, avgScript, won, redZoneManagers] =
+    await Promise.all([
+      db.callRecord.count({
+        where: { tenantId, startStamp: { gte: since } },
+      }),
+      db.callRecord.count({
+        where: {
+          tenantId,
+          callOutcome: "real_conversation",
+          startStamp: { gte: since },
+        },
+      }),
+      db.callRecord
+        .aggregate({
+          where: {
+            tenantId,
+            callOutcome: "real_conversation",
+            duration: { gte: 60 },
+            startStamp: { gte: since },
+            scriptScorePct: { not: null },
+          },
+          _avg: { scriptScorePct: true },
+        })
+        .then((r) => r._avg.scriptScorePct ?? 0),
+      db.deal.count({
+        where: { tenantId, status: "WON", closedAt: { gte: since } },
+      }),
+      db.callRecord
+        .groupBy({
+          by: ["managerId"],
+          where: {
+            tenantId,
+            callOutcome: "real_conversation",
+            duration: { gte: 60 },
+            startStamp: { gte: since },
+            scriptScorePct: { not: null },
+            managerId: { not: null },
+          },
+          _avg: { scriptScorePct: true },
+        })
+        .then(
+          (rows) =>
+            rows.filter((r) => (r._avg.scriptScorePct ?? 0) < 0.5).length
+        ),
+    ])
+  return { totalCalls, realConvCount, avgScript, redZoneManagers, won }
+}
+
 export async function getPipelineGapPct(
   tenantId: string,
   period: GcPeriod

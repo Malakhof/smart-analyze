@@ -120,22 +120,37 @@ export function DashboardRop(props: Props) {
   } = props
 
   return (
-    <div className="space-y-6">
-      <Block1DailyActivity rows={daily} />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Block2QualityScore rows={daily} />
-        <Block4MissingPhrases rows={missingPhrases} />
-      </div>
-      <Block3WorstCalls calls={worstCalls} />
-      <Block4bDepartmentPatterns
-        weakSpots={topWeakSpots}
-        criticalErrors={topCriticalErrors}
-      />
-      <Block5UnfulfilledCommitments items={unfulfilledCommitments} />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Block6Heatmap cells={heatmap} />
-        <Block7FunnelStages stages={funnelStages} />
-      </div>
+    <div className="space-y-8">
+      <section className="space-y-6">
+        <h2 className="mb-3 bg-[linear-gradient(135deg,_var(--ai-1),_var(--ai-2))] bg-clip-text text-lg font-semibold text-transparent">
+          Сегодня — кто работает
+        </h2>
+        <Block1DailyActivity rows={daily} />
+      </section>
+      <section className="space-y-6">
+        <h2 className="mb-3 bg-[linear-gradient(135deg,_var(--ai-1),_var(--ai-2))] bg-clip-text text-lg font-semibold text-transparent">
+          Качество отдела
+        </h2>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Block2QualityScore rows={daily} />
+          <Block4MissingPhrases rows={missingPhrases} />
+        </div>
+        <Block3WorstCalls calls={worstCalls} />
+        <Block4bDepartmentPatterns
+          weakSpots={topWeakSpots}
+          criticalErrors={topCriticalErrors}
+        />
+        <Block5UnfulfilledCommitments items={unfulfilledCommitments} />
+      </section>
+      <section className="space-y-6">
+        <h2 className="mb-3 bg-[linear-gradient(135deg,_var(--ai-1),_var(--ai-2))] bg-clip-text text-lg font-semibold text-transparent">
+          Тренды и контекст
+        </h2>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Block6Heatmap cells={heatmap} />
+          <Block7FunnelStages stages={funnelStages} />
+        </div>
+      </section>
       <FooterStatus
         lastSync={lastSync}
         pipelineGap={pipelineGap}

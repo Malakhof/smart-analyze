@@ -98,6 +98,13 @@ interface Props {
   }
   wonCount: number
   avgScriptScore: number | null
+  hero: {
+    totalCalls: number
+    realConvCount: number
+    avgScript: number
+    redZoneManagers: number
+    won: number
+  }
 }
 
 export function DashboardRop(props: Props) {
@@ -114,10 +121,12 @@ export function DashboardRop(props: Props) {
     pipelineGap,
     wonCount,
     avgScriptScore,
+    hero,
   } = props
 
   return (
     <div className="space-y-8">
+      <HeroCard hero={hero} />
       <section className="space-y-6">
         <h2 className="mb-3 bg-[linear-gradient(135deg,_var(--ai-1),_var(--ai-2))] bg-clip-text text-lg font-semibold text-transparent">
           Сегодня — кто работает
@@ -154,6 +163,49 @@ export function DashboardRop(props: Props) {
         wonCount={wonCount}
         avgScriptScore={avgScriptScore}
       />
+    </div>
+  )
+}
+
+// ─── Hero ───────────────────────────────────────────────────────────────────
+
+/**
+ * Compact above-the-fold summary (Q5 Option C). 5 stats — duplicates info
+ * already shown in FooterStatus chips (WON, avg script). That's intentional:
+ * Hero is at-a-glance on first paint; footer is sticky-while-scrolling.
+ */
+function HeroCard({
+  hero,
+}: {
+  hero: {
+    totalCalls: number
+    realConvCount: number
+    avgScript: number
+    redZoneManagers: number
+    won: number
+  }
+}) {
+  return (
+    <Card className="mb-4">
+      <CardContent className="grid grid-cols-2 gap-3 py-3 sm:grid-cols-5">
+        <Stat label="Наборов" value={hero.totalCalls} />
+        <Stat label="Разговоров" value={hero.realConvCount} />
+        <Stat
+          label="Средний скрипт"
+          value={`${Math.round(hero.avgScript * 100)}%`}
+        />
+        <Stat label="МОПов в красной зоне" value={hero.redZoneManagers} />
+        <Stat label="WON" value={hero.won} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <div className="text-xs text-text-tertiary">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
     </div>
   )
 }

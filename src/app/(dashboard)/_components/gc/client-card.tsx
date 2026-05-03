@@ -77,6 +77,14 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
   // route to navigate inside our app.
   const phoneTail = detail.clientPhone ? `***${detail.clientPhone.slice(-4)}` : "—"
 
+  // Stage column carries no signal when most calls precede the deal
+  // (cold-prospecting funnel) — hide it instead of rendering a column of «—».
+  const nullDealRatio =
+    detail.calls.length > 0
+      ? detail.calls.filter((c) => !c.dealId).length / detail.calls.length
+      : 0
+  const showStageCol = nullDealRatio < 0.5
+
   return (
     <div className="space-y-6">
       <div>
@@ -185,7 +193,7 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
                 <TableHead>callType</TableHead>
                 <TableHead className="text-right">Script score</TableHead>
                 <TableHead>Outcome</TableHead>
-                <TableHead>Этап сделки</TableHead>
+                {showStageCol && <TableHead>Этап сделки</TableHead>}
                 <TableHead className="text-right">dealId</TableHead>
               </TableRow>
             </TableHeader>
@@ -233,9 +241,11 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
                     <TableCell className="text-text-secondary">
                       {c.outcome ?? c.callOutcome ?? "—"}
                     </TableCell>
-                    <TableCell className="text-[12px] text-text-secondary">
-                      {stageLabel}
-                    </TableCell>
+                    {showStageCol && (
+                      <TableCell className="text-[12px] text-text-secondary">
+                        {stageLabel}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right">
                       {c.dealCrmId ? (
                         <span className="inline-block rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[10px] text-text-tertiary">

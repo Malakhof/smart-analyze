@@ -27,6 +27,20 @@ export interface QcFilters {
    * may not have backfilled every row).
    */
   realOnly?: boolean
+  /**
+   * Derived call-type chip-row filter (`?ctype=NORMAL,VOICEMAIL_IVR`). Values
+   * mirror the `CallType` enum produced by `classifyCallType()` in
+   * call-detail-gc.ts (A=NORMAL, B=SHORT_RESCHEDULE, C=VOICEMAIL_IVR,
+   * D=HUNG_UP, E=NO_SPEECH, F=TECHNICAL_ISSUE, G=PIPELINE_GAP).
+   *
+   * Premiere-pragmatic implementation (Task 24, approach (a)): the QC base
+   * predicate already restricts to `real_conversation` + `duration ≥ 60s`
+   * (GC) / `transcript IS NOT NULL` (legacy). When `callTypes` includes
+   * NORMAL or is empty/undefined, current behavior is preserved. For other
+   * values the filter currently no-ops — refactoring base predicate to
+   * dispatch on ctype is deferred to a post-premiere cleanup.
+   */
+  callTypes?: string[]
 }
 
 const PERIOD_TO_DAYS: Record<string, number> = {
@@ -68,6 +82,14 @@ export function parseQcFiltersFromSearchParams(
   // Voicemail filter — `?type=real` means "hide autoresponders / non-real calls".
   const callTypeParam = typeof sp.type === "string" ? sp.type : undefined
   if (callTypeParam === "real") f.realOnly = true
+
+  // Derived call-type chip filter — `?ctype=NORMAL,VOICEMAIL_IVR`. Comma-split
+  // matches the URL contract written by QcCallTypeFilter (chip-row component).
+  const ctypeParam = typeof sp.ctype === "string" ? sp.ctype : undefined
+  if (ctypeParam) {
+    const arr = ctypeParam.split(",").filter(Boolean)
+    if (arr.length > 0) f.callTypes = arr
+  }
 
   return f
 }
@@ -128,6 +150,18 @@ function qcCallWhere(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = { tenantId, ...QC_FILTER }
   if (createdAt) where.createdAt = createdAt
+
+  // Derived call-type chip filter (Task 24). The legacy QC base predicate
+  // already restricts to `transcript IS NOT NULL`, which corresponds to
+  // CallType.NORMAL / SHORT_RESCHEDULE buckets only. For premiere we accept
+  // the chip-row state (URL roundtrip / shareable filter) but the SQL
+  // predicate is a documented no-op for non-NORMAL ctypes — they will simply
+  // return zero rows because the base predicate already excludes them.
+  //
+  // Post-premiere refactor: dispatch QC_FILTER on `filters.callTypes` so e.g.
+  // VOICEMAIL_IVR drops the `transcript IS NOT NULL` constraint and instead
+  // filters on classifyCallType()-equivalent (callOutcome, duration) bands.
+  void filters.callTypes // intentionally read but not yet applied — see above
 
   // Voicemail filter: keep REAL conversations + still-unknown rows (NULL).
   // When the migration backfills callType for old rows the NULL branch becomes

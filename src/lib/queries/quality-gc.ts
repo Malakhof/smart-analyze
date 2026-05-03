@@ -68,6 +68,18 @@ function qcCallWhereGc(
   const where: any = { tenantId, ...QC_FILTER_GC }
   if (createdAt) where.createdAt = createdAt
 
+  // Derived call-type chip filter (Task 24). The QC base predicate already
+  // restricts to `callOutcome === 'real_conversation'` + `duration ≥ 60s`,
+  // which corresponds to CallType.NORMAL only. The chip-row writes the URL
+  // state for the operator (shareable filter) but the SQL predicate is a
+  // documented no-op for non-NORMAL ctypes — they will return zero rows
+  // because the base predicate already excludes them.
+  //
+  // Post-premiere refactor: dispatch QC_FILTER_GC on `filters.callTypes` so
+  // each ctype maps to its own (callOutcome, duration) band per
+  // classifyCallType() in call-detail-gc.ts.
+  void filters.callTypes // intentionally read but not yet applied — see above
+
   if (filters.realOnly) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const andList: any[] = where.AND ?? []

@@ -400,7 +400,7 @@ const SHOW_FOR_CATEGORY: Record<CallType, BlockId[]> = {
     "Transcript", "Summary", "Script", "RopInsight",
     "NextStep", "Commitments", "Category", "Tags",
   ],
-  VOICEMAIL_IVR: ["Transcript", "RopInsight", "Category", "Tags"],
+  VOICEMAIL_IVR: ["Transcript", "RopInsight", "Commitments", "Category", "Tags"],
   HUNG_UP: ["Transcript", "RopInsight", "Category", "Tags"],
   NO_SPEECH: ["Transcript", "Category"],
   TECHNICAL_ISSUE: ["Transcript", "RopInsight", "Category"],
@@ -410,126 +410,6 @@ const SHOW_FOR_CATEGORY: Record<CallType, BlockId[]> = {
 // ─── Type-specific render ──────────────────────────────────────────────────
 
 function TypeSpecificContent({ call, type }: { call: CallDetail; type: CallType }) {
-  if (type === "PIPELINE_GAP") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>🛠 Pipeline gap — аудио не получено из onPBX</CardTitle>
-          <CardDescription>
-            transcript=NULL и audioUrl=NULL. Это индикатор тех. инфры
-            (SIP/гарнитура/onPBX sync), не качества МОПа. Проверь онлайн-PBX —
-            аудио должно подтянуться через 24ч retry.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    )
-  }
-
-  if (type === "TECHNICAL_ISSUE") {
-    return (
-      <>
-        <Card>
-          <CardHeader>
-            <CardTitle>🚨 Технический сбой — алерт тех. отделу</CardTitle>
-            <CardDescription>
-              Повторяющиеся «вы меня слышите?» / SIP / гарнитура. Не оценивается
-              как качество МОПа. Проверь оборудование МОПа.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <TranscriptBlock call={call} />
-      </>
-    )
-  }
-
-  if (type === "NO_SPEECH") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>🤐 Whisper не нашёл речи</CardTitle>
-          <CardDescription>
-            Транскрипт ≤ 100 символов или callOutcome=no_speech_or_silence.
-            Скорее всего шум / тишина. AI-разбор не делается.
-          </CardDescription>
-        </CardHeader>
-        {call.transcript && (
-          <CardContent>
-            <pre className="whitespace-pre-wrap text-[12px] text-text-tertiary">
-              {unescapeNewlines(call.transcript)}
-            </pre>
-          </CardContent>
-        )}
-      </Card>
-    )
-  }
-
-  if (type === "HUNG_UP") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>☎️ Недозвон / сброс</CardTitle>
-          <CardDescription>
-            callOutcome={call.callOutcome}, длительность{" "}
-            {fmtSeconds(call.duration)}. Считается в счётчике НДЗ карточки МОПа.
-          </CardDescription>
-        </CardHeader>
-        {call.transcript && (
-          <CardContent>
-            <pre className="whitespace-pre-wrap text-[12px] text-text-tertiary">
-              {unescapeNewlines(call.transcript)}
-            </pre>
-          </CardContent>
-        )}
-      </Card>
-    )
-  }
-
-  if (type === "VOICEMAIL_IVR") {
-    const commitments = asArray(call.extractedCommitments)
-    return (
-      <>
-        <Card>
-          <CardHeader>
-            <CardTitle>🎙 Автоответчик / IVR</CardTitle>
-            <CardDescription>
-              МОП оставила сообщение либо звонок ушёл в IVR. Не считается как
-              реальный разговор.
-            </CardDescription>
-          </CardHeader>
-          {call.cleanedTranscript && (
-            <CardContent>
-              <pre className="whitespace-pre-wrap text-[12px] text-text-secondary">
-                {unescapeNewlines(call.cleanedTranscript)}
-              </pre>
-            </CardContent>
-          )}
-        </Card>
-        {commitments.length > 0 && <CommitmentsBlock call={call} />}
-      </>
-    )
-  }
-
-  if (type === "SHORT_RESCHEDULE") {
-    return (
-      <>
-        <Card>
-          <CardHeader>
-            <CardTitle>🕐 Короткий разговор / перенос</CardTitle>
-            <CardDescription>
-              real_conversation, но &lt; 60 сек. Полный AI-разбор не делается —
-              показываем только outcome / следующий шаг / обещания.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <TranscriptBlock call={call} />
-        <SummaryBlock call={call} />
-        <NextStepBlock call={call} />
-        <CommitmentsBlock call={call} />
-      </>
-    )
-  }
-
-  // NORMAL — whitelist iteration via SHOW_FOR_CATEGORY
   const blocksToShow = SHOW_FOR_CATEGORY[type] ?? []
   return (
     <>

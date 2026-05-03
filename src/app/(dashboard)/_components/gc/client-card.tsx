@@ -330,22 +330,37 @@ function CallsTimeline({
   calls: ClientCallRow[]
   stageOrderList: string[]
 }) {
-  const orderIdx = (name: string | null) => {
-    if (!name) return stageOrderList.length
-    const i = stageOrderList.indexOf(name)
-    return i === -1 ? stageOrderList.length : i
+  // Graceful degradation: if every call has NULL dealId, the timeline carries
+  // no signal — let the existing flat list + Task 27 banner handle it.
+  const callsWithDeal = calls.filter((c) => c.dealId)
+  const callsNoDeal = calls.filter((c) => !c.dealId)
+  const allNoDeal = callsWithDeal.length === 0 && callsNoDeal.length > 0
+  if (allNoDeal) return null
+
+  // Mixed case — append a "Без сделки" band at the bottom for null-stage calls.
+  const hasNoDealCalls = callsNoDeal.length > 0
+  const effectiveStageList = hasNoDealCalls
+    ? [...stageOrderList, "Без сделки"]
+    : stageOrderList
+  const noDealRowIdx = effectiveStageList.indexOf("Без сделки")
+
+  const orderIdx = (call: ClientCallRow) => {
+    if (!call.dealId && hasNoDealCalls) return noDealRowIdx
+    if (!call.stageName) return effectiveStageList.length
+    const i = effectiveStageList.indexOf(call.stageName)
+    return i === -1 ? effectiveStageList.length : i
   }
 
   const data = calls
     .filter((c) => c.startStamp)
     .map((c) => ({
       x: c.startStamp!.getTime(),
-      y: orderIdx(c.stageName),
+      y: orderIdx(c),
       size: Math.sqrt((c.talkDuration ?? 30) + 1) * 4,
       outcome: c.outcome,
       callOutcome: c.callOutcome,
       managerName: c.managerName,
-      stageName: c.stageName ?? "Без сделки",
+      stageName: c.dealId ? c.stageName ?? "—" : "Без сделки",
       pbxUuid: c.pbxUuid,
     }))
 
@@ -365,7 +380,7 @@ function CallsTimeline({
   return (
     <ResponsiveContainer
       width="100%"
-      height={Math.max(200, stageOrderList.length * 30 + 100)}
+      height={Math.max(200, effectiveStageList.length * 30 + 100)}
     >
       <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 100 }}>
         {clusterRows.map((y) => (
@@ -391,9 +406,9 @@ function CallsTimeline({
         <YAxis
           dataKey="y"
           type="number"
-          domain={[-0.5, stageOrderList.length + 0.5]}
-          ticks={stageOrderList.map((_, i) => i)}
-          tickFormatter={(i: number) => stageOrderList[i] ?? "—"}
+          domain={[-0.5, effectiveStageList.length - 0.5]}
+          ticks={effectiveStageList.map((_, i) => i)}
+          tickFormatter={(i: number) => effectiveStageList[i] ?? "—"}
           width={100}
         />
         <ZAxis dataKey="size" range={[20, 200]} />

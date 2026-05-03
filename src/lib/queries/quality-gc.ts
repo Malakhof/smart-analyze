@@ -411,6 +411,10 @@ export async function getQcGraphDataGc(
   _mode: QcQueryMode = "all",
   _filters: QcFilters = {}
 ): Promise<QcGraphData> {
+  // Silence no-unused-vars while keeping the legacy `(tenantId, mode, filters)`
+  // signature stable for the call-site switch in page.tsx.
+  void _mode
+  void _filters
   return {
     complianceByStep: [],
     scoreDistribution: Array.from({ length: 10 }, (_, i) => ({

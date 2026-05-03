@@ -11,7 +11,12 @@ import {
   getQcCallTypeCounts,
   parseQcFiltersFromSearchParams,
 } from "@/lib/queries/quality"
-import { getTenantMode } from "@/lib/queries/active-window"
+import {
+  getQualityDashboardGc,
+  getQcChartDataGc,
+  getQcGraphDataGc,
+} from "@/lib/queries/quality-gc"
+import { getCrmProvider, getTenantMode } from "@/lib/queries/active-window"
 import { QcSummary } from "./_components/qc-summary"
 import { QcDonutCharts } from "./_components/qc-donut-charts"
 import { QcComplianceChart } from "./_components/qc-compliance-chart"
@@ -29,13 +34,25 @@ export default async function QualityPage(props: {
   const sp = await props.searchParams
   const tenantId = await requireTenantId()
   const mode = await getTenantMode(tenantId)
+  const provider = await getCrmProvider(tenantId)
   const qcFilters = parseQcFiltersFromSearchParams(sp)
+  // GETCOURSE tenants run on diva's flat-CallRecord schema (no CallScore
+  // relations) so the three dashboard/chart/graph queries route through
+  // quality-gc. The remaining three (filter options, recent calls enhanced,
+  // call-type counts) read CallRecord-only fields and work for both
+  // providers — keep the legacy implementation.
   const [dashboard, filters, charts, graphs, recent, callTypeCounts] =
     await Promise.all([
-      getQualityDashboard(tenantId, mode, qcFilters),
+      provider === "GETCOURSE"
+        ? getQualityDashboardGc(tenantId, mode, qcFilters)
+        : getQualityDashboard(tenantId, mode, qcFilters),
       getQcFilterOptions(tenantId),
-      getQcChartData(tenantId, mode, qcFilters),
-      getQcGraphData(tenantId, mode, qcFilters),
+      provider === "GETCOURSE"
+        ? getQcChartDataGc(tenantId, mode, qcFilters)
+        : getQcChartData(tenantId, mode, qcFilters),
+      provider === "GETCOURSE"
+        ? getQcGraphDataGc(tenantId, mode, qcFilters)
+        : getQcGraphData(tenantId, mode, qcFilters),
       getRecentCallsEnhanced(tenantId, 20, mode, qcFilters),
       getQcCallTypeCounts(tenantId, mode, qcFilters),
     ])

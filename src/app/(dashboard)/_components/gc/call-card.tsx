@@ -245,6 +245,8 @@ function Header({ call, type }: { call: CallDetail; type: CallType }) {
         </CardContent>
       </Card>
 
+      <StatsPanel call={call} />
+
       <div className="flex flex-wrap gap-2">
         {callLink && (
           <DeepLink href={callLink} icon="🎵" label="Карточка звонка в GC" />
@@ -255,6 +257,50 @@ function Header({ call, type }: { call: CallDetail; type: CallType }) {
         {dealLink && <DeepLink href={dealLink} icon="💼" label="Сделка в GC" />}
       </div>
     </div>
+  )
+}
+
+function StatsPanel({ call }: { call: CallDetail }) {
+  if (
+    call.talkRatio === null &&
+    call.longestMonologSec === null &&
+    call.interactivityScore === null
+  ) {
+    return null
+  }
+  return (
+    <Card>
+      <CardContent className="grid grid-cols-3 gap-3 py-2 text-sm">
+        <div>
+          <div className="text-xs text-text-tertiary">Talk ratio</div>
+          <div className="font-medium tabular-nums">
+            {call.talkRatio !== null
+              ? `${Math.round(call.talkRatio * 100)}%`
+              : "—"}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-text-tertiary">
+            Самый длинный монолог
+          </div>
+          <div className="font-medium tabular-nums">
+            {call.longestMonologSec !== null
+              ? `${Math.floor(call.longestMonologSec / 60)}:${String(
+                  call.longestMonologSec % 60
+                ).padStart(2, "0")}`
+              : "—"}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-text-tertiary">Интерактивность</div>
+          <div className="font-medium tabular-nums">
+            {call.interactivityScore !== null
+              ? `${call.interactivityScore.toFixed(1)} обм/мин`
+              : "—"}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

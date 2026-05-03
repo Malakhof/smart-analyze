@@ -25,22 +25,29 @@ export async function alertTenant(
 ): Promise<void> {
   // 1. Try per-tenant config first (raw query — TelegramConfig may not be in
   //    Prisma client when models drift; safer than db.telegramConfig.findUnique).
+  // Split DB lookup vs. Telegram send so the log identifies which one failed
+  // (previously a transient Telegram fetch error was logged as "cfg-fail").
   let perTenantSent = false
   let perTenantChatId: string | null = null
+  let cfg: TenantTelegramRow | undefined
   try {
     const rows = await db.$queryRawUnsafe<TenantTelegramRow[]>(
       `SELECT "isActive", "botToken", "chatId" FROM "TelegramConfig"
        WHERE "tenantId" = $1 LIMIT 1`,
       tenantId,
     )
-    const cfg = rows[0]
-    if (cfg?.isActive && cfg.botToken && cfg.chatId) {
+    cfg = rows[0]
+  } catch (e) {
+    console.warn(`[telegram-tenant-cfg-lookup-fail ${tenantId}] ${(e as Error).message}`)
+  }
+  if (cfg?.isActive && cfg.botToken && cfg.chatId) {
+    try {
       await sendTelegramMessage(cfg.botToken, cfg.chatId, text)
       perTenantSent = true
       perTenantChatId = cfg.chatId
+    } catch (e) {
+      console.warn(`[telegram-tenant-send-fail ${tenantId}] ${(e as Error).message}`)
     }
-  } catch (e) {
-    console.warn(`[telegram-tenant-cfg-fail ${tenantId}] ${(e as Error).message}`)
   }
 
   // 2. ALWAYS also send to admin (env-based) — operator wants visibility on

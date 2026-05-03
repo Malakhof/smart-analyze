@@ -17,6 +17,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { existsSync, readFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { alertTenant } from "./lib/telegram-alert"
+import { fetchBalances, formatBalances } from "./check-api-balances"
 
 interface TenantRow { id: string; name: string }
 
@@ -134,10 +135,16 @@ async function checkTenant(db: PrismaClient, t: TenantRow): Promise<{ ok: boolea
     if (ageHrs > 24 * 7) issues.push(`GC cookie age ${ageHrs.toFixed(0)}h > 7d`)
   }
 
+  // API balances — informational, never gate ok.
+  const bal = await fetchBalances().catch(() => ({ deepseekUsd: null, intelionRub: null, errors: ["fetch failed"] }))
+  details.deepseekUsd = bal.deepseekUsd
+  details.intelionRub = bal.intelionRub
+  const balStr = formatBalances(bal)
+
   const ok = issues.length === 0
   const summary = ok
-    ? `✅ ${t.name}: ${producerLines} producer ticks, ${claims} worker batches, recon ok, $${(details.gpuSpend24hUsd as number).toFixed(2)} GPU`
-    : `🚨 ${t.name}: ${issues.join(", ")}`
+    ? `✅ ${t.name}: ${producerLines} ticks, ${claims} batches, GPU $${(details.gpuSpend24hUsd as number).toFixed(2)}, ${balStr}`
+    : `🚨 ${t.name}: ${issues.join(", ")} | ${balStr}`
   return { ok, summary, details }
 }
 

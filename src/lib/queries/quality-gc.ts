@@ -28,13 +28,14 @@ import type {
   QcChartData,
   QcDashboardData,
   QcFilters,
+  QcGraphData,
   QcManagerRow,
   QcQueryMode,
   QcRecentCall,
 } from "./quality"
 
 // Re-export so consumers can import types from a single module if desired.
-export type { QcChartData, QcDashboardData, QcFilters, QcQueryMode, QcRecentCall }
+export type { QcChartData, QcDashboardData, QcFilters, QcGraphData, QcQueryMode, QcRecentCall }
 
 // Diva calls are scored only when:
 //   1. Master Enrich produced scriptScorePct (transcript-backed quality signal)
@@ -391,4 +392,31 @@ export async function getQcRecentCallsGc(
     totalScore: r.scriptScorePct != null ? r.scriptScorePct * 100 : null,
     createdAt: r.createdAt,
   }))
+}
+
+/**
+ * Stub for parity with legacy `getQcGraphData`. The legacy version reads
+ * ScriptItem + CallScore.items relations to compute compliance-by-step and
+ * a 0-100 score histogram. Diva's flat schema has no per-step ScoreItem rows
+ * (the per-step signal lives inside `scriptDetails` Json on CallRecord).
+ *
+ * Returning an empty graph data shape keeps the page renderable for GC tenants
+ * — the QcComplianceChart and QcScoreDistribution components handle empty
+ * arrays gracefully (drawn as no-data states). A full implementation would
+ * walk scriptDetails Json and build histogram from scriptScorePct buckets,
+ * deferred until Task 44/45 (chart redesign) lands.
+ */
+export async function getQcGraphDataGc(
+  _tenantId: string,
+  _mode: QcQueryMode = "all",
+  _filters: QcFilters = {}
+): Promise<QcGraphData> {
+  return {
+    complianceByStep: [],
+    scoreDistribution: Array.from({ length: 10 }, (_, i) => ({
+      range: `${i * 10}-${(i + 1) * 10}`,
+      current: 0,
+      previous: 0,
+    })),
+  }
 }

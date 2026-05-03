@@ -243,6 +243,8 @@ bd2e9f6 fix(cron): pass args through sh -c wrapper via "$@"
 6. **НЕ удаляй worker filter `audioUrl IS NOT NULL`** — это legitimate guard, регрессия Stage 7.5b backfill'нута через одноразовый script `backfill-audiourl-from-pbx.ts`.
 7. **НЕ ставь sample-1 / sample-2 как образец.** Они в archive (compression bug). Используй только sample-3 / sample-4.
 8. **НЕ пиши новые memory или canon файлы без явной нужды** — их уже 37+, добавляй только когда есть конкретный урок которого нет в существующих.
+9. **НЕ ТРОГАЙ 3 GC deep-link'а** в `src/app/(dashboard)/_components/gc/call-card.tsx:160-168` (`gcCallId` / `gcContactId` / `Deal.crmId` через JOIN). Они работают корректно. Любой редизайн header'а карточки звонка — verify deep-link'и до commit'а. Whitelist в `src/lib/crm/getcourse/urls.ts`. Подробности: `~/.claude/projects/-Users-kirillmalahov-smart-analyze/memory/feedback-gc-deeplinks-invariant.md`.
+10. **НЕ ЧИНИ cron Stage 7.5b** — он функционален. Реальное покрытие 1330/5324 (25%) dealId с 24.04, 493 distinct deals. 75% NULL = норма для cold-prospecting (сделка создаётся позже первого контакта), НЕ bug. Старая memory "1 distinct deal per 5038" устарела.
 
 ---
 

@@ -1082,10 +1082,11 @@ function CategoryBlock({ call }: { call: CallDetail }) {
 }
 
 function KvRow({ label, value }: { label: string; value: string | null }) {
+  if (value === null || value === "" || value === "—") return null
   return (
     <TableRow>
       <TableCell className="w-1/3 text-text-tertiary">{label}</TableCell>
-      <TableCell className="font-medium">{value ?? "—"}</TableCell>
+      <TableCell className="font-medium">{value}</TableCell>
     </TableRow>
   )
 }

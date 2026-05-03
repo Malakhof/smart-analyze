@@ -113,7 +113,8 @@ function Counters({ detail }: { detail: ManagerDetail }) {
             sub="talkDuration"
           />
           <Counter
-            label="Без аудио"
+            label="Не дотянулось"
+            tooltip="Звонок попал в pipeline gap — onPBX ещё не отдал аудио или был sync issue. Это не оценка МОПа."
             value={c.pipelineGap}
             sub={
               c.pipelineGap > 0 ? `${Math.round(c.pipelineGapPct * 100)}%` : "—"
@@ -140,15 +141,17 @@ function Counter({
   value,
   sub,
   hint,
+  tooltip,
 }: {
   label: string
   value: number | string
   sub?: string
   hint?: string
+  tooltip?: string
 }) {
   return (
     <div className="rounded-md border border-border-default bg-surface-1 p-3">
-      <p className="text-[11px] text-text-tertiary">{label}</p>
+      <p className="text-[11px] text-text-tertiary" title={tooltip}>{label}</p>
       <p className="mt-1 text-[20px] font-semibold tabular-nums">{value}</p>
       {sub && (
         <p

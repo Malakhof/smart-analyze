@@ -51,7 +51,11 @@ export function ManagersListGc({ rows }: { rows: ManagerListRow[] }) {
               <TableHead className="text-right">Дозвоны</TableHead>
               <TableHead className="text-right">Script score</TableHead>
               <TableHead className="text-right">Phrase used</TableHead>
-              <TableHead className="text-right">Без аудио</TableHead>
+              <TableHead className="text-right">
+                <span title="Звонок попал в pipeline gap — onPBX ещё не отдал аудио или был sync issue. Это не оценка МОПа.">
+                  Не дотянулось
+                </span>
+              </TableHead>
               <TableHead>Топ-1 ошибка</TableHead>
             </TableRow>
           </TableHeader>

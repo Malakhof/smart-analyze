@@ -164,8 +164,11 @@ function Block1DailyActivity({ rows }: { rows: DailyActivityRow[] }) {
       <CardHeader>
         <CardTitle>Активность за период</CardTitle>
         <CardDescription>
-          Наборы / дозвоны / НДЗ / автоответчики / минут разговора (talkDuration) /
-          без аудио. Click МОПа → drill-down.
+          Наборы / дозвоны / НДЗ / автоответчики / минут разговора (talkDuration) /{" "}
+          <span title="Звонок попал в pipeline gap — onPBX ещё не отдал аудио или был sync issue. Это не оценка МОПа.">
+            не дотянулось
+          </span>
+          . Click МОПа → drill-down.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -178,7 +181,11 @@ function Block1DailyActivity({ rows }: { rows: DailyActivityRow[] }) {
               <TableHead className="text-right">НДЗ</TableHead>
               <TableHead className="text-right">АО</TableHead>
               <TableHead className="text-right">Минут разговора</TableHead>
-              <TableHead className="text-right">Без аудио</TableHead>
+              <TableHead className="text-right">
+                <span title="Звонок попал в pipeline gap — onPBX ещё не отдал аудио или был sync issue. Это не оценка МОПа.">
+                  Не дотянулось
+                </span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

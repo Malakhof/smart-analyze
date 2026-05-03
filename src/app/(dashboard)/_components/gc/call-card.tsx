@@ -146,9 +146,30 @@ export function CallCard({ call, type }: Props) {
   return (
     <div className="space-y-6">
       <Header call={call} type={type} />
+      <DevWarnBlock call={call} type={type} />
       <CategoryHero call={call} type={type} />
       <Player call={call} />
       <TypeSpecificContent call={call} type={type} />
+    </div>
+  )
+}
+
+function DevWarnBlock({ call, type }: { call: CallDetail; type: CallType }) {
+  if (process.env.NODE_ENV !== "development") return null
+  const expected = SHOW_FOR_CATEGORY[type]
+  const surprises: string[] = []
+  if (!expected.includes("Psych") && (call.psychTriggers || call.clientReaction || call.managerStyle)) surprises.push("psychTriggers/reaction/style")
+  if (!expected.includes("Script") && (call.scriptScorePct !== null || call.scriptDetails)) surprises.push("scriptScore/scriptDetails")
+  if (!expected.includes("PhraseCompliance") && call.phraseCompliance) surprises.push("phraseCompliance")
+  if (!expected.includes("CriticalErrors") && Array.isArray(call.criticalErrors) && (call.criticalErrors as unknown[]).length > 0) surprises.push("criticalErrors")
+  if (!expected.includes("CriticalDialogMoments") && Array.isArray(call.criticalDialogMoments) && (call.criticalDialogMoments as unknown[]).length > 0) surprises.push("criticalDialogMoments")
+  if (!expected.includes("RopInsight") && call.ropInsight) surprises.push("ropInsight")
+  if (!expected.includes("NextStep") && call.nextStepRecommendation) surprises.push("nextStepRecommendation")
+  if (!expected.includes("Commitments") && Array.isArray(call.extractedCommitments) && (call.extractedCommitments as unknown[]).length > 0) surprises.push("extractedCommitments")
+  if (!surprises.length) return null
+  return (
+    <div className="rounded-md border border-status-amber-border bg-status-amber-dim p-2 text-xs text-status-amber">
+      ⚠️ DEV: HIDE-категория {type} получила данные: {surprises.join(", ")}
     </div>
   )
 }

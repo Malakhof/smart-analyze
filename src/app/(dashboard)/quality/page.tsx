@@ -25,6 +25,7 @@ import { QcManagerTable } from "./_components/qc-manager-table"
 import { QcRecentCalls } from "./_components/qc-recent-calls"
 import { QcFilters } from "./_components/qc-filters"
 import { QcVoicemailFilter } from "./_components/qc-voicemail-filter"
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- TODO post-premiere: re-enable once qcCallWhereGc dispatches by callTypes
 import { QcCallTypeFilter } from "./_components/qc-call-type-filter"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
@@ -94,7 +95,8 @@ export default async function QualityPage(props: {
         </div>
       </header>
 
-      <QcCallTypeFilter />
+      {/* <QcCallTypeFilter /> */}
+      {/* TODO post-premiere: re-enable once qcCallWhereGc dispatches by callTypes */}
 
       <QcFilters
         categories={filters.categories}

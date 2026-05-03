@@ -12,6 +12,12 @@ import {
   ZAxis,
 } from "recharts"
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
+import {
   Card,
   CardContent,
   CardDescription,
@@ -416,6 +422,51 @@ function CallsTimeline({
         />
       </ScatterChart>
     </ResponsiveContainer>
+  )
+}
+
+function StageDrillDown({
+  calls,
+  stageOrderList,
+}: {
+  calls: ClientCallRow[]
+  stageOrderList: string[]
+}) {
+  const items = stageOrderList
+    .map((stageName) => ({
+      stageName,
+      stageCalls: calls.filter((c) => c.stageName === stageName),
+    }))
+    .filter((it) => it.stageCalls.length > 0)
+
+  if (items.length === 0) return null
+
+  return (
+    <Accordion className="mt-4">
+      {items.map(({ stageName, stageCalls }) => (
+        <AccordionItem key={stageName} value={stageName}>
+          <AccordionTrigger>
+            {stageName} ({stageCalls.length}{" "}
+            {stageCalls.length === 1 ? "звонок" : "звонков"})
+          </AccordionTrigger>
+          <AccordionContent>
+            <ul className="space-y-1 text-sm">
+              {stageCalls.map((c) => (
+                <li key={c.id}>
+                  {c.startStamp
+                    ? new Date(c.startStamp).toLocaleString("ru-RU")
+                    : "—"}
+                  {" · "}
+                  {c.managerName ?? "—"}
+                  {" · "}
+                  {c.outcome ?? c.callOutcome ?? "—"}
+                </li>
+              ))}
+            </ul>
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
   )
 }
 

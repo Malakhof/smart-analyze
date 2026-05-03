@@ -657,6 +657,20 @@ function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
 
 // ─── Block 7 ────────────────────────────────────────────────────────────────
 
+// Funnel mental model: РОП reads top-to-bottom from «Новый» to «Закрыта».
+// Defensive matcher — actual stage names from CRM may vary slightly.
+function stageOrder(name: string | null): number {
+  const n = (name ?? "").toLowerCase()
+  if (n.includes("новый") || n.startsWith("1") || n.includes("заявка"))
+    return 0
+  if (n.includes("квалиф")) return 1
+  if (n.includes("презент")) return 2
+  if (n.includes("оплат")) return 3
+  if (n.includes("выигран")) return 4
+  if (n.includes("проигран")) return 5
+  return 99 // unknown stages at end
+}
+
 function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
   if (stages.length === 0) {
     return (
@@ -670,7 +684,10 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
       </Card>
     )
   }
-  const max = stages[0]?.count ?? 1
+  const sortedStages = [...stages].sort(
+    (a, b) => stageOrder(a.stageName) - stageOrder(b.stageName)
+  )
+  const max = sortedStages.reduce((m, s) => (s.count > m ? s.count : m), 1)
   return (
     <Card>
       <CardHeader>
@@ -682,7 +699,7 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        {stages.map((s, i) => {
+        {sortedStages.map((s, i) => {
           const w = (s.count / max) * 100
           const nameLower = (s.stageName ?? "").toLowerCase()
           const isWon = nameLower.includes("выигран")

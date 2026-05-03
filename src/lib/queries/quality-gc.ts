@@ -429,10 +429,6 @@ export async function getQcGraphDataGc(
   void _filters
   return {
     complianceByStep: [],
-    scoreDistribution: Array.from({ length: 10 }, (_, i) => ({
-      range: `${i * 10}-${(i + 1) * 10}`,
-      current: 0,
-      previous: 0,
-    })),
+    scoreDistribution: [],
   }
 }

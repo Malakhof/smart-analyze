@@ -21,13 +21,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import type { ManagerListRow } from "@/lib/queries/managers-gc"
-
-function scoreColor(pct: number | null): string {
-  if (pct === null) return "text-text-tertiary"
-  if (pct >= 0.7) return "text-status-green"
-  if (pct >= 0.5) return "text-status-amber"
-  return "text-status-red"
-}
+import { scoreColor } from "@/lib/utils"
 
 function ManagerRowsTable({ rows }: { rows: ManagerListRow[] }) {
   if (rows.length === 0) {

@@ -1,17 +1,18 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { scoreBgPct100, scoreColorPct100 } from "@/lib/utils"
 
+// Wrappers around the shared 70/50 traffic-light helpers (Task 39).
+// `score` here is a percentage in [0, 100]; 0 means "not evaluated" and is
+// rendered as muted in the UI before this function is called, so we treat
+// any incoming value as a real score.
 function scoreColor(score: number): string {
-  if (score >= 80) return "text-status-green"
-  if (score >= 50) return "text-status-amber"
-  return "text-status-red"
+  return scoreColorPct100(score)
 }
 
 function scoreBg(score: number): string {
-  if (score >= 80) return "bg-status-green"
-  if (score >= 50) return "bg-status-amber"
-  return "bg-status-red"
+  return scoreBgPct100(score)
 }
 
 const AVATAR_CLASSES = [

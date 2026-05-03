@@ -24,6 +24,7 @@ import type {
   UnfulfilledCommitment,
   WorstCall,
 } from "@/lib/queries/dashboard-gc"
+import { scoreColor } from "@/lib/utils"
 
 const MOSCOW_FMT = new Intl.DateTimeFormat("ru-RU", {
   timeZone: "Europe/Moscow",
@@ -54,12 +55,8 @@ function fmtAgo(d: Date): string {
   return `${Math.floor(h / 24)} дн назад`
 }
 
-function scoreColorClass(pct: number | null): string {
-  if (pct === null) return "text-text-tertiary"
-  if (pct >= 0.7) return "text-status-green"
-  if (pct >= 0.5) return "text-status-amber"
-  return "text-status-red"
-}
+// Traffic-light thresholds 70/50 — see scoreColor in @/lib/utils (Task 39).
+const scoreColorClass = scoreColor
 
 /**
  * criticalErrors is a jsonb array where items may be either bare strings

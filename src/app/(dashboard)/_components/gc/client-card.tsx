@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { ClientCallRow, ClientDetail } from "@/lib/queries/client-detail-gc"
+import { scoreColor } from "@/lib/utils"
 
 const MOSCOW_FMT = new Intl.DateTimeFormat("ru-RU", {
   timeZone: "Europe/Moscow",
@@ -64,13 +65,6 @@ function fmtSeconds(s: number | null | undefined): string {
   const m = Math.floor(s / 60)
   const ss = Math.round(s % 60)
   return `${m}:${ss.toString().padStart(2, "0")}`
-}
-
-function scoreColor(pct: number | null): string {
-  if (pct === null) return "text-text-tertiary"
-  if (pct >= 0.7) return "text-status-green"
-  if (pct >= 0.5) return "text-status-amber"
-  return "text-status-red"
 }
 
 export function ClientCard({ detail }: { detail: ClientDetail }) {

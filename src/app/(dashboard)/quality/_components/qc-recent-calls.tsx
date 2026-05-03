@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import type { QcRecentCallEnhanced } from "@/lib/queries/quality"
+import { scoreBgPct100 } from "@/lib/utils"
 import { CallSlideOver } from "./call-slide-over"
 import { QcScriptScoreBadge } from "./qc-script-score-badge"
 
@@ -30,10 +31,9 @@ function fmtDateLine2(date: Date): string {
   })
 }
 
+// Traffic-light indicator dot — see scoreBg in @/lib/utils (Task 39).
 function scoreIndicatorColor(score: number): string {
-  if (score >= 70) return "bg-emerald-500"
-  if (score >= 50) return "bg-amber-400"
-  return "bg-red-500"
+  return scoreBgPct100(score)
 }
 
 const CATEGORY_BADGE_COLORS: Record<string, string> = {

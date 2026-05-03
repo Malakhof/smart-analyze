@@ -13,7 +13,7 @@
 **Mission expert'а — 2 фазы:**
 
 - **Phase 1 (до премьеры, 24 часа):** review всех 5 сегодняшних commits на code quality, опционально создать demo content (100-200 свежих enriched cards) для премьеры, проверить UI работает с реальными enriched cards.
-- **Phase 2 (после премьеры):** довести skill v10 + дописать 5 недостающих эталонов (категории A/B/C/D/E/G) + закрыть 4 open issues из watch period + финализировать Master Enrich канон.
+- **Phase 2 (после премьеры):** довести skill v10 + дописать 5 недостающих эталонов (категории A/B/C/D/E/G) + закрыть 5 open issues из watch period + финализировать Master Enrich канон.
 
 ---
 
@@ -66,7 +66,7 @@ Plus **data fix:** 230 broken transcribed legacy rows (pbxUuid='') → archived 
 - GpuRun started 10:29 UTC, processing
 - Drain до 0 pending: ~30 мин (4-5 batches × 30 calls)
 
-**4 open issues для review:** см. `docs/handoffs/2026-05-03-pipeline-watch-findings.md` раздел `## Open`.
+**5 open issues для review:** см. `docs/handoffs/2026-05-03-pipeline-watch-findings.md` раздел `## Open`.
 
 ### Stream 2: UI editor (✅ partial, premiere-ready)
 
@@ -120,7 +120,7 @@ Plus **data fix:** 230 broken transcribed legacy rows (pbxUuid='') → archived 
 
 1. **Этот файл** (ты его уже читаешь)
 2. `~/.claude/projects/-Users-kirillmalahov-smart-analyze/memory/MEMORY.md` — индекс всей "общей памяти" проекта
-3. `docs/handoffs/2026-05-03-pipeline-watch-findings.md` — 4 bugs resolved сегодня + 4 open issues
+3. `docs/handoffs/2026-05-03-pipeline-watch-findings.md` — 4 bugs resolved сегодня + 5 open issues
 4. `docs/canons/ui-inventory-2026-05-03.md` — что в UI, какие страницы, demo URLs
 5. `docs/canons/ui-enrichment-contract.md` — data contract UI ↔ enrichment
 6. `docs/canons/master-enrich-samples/CATEGORIES.md` — 7 типов звонков
@@ -187,7 +187,7 @@ bd2e9f6 fix(cron): pass args through sh -c wrapper via "$@"
 - Coding standards (CLAUDE.md → AGENTS.md правила Next.js)
 - Security (нет hardcoded secrets — был commit `9f3d064` который чистил их)
 - Edge cases которые могли пропустить
-- 4 open issues из watch findings — приоритезировать
+- 5 open issues из watch findings — приоритезировать
 
 **Приоритет 2 — Demo content для премьеры:**
 
@@ -203,14 +203,14 @@ bd2e9f6 fix(cron): pass args through sh -c wrapper via "$@"
 
 **Приоритет 4 — Reviewer 4.05 утром (~04:00 UTC = 07:00 МСК):**
 - ping #2 daily-health-check должен пройти green
-- Если green → формальный code review всех 5 commits + 4 open issues
+- Если green → формальный code review всех 5 commits + 5 open issues
 - Если red → разобрать причину ДО премьеры
 
 ### Phase 2: Post-premiere (5.05+)
 
 **В порядке приоритета:**
 
-1. **Закрыть 4 open issues** из `docs/handoffs/2026-05-03-pipeline-watch-findings.md`:
+1. **Закрыть 5 open issues** из `docs/handoffs/2026-05-03-pipeline-watch-findings.md`:
    - Stage 7.5b regression root cause (cookie age 308h на 2.05 — почему refresh не сработал?)
    - `claimPersistOnlyBatch` без `pbxUuid IS NOT NULL AND != ''` filter
    - Silent-exit detector для cron tsx wrappers (mtime-of-log alert в health-check)
@@ -268,14 +268,14 @@ bd2e9f6 fix(cron): pass args through sh -c wrapper via "$@"
 ## ✅ Done criteria
 
 **Phase 1 (до премьеры):**
-- [ ] Code review 5 commits + 4 open issues приоритизированы
+- [ ] Code review 5 commits + 5 open issues приоритизированы
 - [ ] 100-200 свежих enriched cards в БД (`processed` count grew by ~150-200)
 - [ ] UI smoke test passed на premiere URL'ах
 - [ ] `keyClientPhrases` JSON bug fixed (если ещё актуален)
 - [ ] Reviewer 4.05 утром: ping #2 green
 
 **Phase 2 (после премьеры):**
-- [ ] 4 open issues from watch period — fixed
+- [ ] 5 open issues from watch period — fixed
 - [ ] 5 эталонов недостающих категорий (A/B/C/D/E + опц. G) — written
 - [ ] Skill v10 + validator — operational, тест 10 свежих passed
 - [ ] UI Stage 5 redesigned + Stages 6-8 done
@@ -296,7 +296,7 @@ bd2e9f6 fix(cron): pass args through sh -c wrapper via "$@"
 1. Что делает pipeline сейчас
 2. Что готово в UI
 3. Что в skill v10 (статус)
-4. Какие 4 open issues
+4. Какие 5 open issues
 5. Какой next step ты предлагаешь начать (Phase 1 или Phase 2 priority?)
 
 Не пиши код пока я не одобрю предложенный next step.

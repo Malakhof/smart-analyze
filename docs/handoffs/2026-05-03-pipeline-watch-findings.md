@@ -44,6 +44,13 @@ Watch period: 2026-05-02 21:00 UTC (after wrapper fix) → 2026-05-04 04:00 UTC 
 2. **`claimPersistOnlyBatch` filter** — add `AND "pbxUuid" IS NOT NULL AND "pbxUuid" != ''` to prevent recurrence of Bug #2 starvation. `scripts/lib/worker-claim.ts`.
 3. **Silent-exit detector for cron tsx wrappers** — Bug #1 hid for 6h45m because cron CMD fired but produced no log. Add health-check assertion: `producer.log mtime` must be < 30 min OR alert. Today's `scripts/daily-health-check.ts` parses cycleId timestamps but doesn't cross-check against syslog cron firing count.
 4. **`transcriptionError` column on CallRecord** — bug #2 archive's failed reason lives in `_legacy_broken_transcribed` table COMMENT. For grep'ability and future audit on the live table, migration `ALTER TABLE "CallRecord" ADD COLUMN "transcriptionError" TEXT`.
+5. **Reconcile false-positive on canon-filter exclusions** —
+   **Symptom**: Telegram alert "discrepancy 25.0%" at 12:00 UTC 3.05.2026, window 11:45-12:00. PBX=4 DB=3 missingInDb=0. Self-corrected next cycle (12:15: pbx=11 db=11 0%).
+   **Root cause**: Stage 9 reconcile compares **raw PBX count** vs **post-canon-filter DB count**. Canon-#8 (Stage 1.5) drops rows by `user_talk_time` / `hangup_cause` / `managerExt NOT IN ('117','118','124')` — correct behavior, but reconcile doesn't account for it.
+   **Impact**: Periodic false-positive alerts on small windows (1-4 PBX rows × filter exclusion) — 25-33% discrepancy with `missingInDb=0`. Self-correcting on larger windows.
+   **Fix proposal**: change reconcile metric from `pbx_raw_count vs db_count` to `pbx_after_canon_filter vs db_count`. Alternative: raise threshold for small windows (skip alert if `|pbx-db| ≤ 1` and window < 15 min).
+   **Files**: `scripts/cron-master-pipeline.ts` (Stage 9 reconcile section), `scripts/lib/canon-filter.ts` if separate module exists.
+   **Priority**: Low (no data loss, only noise).
 
 ## Watch state going into ping #2
 

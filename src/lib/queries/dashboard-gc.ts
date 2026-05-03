@@ -522,6 +522,32 @@ export async function getWonDealsCountForPeriod(
   })
 }
 
+/**
+ * Department-wide average script score for the period.
+ *
+ * Filters: real conversations only (`callOutcome = 'real_conversation'`),
+ * duration ≥ 60s, non-null `scriptScorePct`. Returns null when no eligible
+ * calls exist (chip is skipped at render time). `scriptScorePct` is stored
+ * as a 0..1 Float (per ui-enrichment-contract.md); UI multiplies by 100.
+ */
+export async function getDepartmentAvgScriptScore(
+  tenantId: string,
+  period: GcPeriod
+): Promise<number | null> {
+  const since = gcPeriodToCutoff(period)
+  const result = await db.callRecord.aggregate({
+    where: {
+      tenantId,
+      callOutcome: "real_conversation",
+      duration: { gte: 60 },
+      startStamp: { gte: since },
+      scriptScorePct: { not: null },
+    },
+    _avg: { scriptScorePct: true },
+  })
+  return result._avg.scriptScorePct
+}
+
 export async function getPipelineGapPct(
   tenantId: string,
   period: GcPeriod

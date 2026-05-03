@@ -25,6 +25,7 @@ import {
   getLastSyncTimestamp,
   getPipelineGapPct,
   getWonDealsCountForPeriod,
+  getDepartmentAvgScriptScore,
   gcPeriodToCutoff,
   type GcPeriod,
 } from "@/lib/queries/dashboard-gc"
@@ -84,6 +85,7 @@ async function GcDashboardPage({
     lastSync,
     pipelineGap,
     wonCount,
+    avgScriptScore,
   ] = await Promise.all([
     getDailyActivityPerManager(tenantId, gcPeriod),
     getWorstCallsToday(tenantId, gcPeriod, 10),
@@ -96,6 +98,7 @@ async function GcDashboardPage({
     getLastSyncTimestamp(tenantId),
     getPipelineGapPct(tenantId, gcPeriod),
     getWonDealsCountForPeriod(tenantId, periodFrom, periodTo),
+    getDepartmentAvgScriptScore(tenantId, gcPeriod),
   ])
 
   return (
@@ -124,6 +127,7 @@ async function GcDashboardPage({
         lastSync={lastSync}
         pipelineGap={pipelineGap}
         wonCount={wonCount}
+        avgScriptScore={avgScriptScore}
       />
     </div>
   )

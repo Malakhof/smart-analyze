@@ -100,6 +100,7 @@ interface Props {
     pendingPct: number
   }
   wonCount: number
+  avgScriptScore: number | null
 }
 
 export function DashboardRop(props: Props) {
@@ -115,6 +116,7 @@ export function DashboardRop(props: Props) {
     lastSync,
     pipelineGap,
     wonCount,
+    avgScriptScore,
   } = props
 
   return (
@@ -138,6 +140,7 @@ export function DashboardRop(props: Props) {
         lastSync={lastSync}
         pipelineGap={pipelineGap}
         wonCount={wonCount}
+        avgScriptScore={avgScriptScore}
       />
     </div>
   )
@@ -718,6 +721,7 @@ function FooterStatus({
   lastSync,
   pipelineGap,
   wonCount,
+  avgScriptScore,
 }: {
   lastSync: Date | null
   pipelineGap: {
@@ -728,6 +732,7 @@ function FooterStatus({
     pendingPct: number
   }
   wonCount: number
+  avgScriptScore: number | null
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-default pt-3 text-[11px] text-text-muted">
@@ -739,6 +744,11 @@ function FooterStatus({
         <span className="text-status-green">
           🏆 WON за период: {wonCount}
         </span>
+        {avgScriptScore !== null && (
+          <span className="text-text-secondary">
+            📊 Средний скрипт отдела: {Math.round(avgScriptScore * 100)}%
+          </span>
+        )}
         <span>
           pipeline_gap: {pipelineGap.gap}/{pipelineGap.total}
           {pipelineGap.pct > 0 && ` (${Math.round(pipelineGap.pct * 100)}%)`}

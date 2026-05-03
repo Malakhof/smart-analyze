@@ -634,20 +634,35 @@ function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
                   <td className="pr-2 text-text-tertiary">{DOW_LABELS[dow]}</td>
                   {grid[dow].map((cell, h) => {
                     const intensity = cell.total === 0 ? 0 : cell.successRate
-                    const bg =
-                      cell.total === 0
-                        ? "rgba(120,120,120,0.04)"
-                        : `rgba(52, 211, 153, ${0.1 + intensity * 0.7})`
+                    const isEmpty = cell.total === 0
+                    const isWorkingHour = h >= 9 && h <= 21
+                    // Working-hours band: subtle tint layered over base bg.
+                    // Stripes for empty cells: semantically "no data" ≠ "low success".
+                    const bandLayer = isWorkingHour
+                      ? "linear-gradient(rgba(120,120,120,0.06), rgba(120,120,120,0.06))"
+                      : ""
+                    const stripeLayer = isEmpty
+                      ? "repeating-linear-gradient(45deg, rgba(120,120,120,0.10) 0 2px, transparent 2px 4px)"
+                      : ""
+                    const layers = [stripeLayer, bandLayer]
+                      .filter(Boolean)
+                      .join(", ")
+                    const baseColor = isEmpty
+                      ? "transparent"
+                      : `rgba(52, 211, 153, ${0.1 + intensity * 0.7})`
                     return (
                       <td
                         key={h}
                         title={
-                          cell.total === 0
+                          isEmpty
                             ? `${DOW_LABELS[dow]} ${h}:00 — нет звонков`
                             : `${DOW_LABELS[dow]} ${h}:00 — ${cell.total} звонков, ${Math.round(intensity * 100)}% success`
                         }
                         className="h-4 w-4"
-                        style={{ backgroundColor: bg }}
+                        style={{
+                          backgroundColor: baseColor,
+                          backgroundImage: layers || undefined,
+                        }}
                       />
                     )
                   })}

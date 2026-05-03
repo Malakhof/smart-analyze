@@ -14,7 +14,9 @@
 | Blocking dependency | UI-driven enrichment contract — НЕ создан |
 | Эталонов в наличии | **2** (sample-3, sample-4) — оба категория **F (NORMAL)** |
 | Эталонов отсутствует | **5+** (категории A, B, C, D, E, G — никаких эталонов) |
-| Что сделано после v9.6 freeze | **Ничего по skill** — все ресурсы 1-3.05 ушли на cron/pipeline стабилизацию |
+| UI inventory | ✅ `docs/canons/ui-inventory-2026-05-03.md` (UI-сессия `ca478d4`) |
+| UI-enrichment contract | ✅ `docs/canons/ui-enrichment-contract.md` (UI-сессия `ca478d4`) |
+| Что сделано после v9.6 freeze | По skill: ноль. По pre-flight: UI inventory + contract (UI-сессия). По cron: стабилизация. |
 
 ---
 
@@ -92,11 +94,18 @@ Skill v10 ссылается на контракт в STEP 0. Validator пров
 
 | # | Артефакт | Файл | Status |
 |---|---|---|---|
-| 1 | UI inventory (что криво/не хватает на каждой странице) | `docs/canons/canon-ui-pages-current-state.md` | НЕ начат |
-| 2 | Эталоны 7 категорий звонка (по 1 на каждую) | `docs/canons/master-enrich-samples/sample-{A,B,C,D,E,F,G}-*.md` | 2 из 7 (только F) |
-| 3 | Эталон карточки МОПа (агрегация) | `docs/canons/canon-manager-card.md` | НЕ создан |
-| 4 | Эталон карточки клиента (timeline касаний) | `docs/canons/canon-client-card.md` | НЕ создан |
-| 5 | UI-enrichment contract (страница ↔ обязательные поля per category) | `docs/canons/canon-ui-enrichment-contract.md` | НЕ создан |
+| 1 | UI inventory (что есть/как устроено на каждой странице) | `docs/canons/ui-inventory-2026-05-03.md` | ✅ **СДЕЛАНО UI-сессией (ca478d4)** |
+| 2 | Эталоны 7 категорий звонка (по 1 на каждую) | `docs/canons/master-enrich-samples/sample-{A,B,C,D,E,F,G}-*.md` | 🟡 2 из 7 (только F: sample-3, sample-4) |
+| 3 | Эталон карточки МОПа (агрегация) | `docs/canons/canon-manager-card.md` | НЕ создан (но описан в `ui-inventory`) |
+| 4 | Эталон карточки клиента (timeline касаний) | `docs/canons/canon-client-card.md` | НЕ создан (но описан в `ui-inventory`) |
+| 5 | UI-enrichment contract (страница ↔ обязательные поля per category) | `docs/canons/ui-enrichment-contract.md` | ✅ **СДЕЛАНО UI-сессией (ca478d4)** |
+
+**Прогресс:** 2 из 5 артефактов готовы. Осталось:
+- #2 — эталоны 5 недостающих категорий (A, B, C, D, E priority + G)
+- #3 — эталон карточки МОПа (но детали уже в ui-inventory)
+- #4 — эталон карточки клиента (но детали уже в ui-inventory)
+
+UI-inventory + UI-enrichment-contract — **достаточная база для начала skill v10.** Эталоны 5 категорий можно создавать параллельно с переписыванием SKILL.md.
 
 ### Skill v10 (после pre-flight)
 
@@ -151,15 +160,15 @@ Skill v10 ссылается на контракт в STEP 0. Validator пров
 
 ## 🚦 Для нового expert'а
 
-**Не начинай skill v10 пока pre-flight артефакты #1-#5 не готовы.** Любая попытка переписать SKILL.md без UI-contract повторит цикл v9.3 → v9.4 → v9.5 → v9.6.
+**Не начинай skill v10 пока pre-flight артефакты #2 не готовы (5 недостающих эталонов).** Артефакты #1 и #5 уже сделаны UI-сессией (ca478d4) — UI inventory + UI-enrichment contract — достаточная база.
 
-Порядок:
-1. Inventory UI (день 1 утро) — пользователь говорит, ты записываешь
-2. Эталоны 5 недостающих категорий (день 1 день) — собрать примеры из БД, подписать как должны выглядеть
-3. UI-enrichment contract (день 1 вечер) — связь страница ↔ обязательные поля
-4. Skill v10 (день 2) — переписать SKILL.md под контракт
-5. Validator (день 2) — runtime блок
-6. Тест 10 свежих (день 2 вечер)
-7. Backfill (день 3+)
+Порядок (после прихода reviewer 4.05):
+1. ~~Inventory UI~~ ✅ сделано UI-сессией
+2. Эталоны 5 недостающих категорий (A, B, C, D, **E priority!**, G) — собрать примеры из БД, подписать как должны выглядеть
+3. ~~UI-enrichment contract~~ ✅ сделано UI-сессией
+4. Skill v10 (день 1) — переписать SKILL.md под `ui-enrichment-contract.md` + per-category из `EDGE-CASES.md`
+5. Validator `scripts/validate-enrich-sql.ts` (день 1) — runtime блок (см. `EDGE-CASES.md` для assert логики)
+6. Тест 10 свежих звонков разных категорий (день 1 вечер)
+7. Backfill (день 2+) — `--limit=10` в одном окне
 
-Реалистичный таймлайн: **3-5 дней до стабильного автоматического enrichment.**
+Реалистичный таймлайн: **2-3 дня до стабильного автоматического enrichment** (быстрее чем 3-5, потому что #1 и #5 уже готовы).

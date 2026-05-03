@@ -103,6 +103,20 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
       : 0
   const showStageCol = nullDealRatio < 0.5
 
+  // Derive stage order for the Hybrid Timeline. Query doesn't expose
+  // FunnelStage[] directly, so use distinct stageName values in chronological
+  // order (oldest → newest) — same approach as stageJourney builder server-side.
+  const stageOrderList: string[] = []
+  const seenStages = new Set<string>()
+  for (let i = detail.calls.length - 1; i >= 0; i--) {
+    const sn = detail.calls[i]?.stageName
+    if (sn && !seenStages.has(sn)) {
+      seenStages.add(sn)
+      stageOrderList.push(sn)
+    }
+  }
+  const allNoDeal = detail.calls.length > 0 && nullDealRatio === 1
+
   return (
     <div className="space-y-6">
       <div>
@@ -188,6 +202,27 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
                 </span>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!allNoDeal && stageOrderList.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>📅 Звонки по этапам сделки</CardTitle>
+            <CardDescription>
+              Цвет = outcome, форма = callOutcome, размер = talkDuration.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CallsTimeline
+              calls={detail.calls}
+              stageOrderList={stageOrderList}
+            />
+            <StageDrillDown
+              calls={detail.calls}
+              stageOrderList={stageOrderList}
+            />
           </CardContent>
         </Card>
       )}

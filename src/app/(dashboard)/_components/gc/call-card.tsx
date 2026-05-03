@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import {
   Card,
   CardContent,
@@ -334,6 +335,38 @@ function Player({ call }: { call: CallDetail }) {
       </CardContent>
     </Card>
   )
+}
+
+// ─── Block registry (Task 11: prep for whitelist; not wired yet) ───────────
+
+type BlockId =
+  | "Transcript"
+  | "Summary"
+  | "Psych"
+  | "Script"
+  | "PhraseCompliance"
+  | "CriticalErrors"
+  | "CriticalDialogMoments"
+  | "RopInsight"
+  | "NextStep"
+  | "Commitments"
+  | "Category"
+  | "Tags"
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- wired in Task 14+
+const BLOCK_REGISTRY: Record<BlockId, (p: { call: CallDetail }) => ReactNode> = {
+  Transcript: TranscriptBlock,
+  Summary: SummaryBlock,
+  Psych: PsychBlock,
+  Script: ScriptBlock,
+  PhraseCompliance: PhraseComplianceBlock,
+  CriticalErrors: CriticalErrorsBlock,
+  CriticalDialogMoments: CriticalDialogMomentsBlock,
+  RopInsight: RopInsightBlock,
+  NextStep: NextStepBlock,
+  Commitments: CommitmentsBlock,
+  Category: CategoryBlock,
+  Tags: TagsBlock,
 }
 
 // ─── Type-specific render ──────────────────────────────────────────────────

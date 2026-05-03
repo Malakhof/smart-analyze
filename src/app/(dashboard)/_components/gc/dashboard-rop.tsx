@@ -99,6 +99,7 @@ interface Props {
     pendingEnrich: number
     pendingPct: number
   }
+  wonCount: number
 }
 
 export function DashboardRop(props: Props) {
@@ -113,6 +114,7 @@ export function DashboardRop(props: Props) {
     funnelStages,
     lastSync,
     pipelineGap,
+    wonCount,
   } = props
 
   return (
@@ -132,7 +134,11 @@ export function DashboardRop(props: Props) {
         <Block6Heatmap cells={heatmap} />
         <Block7FunnelStages stages={funnelStages} />
       </div>
-      <FooterStatus lastSync={lastSync} pipelineGap={pipelineGap} />
+      <FooterStatus
+        lastSync={lastSync}
+        pipelineGap={pipelineGap}
+        wonCount={wonCount}
+      />
     </div>
   )
 }
@@ -711,6 +717,7 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
 function FooterStatus({
   lastSync,
   pipelineGap,
+  wonCount,
 }: {
   lastSync: Date | null
   pipelineGap: {
@@ -720,6 +727,7 @@ function FooterStatus({
     pendingEnrich: number
     pendingPct: number
   }
+  wonCount: number
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-default pt-3 text-[11px] text-text-muted">
@@ -728,6 +736,9 @@ function FooterStatus({
         {lastSync ? `${fmtAgo(lastSync)} (${fmtMsk(lastSync)} МСК)` : "—"}
       </span>
       <div className="flex flex-wrap gap-3">
+        <span className="text-status-green">
+          🏆 WON за период: {wonCount}
+        </span>
         <span>
           pipeline_gap: {pipelineGap.gap}/{pipelineGap.total}
           {pipelineGap.pct > 0 && ` (${Math.round(pipelineGap.pct * 100)}%)`}

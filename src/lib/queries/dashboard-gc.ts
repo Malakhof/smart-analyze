@@ -499,6 +499,29 @@ export async function getLastSyncTimestamp(
   return last?.createdAt ?? null
 }
 
+/**
+ * Count of WON deals whose `closedAt` falls inside [from, to].
+ *
+ * Uses `closedAt` (the timestamp the deal moved to a terminal status) rather
+ * than `updatedAt` — Deal model has no `updatedAt` field, and `closedAt` is
+ * the semantically correct «когда выиграли» marker. Deals with NULL closedAt
+ * are excluded by the range filter automatically (Prisma DateTime range
+ * comparators skip NULL).
+ */
+export async function getWonDealsCountForPeriod(
+  tenantId: string,
+  from: Date,
+  to: Date
+): Promise<number> {
+  return db.deal.count({
+    where: {
+      tenantId,
+      status: "WON",
+      closedAt: { gte: from, lte: to },
+    },
+  })
+}
+
 export async function getPipelineGapPct(
   tenantId: string,
   period: GcPeriod

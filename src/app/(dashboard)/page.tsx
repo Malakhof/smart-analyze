@@ -24,6 +24,8 @@ import {
   getDealStagesAfterCalls,
   getLastSyncTimestamp,
   getPipelineGapPct,
+  getWonDealsCountForPeriod,
+  gcPeriodToCutoff,
   type GcPeriod,
 } from "@/lib/queries/dashboard-gc"
 import { PeriodFilter } from "./_components/period-filter"
@@ -67,6 +69,9 @@ async function GcDashboardPage({
   const gcPeriod: GcPeriod =
     period === "today" ? "today" : period === "week" ? "week" : "month"
 
+  const periodFrom = gcPeriodToCutoff(gcPeriod)
+  const periodTo = new Date()
+
   const [
     daily,
     worstCalls,
@@ -78,6 +83,7 @@ async function GcDashboardPage({
     funnelStages,
     lastSync,
     pipelineGap,
+    wonCount,
   ] = await Promise.all([
     getDailyActivityPerManager(tenantId, gcPeriod),
     getWorstCallsToday(tenantId, gcPeriod, 10),
@@ -89,6 +95,7 @@ async function GcDashboardPage({
     getDealStagesAfterCalls(tenantId, gcPeriod),
     getLastSyncTimestamp(tenantId),
     getPipelineGapPct(tenantId, gcPeriod),
+    getWonDealsCountForPeriod(tenantId, periodFrom, periodTo),
   ])
 
   return (
@@ -116,6 +123,7 @@ async function GcDashboardPage({
         funnelStages={funnelStages}
         lastSync={lastSync}
         pipelineGap={pipelineGap}
+        wonCount={wonCount}
       />
     </div>
   )

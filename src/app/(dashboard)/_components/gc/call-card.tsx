@@ -369,6 +369,24 @@ const BLOCK_REGISTRY: Record<BlockId, (p: { call: CallDetail }) => ReactNode> = 
   Tags: TagsBlock,
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- wired in Task 14+
+const SHOW_FOR_CATEGORY: Record<CallType, BlockId[]> = {
+  NORMAL: [
+    "Transcript", "Summary", "Psych", "Script", "PhraseCompliance",
+    "CriticalErrors", "CriticalDialogMoments", "RopInsight",
+    "NextStep", "Commitments", "Category", "Tags",
+  ],
+  SHORT_RESCHEDULE: [
+    "Transcript", "Summary", "Script", "RopInsight",
+    "NextStep", "Commitments", "Category", "Tags",
+  ],
+  VOICEMAIL_IVR: ["Transcript", "RopInsight", "Category", "Tags"],
+  HUNG_UP: ["Transcript", "RopInsight", "Category", "Tags"],
+  NO_SPEECH: ["Transcript", "Category"],
+  TECHNICAL_ISSUE: ["Transcript", "RopInsight", "Category"],
+  PIPELINE_GAP: ["Category"],
+}
+
 // ─── Type-specific render ──────────────────────────────────────────────────
 
 function TypeSpecificContent({ call, type }: { call: CallDetail; type: CallType }) {

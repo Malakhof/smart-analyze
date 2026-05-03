@@ -282,6 +282,40 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
   )
 }
 
+function getMarker(outcome: string | null, callOutcome: string | null) {
+  if (callOutcome === "voicemail" || callOutcome === "ivr")
+    return {
+      fill: "var(--text-muted)",
+      stroke: "var(--text-tertiary)",
+      strokeWidth: 1,
+    }
+  if (callOutcome === "hung_up" || callOutcome === "no_answer")
+    return {
+      fill: "transparent",
+      stroke: "var(--text-tertiary)",
+      strokeWidth: 2,
+    }
+  if (outcome === "closed_won")
+    return {
+      fill: "var(--status-green)",
+      stroke: "var(--status-green)",
+      strokeWidth: 1,
+    }
+  if (outcome === "closed_lost")
+    return {
+      fill: "var(--status-red)",
+      stroke: "var(--status-red)",
+      strokeWidth: 1,
+    }
+  if (outcome === "objection_unresolved")
+    return {
+      fill: "var(--status-amber)",
+      stroke: "var(--status-amber)",
+      strokeWidth: 1,
+    }
+  return { fill: "var(--ai-1)", stroke: "var(--ai-1)", strokeWidth: 1 }
+}
+
 function CallsTimeline({
   calls,
   stageOrderList,
@@ -337,7 +371,28 @@ function CallsTimeline({
         />
         <ZAxis dataKey="size" range={[20, 200]} />
         <Tooltip />
-        <Scatter data={data} fill="var(--ai-1)" />
+        <Scatter
+          data={data}
+          fill="var(--ai-1)"
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          shape={(props: any) => {
+            const m = getMarker(
+              props.payload.outcome,
+              props.payload.callOutcome
+            )
+            const r = Math.sqrt((props.size ?? 50) / Math.PI)
+            return (
+              <circle
+                cx={props.cx}
+                cy={props.cy}
+                r={r}
+                fill={m.fill}
+                stroke={m.stroke}
+                strokeWidth={m.strokeWidth ?? 1}
+              />
+            )
+          }}
+        />
       </ScatterChart>
     </ResponsiveContainer>
   )

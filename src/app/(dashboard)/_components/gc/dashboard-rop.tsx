@@ -608,7 +608,10 @@ function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <table className="text-[10px]">
+          <table
+            className="text-[10px]"
+            style={{ borderCollapse: "separate", borderSpacing: "1px" }}
+          >
             <thead>
               <tr>
                 <th />
@@ -640,7 +643,7 @@ function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
                             ? `${DOW_LABELS[dow]} ${h}:00 — нет звонков`
                             : `${DOW_LABELS[dow]} ${h}:00 — ${cell.total} звонков, ${Math.round(intensity * 100)}% success`
                         }
-                        className="h-4 w-4 border border-surface-1"
+                        className="h-4 w-4"
                         style={{ backgroundColor: bg }}
                       />
                     )

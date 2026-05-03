@@ -374,6 +374,7 @@ type BlockId =
   | "Commitments"
   | "Category"
   | "Tags"
+  | "Diagnostic"
 
 const BLOCK_REGISTRY: Record<BlockId, (p: { call: CallDetail }) => ReactNode> = {
   Transcript: TranscriptBlock,
@@ -388,6 +389,7 @@ const BLOCK_REGISTRY: Record<BlockId, (p: { call: CallDetail }) => ReactNode> = 
   Commitments: CommitmentsBlock,
   Category: CategoryBlock,
   Tags: TagsBlock,
+  Diagnostic: DiagnosticBlock,
 }
 
 const SHOW_FOR_CATEGORY: Record<CallType, BlockId[]> = {
@@ -404,7 +406,7 @@ const SHOW_FOR_CATEGORY: Record<CallType, BlockId[]> = {
   HUNG_UP: ["Transcript", "RopInsight", "Category", "Tags"],
   NO_SPEECH: ["Transcript", "Category"],
   TECHNICAL_ISSUE: ["Transcript", "RopInsight", "Category"],
-  PIPELINE_GAP: ["Category"],
+  PIPELINE_GAP: ["Diagnostic", "Category"],
 }
 
 // ─── Type-specific render ──────────────────────────────────────────────────
@@ -1085,6 +1087,22 @@ function KvRow({ label, value }: { label: string; value: string | null }) {
       <TableCell className="w-1/3 text-text-tertiary">{label}</TableCell>
       <TableCell className="font-medium">{value ?? "—"}</TableCell>
     </TableRow>
+  )
+}
+
+function DiagnosticBlock({ call }: { call: CallDetail }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>🛠 Диагностика</CardTitle>
+        <CardDescription>
+          transcript: {call.transcript === null ? "NULL" : `${call.transcript.length} chars`} ·
+          {" "}audioUrl: {call.audioUrl === null ? "NULL" : "present"} ·
+          {" "}enrichmentStatus: {call.enrichmentStatus ?? "—"} ·
+          {" "}createdAt: {fmtMsk(call.createdAt)}
+        </CardDescription>
+      </CardHeader>
+    </Card>
   )
 }
 

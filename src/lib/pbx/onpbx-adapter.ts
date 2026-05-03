@@ -145,6 +145,13 @@ export class OnPbxAdapter {
     this.authHeader = `${auth.keyId}:${auth.key}`
   }
 
+  // Read-only snapshot of current decrypted creds. Per-call so callers always
+  // see the latest values after refreshAndRetryOnce mutates this.auth in-place.
+  // Used by whisper-worker to pass ON_PBX_* into run-full-pipeline.sh subprocess.
+  getCreds(): { domain: string; keyId: string; key: string } {
+    return { domain: this.auth.domain, keyId: this.auth.keyId, key: this.auth.key }
+  }
+
   /**
    * Probe → refresh → retry once. Throws OnPbxAuthFatalError if even retry
    * comes back with API_KEY_CHECK_FAILED.

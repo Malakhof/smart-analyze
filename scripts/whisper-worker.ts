@@ -121,11 +121,15 @@ async function runWhisperOnBatch(
   )
   writeFileSync(batchPath, lines.join("\n") + "\n")
 
+  // Source of truth for onPBX creds is Tenant.pbxConfig (encrypted, decrypted by
+  // loadOnPbxAuth in load-tenant-pbx.ts), not .env — auto-refresh writes back to
+  // DB on rotate, so per-call getCreds() always returns the freshest pair.
+  const { domain, keyId, key } = tenant.adapter.getCreds()
   const env: Record<string, string> = {
     ...process.env,
-    ON_PBX_DOMAIN: process.env.ON_PBX_DOMAIN ?? "pbx1720.onpbx.ru",
-    ON_PBX_KEY_ID: process.env.ON_PBX_KEY_ID ?? "",
-    ON_PBX_KEY:    process.env.ON_PBX_KEY    ?? "",
+    ON_PBX_DOMAIN: domain,
+    ON_PBX_KEY_ID: keyId,
+    ON_PBX_KEY:    key,
     WHISPER_MAX_DURATION: "10800",
   }
   const r = spawnSync("bash", [

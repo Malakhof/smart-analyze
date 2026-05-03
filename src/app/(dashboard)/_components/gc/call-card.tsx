@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Field } from "@/components/field"
 import type { CallDetail, CallType } from "@/lib/queries/call-detail-gc"
 
 const MOSCOW_FMT = new Intl.DateTimeFormat("ru-RU", {
@@ -629,7 +630,7 @@ function PsychBlock({ call }: { call: CallDetail }) {
                 {positive.map((p, i) => (
                   <TableRow key={`pos-${i}`}>
                     <TableCell className="tabular-nums text-text-tertiary">
-                      {p.time ?? "—"}
+                      <Field value={p.time} fallback="dash" />
                     </TableCell>
                     <TableCell className="font-medium">
                       {p.приём ?? p.technique ?? "—"}
@@ -664,7 +665,7 @@ function PsychBlock({ call }: { call: CallDetail }) {
                 {missed.map((m, i) => (
                   <TableRow key={`miss-${i}`}>
                     <TableCell className="tabular-nums text-text-tertiary">
-                      {m.time ?? "—"}
+                      <Field value={m.time} fallback="dash" />
                     </TableCell>
                     <TableCell>
                       <span className="font-medium">{m.trigger ?? "—"}</span>

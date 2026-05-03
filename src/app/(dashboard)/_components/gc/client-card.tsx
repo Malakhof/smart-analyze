@@ -324,6 +324,21 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+  if (!active || !payload?.[0]) return null
+  const p = payload[0].payload
+  return (
+    <div className="rounded border border-border-default bg-surface-2 p-2 text-xs shadow">
+      <div>{new Date(p.x).toLocaleString("ru-RU")}</div>
+      <div>{p.managerName ?? "—"}</div>
+      <div>stage: {p.stageName}</div>
+      <div>outcome: {p.outcome ?? p.callOutcome ?? "—"}</div>
+      <div>talk: {p.size ? `~${Math.round(p.size)}s` : "—"}</div>
+    </div>
+  )
+}
+
 function getMarker(outcome: string | null, callOutcome: string | null) {
   if (callOutcome === "voicemail" || callOutcome === "ivr")
     return {
@@ -447,7 +462,7 @@ function CallsTimeline({
           width={100}
         />
         <ZAxis dataKey="size" range={[20, 200]} />
-        <Tooltip />
+        <Tooltip content={<CustomTooltip />} />
         <Scatter
           data={data}
           fill="var(--ai-1)"

@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import {
+  ReferenceArea,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -344,12 +345,32 @@ function CallsTimeline({
 
   if (data.length === 0) return null
 
+  // Cluster detection: row (stage) with 3+ "bad" calls
+  const badPerStage = new Map<number, number>()
+  for (const d of data) {
+    if (d.outcome === "objection_unresolved" || d.outcome === "closed_lost") {
+      badPerStage.set(d.y, (badPerStage.get(d.y) ?? 0) + 1)
+    }
+  }
+  const clusterRows = Array.from(badPerStage.entries())
+    .filter(([, n]) => n >= 3)
+    .map(([y]) => y)
+
   return (
     <ResponsiveContainer
       width="100%"
       height={Math.max(200, stageOrderList.length * 30 + 100)}
     >
       <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 100 }}>
+        {clusterRows.map((y) => (
+          <ReferenceArea
+            key={`cluster-${y}`}
+            y1={y - 0.4}
+            y2={y + 0.4}
+            fill="var(--status-amber-dim)"
+            stroke="none"
+          />
+        ))}
         <XAxis
           dataKey="x"
           type="number"

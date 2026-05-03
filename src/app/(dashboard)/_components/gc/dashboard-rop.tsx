@@ -684,17 +684,19 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
       <CardContent className="space-y-2">
         {stages.map((s, i) => {
           const w = (s.count / max) * 100
+          const nameLower = (s.stageName ?? "").toLowerCase()
+          const isWon = nameLower.includes("выигран")
+          const isLost = nameLower.includes("проигран")
+          const fillClass = isWon
+            ? "bg-status-green"
+            : isLost
+              ? "bg-status-red"
+              : "bg-surface-3"
           return (
             <div key={`${s.stageCrmId ?? "none"}-${i}`} className="text-sm">
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, var(--ai-1), var(--ai-2))",
-                    }}
-                  />
+                  <span className={`h-1.5 w-1.5 rounded-full ${fillClass}`} />
                   <span>{s.stageName}</span>
                 </span>
                 <span className="shrink-0 tabular-nums text-text-secondary">
@@ -706,12 +708,8 @@ function Block7FunnelStages({ stages }: { stages: FunnelStageCount[] }) {
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
                 <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${w}%`,
-                    background:
-                      "linear-gradient(135deg, var(--ai-1), var(--ai-2))",
-                  }}
+                  className={`h-full rounded-full ${fillClass}`}
+                  style={{ width: `${w}%` }}
                 />
               </div>
             </div>

@@ -375,7 +375,6 @@ type BlockId =
   | "Category"
   | "Tags"
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- wired in Task 14+
 const BLOCK_REGISTRY: Record<BlockId, (p: { call: CallDetail }) => ReactNode> = {
   Transcript: TranscriptBlock,
   Summary: SummaryBlock,
@@ -391,7 +390,6 @@ const BLOCK_REGISTRY: Record<BlockId, (p: { call: CallDetail }) => ReactNode> = 
   Tags: TagsBlock,
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- wired in Task 14+
 const SHOW_FOR_CATEGORY: Record<CallType, BlockId[]> = {
   NORMAL: [
     "Transcript", "Summary", "Psych", "Script", "PhraseCompliance",
@@ -531,21 +529,14 @@ function TypeSpecificContent({ call, type }: { call: CallDetail; type: CallType 
     )
   }
 
-  // NORMAL — full 14-field render
+  // NORMAL — whitelist iteration via SHOW_FOR_CATEGORY
+  const blocksToShow = SHOW_FOR_CATEGORY[type] ?? []
   return (
     <>
-      <TranscriptBlock call={call} />
-      <SummaryBlock call={call} />
-      <PsychBlock call={call} />
-      <ScriptBlock call={call} />
-      <PhraseComplianceBlock call={call} />
-      <CriticalErrorsBlock call={call} />
-      <CriticalDialogMomentsBlock call={call} />
-      <RopInsightBlock call={call} />
-      <NextStepBlock call={call} />
-      <CommitmentsBlock call={call} />
-      <CategoryBlock call={call} />
-      <TagsBlock call={call} />
+      {blocksToShow.map(blockId => {
+        const Block = BLOCK_REGISTRY[blockId]
+        return <Block key={blockId} call={call} />
+      })}
     </>
   )
 }

@@ -142,10 +142,17 @@ export function DashboardRop(props: Props) {
           <Block4MissingPhrases rows={missingPhrases} />
         </div>
         <Block3WorstCalls calls={worstCalls} />
-        <Block4bDepartmentPatterns
-          weakSpots={topWeakSpots}
-          criticalErrors={topCriticalErrors}
-        />
+        <details open>
+          <summary className="cursor-pointer text-sm text-text-secondary hover:text-text-primary">
+            Системные паттерны отдела (weakSpot + критические ошибки)
+          </summary>
+          <div className="mt-2">
+            <Block4bDepartmentPatterns
+              weakSpots={topWeakSpots}
+              criticalErrors={topCriticalErrors}
+            />
+          </div>
+        </details>
         <Block5UnfulfilledCommitments items={unfulfilledCommitments} />
       </section>
       <section className="space-y-6">
@@ -153,7 +160,14 @@ export function DashboardRop(props: Props) {
           Тренды и контекст
         </h2>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Block6Heatmap cells={heatmap} />
+          <details open>
+            <summary className="cursor-pointer text-sm text-text-secondary hover:text-text-primary">
+              Когда лучше звонить (тепловая карта)
+            </summary>
+            <div className="mt-2">
+              <Block6Heatmap cells={heatmap} />
+            </div>
+          </details>
           <Block7FunnelStages stages={funnelStages} />
         </div>
       </section>

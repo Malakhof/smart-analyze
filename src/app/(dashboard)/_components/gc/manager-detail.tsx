@@ -203,12 +203,8 @@ function DistributionBlock({
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
                 <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${w}%`,
-                    background:
-                      "linear-gradient(135deg, var(--ai-1), var(--ai-2))",
-                  }}
+                  className="h-full rounded-full bg-surface-3"
+                  style={{ width: `${w}%` }}
                 />
               </div>
             </div>

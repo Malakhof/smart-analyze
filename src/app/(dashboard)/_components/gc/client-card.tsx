@@ -1,4 +1,15 @@
+"use client"
+
 import Link from "next/link"
+import {
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+  ZAxis,
+} from "recharts"
 import {
   Card,
   CardContent,
@@ -14,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { ClientDetail } from "@/lib/queries/client-detail-gc"
+import type { ClientCallRow, ClientDetail } from "@/lib/queries/client-detail-gc"
 
 const MOSCOW_FMT = new Intl.DateTimeFormat("ru-RU", {
   timeZone: "Europe/Moscow",
@@ -268,6 +279,67 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function CallsTimeline({
+  calls,
+  stageOrderList,
+}: {
+  calls: ClientCallRow[]
+  stageOrderList: string[]
+}) {
+  const orderIdx = (name: string | null) => {
+    if (!name) return stageOrderList.length
+    const i = stageOrderList.indexOf(name)
+    return i === -1 ? stageOrderList.length : i
+  }
+
+  const data = calls
+    .filter((c) => c.startStamp)
+    .map((c) => ({
+      x: c.startStamp!.getTime(),
+      y: orderIdx(c.stageName),
+      size: Math.sqrt((c.talkDuration ?? 30) + 1) * 4,
+      outcome: c.outcome,
+      callOutcome: c.callOutcome,
+      managerName: c.managerName,
+      stageName: c.stageName ?? "Без сделки",
+      pbxUuid: c.pbxUuid,
+    }))
+
+  if (data.length === 0) return null
+
+  return (
+    <ResponsiveContainer
+      width="100%"
+      height={Math.max(200, stageOrderList.length * 30 + 100)}
+    >
+      <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 100 }}>
+        <XAxis
+          dataKey="x"
+          type="number"
+          domain={["auto", "auto"]}
+          tickFormatter={(t: number) =>
+            new Date(t).toLocaleDateString("ru-RU", {
+              day: "2-digit",
+              month: "2-digit",
+            })
+          }
+        />
+        <YAxis
+          dataKey="y"
+          type="number"
+          domain={[-0.5, stageOrderList.length + 0.5]}
+          ticks={stageOrderList.map((_, i) => i)}
+          tickFormatter={(i: number) => stageOrderList[i] ?? "—"}
+          width={100}
+        />
+        <ZAxis dataKey="size" range={[20, 200]} />
+        <Tooltip />
+        <Scatter data={data} fill="var(--ai-1)" />
+      </ScatterChart>
+    </ResponsiveContainer>
   )
 }
 

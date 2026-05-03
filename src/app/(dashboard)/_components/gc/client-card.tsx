@@ -183,6 +183,11 @@ export function ClientCard({ detail }: { detail: ClientDetail }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {nullDealRatio === 1 && detail.calls.length > 0 && (
+            <div className="mb-3 rounded-md border border-border-default bg-surface-2 p-2 text-[12px] text-text-tertiary">
+              Звонки до создания сделки — типично для cold-prospecting воронки.
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>

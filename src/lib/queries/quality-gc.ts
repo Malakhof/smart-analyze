@@ -240,15 +240,123 @@ export async function getQualityDashboardGc(
   }
 }
 
+// Color palettes mirror the legacy quality.ts so charts look identical when
+// the page swaps providers — keeps category #3 always orange, etc.
+const CATEGORY_COLORS_GC = ["#3B82F6", "#F59E0B", "#10B981", "#8B5CF6", "#EC4899"]
+const TAG_COLORS_GC = ["#EF4444", "#DC2626", "#B91C1C", "#991B1B", "#7F1D1D"]
+
 export async function getQcChartDataGc(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   tenantId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mode: QcQueryMode = "all",
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   filters: QcFilters = {}
 ): Promise<QcChartData> {
-  throw new Error("not implemented (Task 21)")
+  const calls = await db.callRecord.findMany({
+    where: qcCallWhereGc(tenantId, mode, filters),
+    select: {
+      category: true,
+      scriptScorePct: true,
+      manager: { select: { id: true, name: true } },
+      tags: { select: { tag: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  const totalCalls = calls.length
+
+  const scored = calls.filter((c) => c.scriptScorePct != null)
+  const avgScore =
+    scored.length > 0
+      ? (scored.reduce((s, c) => s + (c.scriptScorePct ?? 0), 0) / scored.length) * 100
+      : 0
+
+  // Category breakdown — top by count, deterministic colors by sort order.
+  const catMap = new Map<string, number>()
+  for (const call of calls) {
+    const cat = call.category ?? "Без категории"
+    catMap.set(cat, (catMap.get(cat) ?? 0) + 1)
+  }
+  const categoryBreakdown = Array.from(catMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: CATEGORY_COLORS_GC[i % CATEGORY_COLORS_GC.length],
+    }))
+
+  // Tag breakdown — top 5.
+  const tagMap = new Map<string, number>()
+  for (const call of calls) {
+    for (const t of call.tags) {
+      tagMap.set(t.tag, (tagMap.get(t.tag) ?? 0) + 1)
+    }
+  }
+  const tagBreakdown = Array.from(tagMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, value], i) => ({
+      name,
+      value,
+      color: TAG_COLORS_GC[i % TAG_COLORS_GC.length],
+    }))
+
+  // Per-manager scores — only managers with at least one scored call.
+  const managerMap = new Map<string, { name: string; scores: number[]; callCount: number }>()
+  for (const call of calls) {
+    if (!call.manager) continue
+    const mid = call.manager.id
+    const entry =
+      managerMap.get(mid) ??
+      managerMap
+        .set(mid, { name: call.manager.name, scores: [], callCount: 0 })
+        .get(mid)!
+    entry.callCount++
+    if (call.scriptScorePct != null) {
+      entry.scores.push(call.scriptScorePct * 100)
+    }
+  }
+
+  const managerList = Array.from(managerMap.values())
+    .filter((m) => m.scores.length > 0)
+    .map((m) => ({
+      name: m.name,
+      score: m.scores.reduce((a, b) => a + b, 0) / m.scores.length,
+      calls: m.callCount,
+    }))
+    .sort((a, b) => b.score - a.score)
+
+  const bestManager =
+    managerList.length > 0
+      ? {
+          name: managerList[0].name,
+          score: Math.round(managerList[0].score * 10) / 10,
+          scoreChange: 0, // no period comparison yet
+          calls: managerList[0].calls,
+          callsChange: 0,
+        }
+      : null
+
+  const worstManager =
+    managerList.length > 0
+      ? {
+          name: managerList[managerList.length - 1].name,
+          score:
+            Math.round(managerList[managerList.length - 1].score * 10) / 10,
+          scoreChange: 0,
+          calls: managerList[managerList.length - 1].calls,
+          callsChange: 0,
+        }
+      : null
+
+  return {
+    totalCalls,
+    totalCallsChange: 0, // no period comparison yet (parity with legacy)
+    avgScore: Math.round(avgScore * 10) / 10,
+    avgScoreChange: 0,
+    categoryBreakdown,
+    tagBreakdown,
+    bestManager,
+    worstManager,
+  }
 }
 
 export async function getQcRecentCallsGc(

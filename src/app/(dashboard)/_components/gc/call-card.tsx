@@ -185,6 +185,19 @@ function Header({ call, type }: { call: CallDetail; type: CallType }) {
         </p>
       </div>
 
+      <div className="flex flex-wrap gap-1.5">
+        {call.enrichmentStatus && (
+          <span className="inline-block rounded px-2 py-0.5 text-[11px] bg-surface-3 text-text-secondary">
+            {call.enrichmentStatus}
+          </span>
+        )}
+        {call.possibleDuplicate && (
+          <span className="inline-block rounded px-2 py-0.5 text-[11px] bg-status-amber-dim text-status-amber">
+            ⚠️ возможный дубль
+          </span>
+        )}
+      </div>
+
       <Card>
         <CardContent className="grid grid-cols-1 gap-3 py-2 sm:grid-cols-2 lg:grid-cols-3">
           <MetaRow label="📼 Длительность записи" value={fmtSeconds(call.duration)} />

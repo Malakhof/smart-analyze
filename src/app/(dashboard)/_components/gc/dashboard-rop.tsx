@@ -254,6 +254,44 @@ function Block1DailyActivity({ rows }: { rows: DailyActivityRow[] }) {
 
 // ─── Block 2 ────────────────────────────────────────────────────────────────
 
+/**
+ * Cleveland dotplot: a single dot on a horizontal track at x = score%.
+ * Replaces hand-rolled progress bars (Tufte: less ink, more signal).
+ * Dot color follows traffic-light thresholds (70/50) consistent with the
+ * percent label next to it.
+ */
+function DotPlot({
+  value,
+  fillVar,
+}: {
+  value: number // 0..100
+  fillVar: string // CSS color value (e.g. "var(--ai-1)") or status class color
+}) {
+  const trackHeight = 16
+  const r = 4
+  const cx = Math.max(r, Math.min(100 - r, value))
+  return (
+    <svg
+      width="100%"
+      height={trackHeight}
+      viewBox={`0 0 100 ${trackHeight}`}
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <line
+        x1="0"
+        y1={trackHeight / 2}
+        x2="100"
+        y2={trackHeight / 2}
+        stroke="var(--surface-3)"
+        strokeWidth="1"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={cx} cy={trackHeight / 2} r={r} fill={fillVar} />
+    </svg>
+  )
+}
+
 function Block2QualityScore({ rows }: { rows: DailyActivityRow[] }) {
   const valid = rows.filter((r) => r.scriptScorePctAvg !== null)
   if (valid.length === 0) {
@@ -271,7 +309,6 @@ function Block2QualityScore({ rows }: { rows: DailyActivityRow[] }) {
   const sorted = [...valid].sort(
     (a, b) => (b.scriptScorePctAvg ?? 0) - (a.scriptScorePctAvg ?? 0)
   )
-  const max = sorted[0]?.scriptScorePctAvg ?? 1
   return (
     <Card>
       <CardHeader>
@@ -284,8 +321,14 @@ function Block2QualityScore({ rows }: { rows: DailyActivityRow[] }) {
       <CardContent className="space-y-3">
         {sorted.map((r) => {
           const pct = r.scriptScorePctAvg ?? 0
-          const w = max > 0 ? Math.max(2, (pct / max) * 100) : 0
           const cls = scoreColorClass(pct)
+          // Match traffic-light fill to status colors (70/50 thresholds)
+          const fillVar =
+            pct >= 0.7
+              ? "var(--status-green)"
+              : pct >= 0.5
+                ? "var(--status-amber)"
+                : "var(--status-red)"
           return (
             <div key={r.managerId} className="text-sm">
               <div className="flex items-center justify-between">
@@ -299,17 +342,8 @@ function Block2QualityScore({ rows }: { rows: DailyActivityRow[] }) {
                   {Math.round(pct * 100)}%
                 </span>
               </div>
-              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-surface-2">
-                <div
-                  className={`h-full rounded-full ${
-                    pct >= 0.7
-                      ? "bg-status-green"
-                      : pct >= 0.5
-                        ? "bg-status-amber"
-                        : "bg-status-red"
-                  }`}
-                  style={{ width: `${w}%` }}
-                />
+              <div className="mt-1">
+                <DotPlot value={pct * 100} fillVar={fillVar} />
               </div>
             </div>
           )

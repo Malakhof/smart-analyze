@@ -360,12 +360,35 @@ export async function getQcChartDataGc(
 }
 
 export async function getQcRecentCallsGc(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   tenantId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mode: QcQueryMode = "all",
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   filters: QcFilters = {}
 ): Promise<QcRecentCall[]> {
-  throw new Error("not implemented (Task 22)")
+  // Top 50 most recent qualifying calls. Legacy `getQualityDashboard` returns
+  // 10 in its `recentCalls` field (already provided above); this function is
+  // the standalone "recent calls" feed used for the dedicated list view.
+  const rows = await db.callRecord.findMany({
+    where: qcCallWhereGc(tenantId, mode, filters),
+    select: {
+      id: true,
+      manager: { select: { name: true } },
+      clientName: true,
+      direction: true,
+      duration: true,
+      scriptScorePct: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  })
+
+  return rows.map((r) => ({
+    id: r.id,
+    managerName: r.manager?.name ?? null,
+    clientName: r.clientName,
+    direction: r.direction,
+    duration: r.duration,
+    totalScore: r.scriptScorePct != null ? r.scriptScorePct * 100 : null,
+    createdAt: r.createdAt,
+  }))
 }

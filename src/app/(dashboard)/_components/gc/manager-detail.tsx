@@ -319,6 +319,9 @@ function PatternsBlock({ detail }: { detail: ManagerDetail }) {
   )
 }
 
+// Tufte: only label meaningful tick positions (start/quarter/mid/three-quarter/end)
+const HEATMAP_TICK_HOURS = [0, 6, 12, 18, 23]
+
 function HeatmapBlock({ cells }: { cells: HeatmapCell[] }) {
   if (cells.length === 0) {
     return (
@@ -370,7 +373,7 @@ function HeatmapBlock({ cells }: { cells: HeatmapCell[] }) {
                     key={h}
                     className="w-4 px-px text-center font-normal text-text-muted"
                   >
-                    {h % 3 === 0 ? h : ""}
+                    {HEATMAP_TICK_HOURS.includes(h) ? h : ""}
                   </th>
                 ))}
               </tr>

@@ -580,6 +580,9 @@ function Block5UnfulfilledCommitments({
 
 // ─── Block 6 ────────────────────────────────────────────────────────────────
 
+// Tufte: only label meaningful tick positions (start/quarter/mid/three-quarter/end)
+const HEATMAP_TICK_HOURS = [0, 6, 12, 18, 23]
+
 function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
   // Build 7×24 grid (Mon..Sun for visual; DOW: 0=Sun..6=Sat in pg)
   const grid: HeatmapCell[][] = Array.from({ length: 7 }, () =>
@@ -620,7 +623,7 @@ function Block6Heatmap({ cells }: { cells: HeatmapCell[] }) {
                     key={h}
                     className="w-4 px-px text-center font-normal text-text-muted"
                   >
-                    {h % 3 === 0 ? h : ""}
+                    {HEATMAP_TICK_HOURS.includes(h) ? h : ""}
                   </th>
                 ))}
               </tr>

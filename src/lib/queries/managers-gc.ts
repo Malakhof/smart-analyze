@@ -16,6 +16,8 @@ export interface ManagerListRow {
   pipelineGap: number
   pipelineGapPct: number
   topCriticalError: string | null
+  isFirstLine: boolean
+  isCurator: boolean
 }
 
 const PHRASE_TECHNIQUES = [
@@ -38,8 +40,10 @@ export async function getManagersListGc(
   period: GcPeriod
 ): Promise<ManagerListRow[]> {
   const since = gcPeriodToCutoff(period)
-  const curatorIds = Array.from(await getCuratorManagerIds(tenantId))
+  const curatorIdSet = await getCuratorManagerIds(tenantId)
 
+  // Tabs need all three groups (МОПы / Первая линия / Кураторы), so we no
+  // longer exclude curators in SQL — `isCurator` flag carries the split.
   const rows = await db.$queryRaw<
     Array<{
       managerId: string
@@ -49,6 +53,8 @@ export async function getManagersListGc(
       avg_score: number | null
       pipeline_gap: bigint
       total_for_gap: bigint
+      first_line_count: bigint
+      enriched_total: bigint
     }>
   >`
     SELECT
@@ -60,16 +66,13 @@ export async function getManagersListGc(
         WHERE c."callOutcome" = 'real_conversation' AND c.duration >= 60
       )::float AS avg_score,
       COUNT(*) FILTER (WHERE c.transcript IS NULL AND c."audioUrl" IS NULL)::bigint AS pipeline_gap,
-      COUNT(*)::bigint AS total_for_gap
+      COUNT(*)::bigint AS total_for_gap,
+      COUNT(*) FILTER (WHERE c."isFirstLine" = true)::bigint AS first_line_count,
+      COUNT(*) FILTER (WHERE c."isFirstLine" IS NOT NULL)::bigint AS enriched_total
     FROM "CallRecord" c
     JOIN "Manager" m ON c."managerId" = m.id
     WHERE c."tenantId" = ${tenantId}
       AND c."createdAt" >= ${since}
-      ${
-        curatorIds.length > 0
-          ? Prisma.sql`AND m.id NOT IN (${Prisma.join(curatorIds)})`
-          : Prisma.empty
-      }
     GROUP BY m.id, m.name
     HAVING COUNT(*) > 0
     ORDER BY dialed DESC
@@ -85,6 +88,13 @@ export async function getManagersListGc(
       ])
       const totalForGap = Number(r.total_for_gap)
       const pipelineGap = Number(r.pipeline_gap)
+      const firstLineCount = Number(r.first_line_count)
+      const enrichedTotal = Number(r.enriched_total)
+      // Majority rule: a manager is «Первая линия» when more than half of
+      // his enriched calls were classified as first-line. This avoids one-off
+      // mis-classifications flipping the bucket.
+      const isFirstLine =
+        enrichedTotal > 0 && firstLineCount / enrichedTotal > 0.5
       return {
         managerId: r.managerId,
         managerName: r.managerName,
@@ -95,6 +105,8 @@ export async function getManagersListGc(
         pipelineGap,
         pipelineGapPct: totalForGap > 0 ? pipelineGap / totalForGap : 0,
         topCriticalError: topErr,
+        isFirstLine,
+        isCurator: curatorIdSet.has(r.managerId),
       }
     })
   )

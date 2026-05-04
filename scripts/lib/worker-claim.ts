@@ -77,11 +77,16 @@ export async function claimPersistOnlyBatch(
 ): Promise<PersistOnlyRow[]> {
   const rows = await db.$transaction(async (tx) => {
     const picked = await tx.$queryRawUnsafe<PersistOnlyRow[]>(
+      // pbxUuid filter prevents starvation loop (issue #2 from 2026-05-03):
+      // persist-pipeline-results.ts matches by pbxUuid, so empty pbxUuid rows
+      // get skipped → ok=false → status stays 'transcribed' → re-claimed forever
+      // → claim section never reached → GPU never starts. Filter at SQL level.
       `SELECT id, "pbxUuid", transcript, duration
        FROM "CallRecord"
        WHERE "tenantId" = $1
          AND "transcriptionStatus" = 'transcribed'
          AND transcript IS NOT NULL
+         AND "pbxUuid" IS NOT NULL AND "pbxUuid" != ''
        ORDER BY "startStamp"
        LIMIT $2
        FOR UPDATE SKIP LOCKED`,
